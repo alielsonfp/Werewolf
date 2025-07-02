@@ -1,0 +1,4972 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+.env.example
+.gitignore
+backend/Dockerfile
+backend/package.json
+backend/prisma/schema.prisma
+backend/src/app.ts
+backend/src/config/database.ts
+backend/src/config/environment.ts
+backend/src/config/jwt.ts
+backend/src/config/redis.ts
+backend/src/config/websocket.ts
+backend/src/server.ts
+backend/src/types/api.ts
+backend/src/types/game.ts
+backend/src/types/room.ts
+backend/src/types/user.ts
+backend/src/types/websocket.ts
+backend/src/utils/constants.ts
+backend/src/utils/helper.ts
+backend/src/utils/logger.ts
+backend/src/utils/validators.ts
+backend/tsconfig.json
+database/init.sql
+docker-compose.dev.yml
+docker-start.bat
+docker-start.sh
+package.json
+README.md
+scripts/setup.sh
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".env.example">
+# 🐺 LOBISOMEM ONLINE - Environment Variables
+
+# =============================================================================
+# CORE SETTINGS
+# =============================================================================
+NODE_ENV=development
+PORT=3001
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+DATABASE_URL=postgresql://werewolf:werewolf123@localhost:5432/werewolf_dev
+REDIS_URL=redis://localhost:6379
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_EXPIRES_IN=7d
+
+# =============================================================================
+# ARCHITECTURE MODE (CRÍTICO PARA MIGRAÇÃO)
+# =============================================================================
+# Fase 1: false | Fase 2: true
+DISTRIBUTED_MODE=false
+
+# memory (Fase 1) | redis (Fase 2)
+STORAGE_TYPE=memory
+
+# =============================================================================
+# SERVICE DISCOVERY (FASE 2)
+# =============================================================================
+SERVICE_ID=local-server
+SERVICE_TYPE=monolith
+# monolith | lobby | game
+
+# =============================================================================
+# WEBSOCKET CONFIGURATION
+# =============================================================================
+WS_BASE_PATH=/ws
+WS_PORT=3001
+
+# =============================================================================
+# GAME SETTINGS
+# =============================================================================
+MIN_PLAYERS=6
+MAX_PLAYERS=15
+MAX_SPECTATORS=5
+NIGHT_DURATION=60000
+DAY_DURATION=120000
+VOTING_DURATION=30000
+
+# =============================================================================
+# EMAIL (OPCIONAL)
+# =============================================================================
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+
+# =============================================================================
+# FRONTEND CONFIGURATION
+# =============================================================================
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_WS_URL=ws://localhost:3001
+</file>
+
+<file path=".gitignore">
+# 🐺 LOBISOMEM ONLINE - Git Ignore
+
+# =============================================================================
+# ENVIRONMENT & SECRETS
+# =============================================================================
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# =============================================================================
+# NODE.JS
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# TYPESCRIPT
+# =============================================================================
+*.tsbuildinfo
+dist/
+build/
+
+# =============================================================================
+# NEXT.JS
+# =============================================================================
+.next/
+out/
+build
+
+# =============================================================================
+# DATABASES
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+.dockerignore
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# OS GENERATED
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =============================================================================
+# MISC
+# =============================================================================
+.nyc_output
+coverage/
+.coverage
+*.cover
+.cache
+.eslintcache
+</file>
+
+<file path="backend/Dockerfile">
+# 🐺 LOBISOMEM ONLINE - Development Dockerfile
+FROM node:18-alpine AS development
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init git
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files first (for better caching)
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install ALL dependencies (including dev dependencies)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Expose port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Development command with hot reload
+CMD ["npm", "run", "dev"]
+</file>
+
+<file path="backend/package.json">
+{
+  "name": "werewolf-backend",
+  "version": "1.0.0",
+  "description": "🐺 Lobisomem Online - Backend Server",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "./node_modules/.bin/nodemon --watch src --ext ts,json --exec \"./node_modules/.bin/tsx src/server.ts\"",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:dev": "npm run build && npm run start",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "tsx src/database/seeds/index.ts",
+    "db:studio": "prisma studio",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean": "rimraf dist",
+    "docker:build": "docker build -t werewolf-backend .",
+    "docker:run": "docker run -p 3001:3001 werewolf-backend"
+  },
+  "keywords": [
+    "werewolf",
+    "game",
+    "multiplayer",
+    "websocket",
+    "realtime",
+    "typescript",
+    "nodejs"
+  ],
+  "author": "Werewolf Team",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^5.7.1",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "ws": "^8.14.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.8",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^20.9.0",
+    "@types/ws": "^8.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "prettier": "^3.1.0",
+    "prisma": "^5.7.1",
+    "rimraf": "^5.0.5",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.6.0",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  }
+}
+</file>
+
+<file path="backend/prisma/schema.prisma">
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  username     String  @unique
+  passwordHash String  @map("password_hash")
+  avatar       String?
+
+  level       Int   @default(1)
+  totalGames  Int   @default(0) @map("total_games")
+  totalWins   Int   @default(0) @map("total_wins")
+  totalLosses Int   @default(0) @map("total_losses")
+  winRate     Float @default(0.0) @map("win_rate")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  lastLoginAt DateTime? @map("last_login_at")
+
+  hostedRooms      Room[]            @relation("RoomHost")
+  gameResults      GameResult[]
+  userAchievements UserAchievement[]
+  chatMessages     ChatMessage[]
+
+  @@index([email])
+  @@index([username])
+  @@index([totalGames])
+  @@index([winRate])
+  @@map("users")
+}
+
+model Room {
+  id            String     @id @default(cuid())
+  name          String
+  code          String?    @unique
+  isPrivate     Boolean    @default(false) @map("is_private")
+  maxPlayers    Int        @default(15) @map("max_players")
+  maxSpectators Int        @default(5) @map("max_spectators")
+  status        RoomStatus @default(WAITING)
+
+  hostId String @map("host_id")
+  host   User   @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+
+  serverId String? @map("server_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  games        Game[]
+  chatMessages ChatMessage[]
+
+  @@index([status])
+  @@index([isPrivate])
+  @@index([code])
+  @@index([hostId])
+  @@index([createdAt])
+  @@map("rooms")
+}
+
+enum RoomStatus {
+  WAITING
+  PLAYING
+  FINISHED
+}
+
+model Game {
+  id         String     @id @default(cuid())
+  roomId     String     @map("room_id")
+  status     GameStatus @default(WAITING)
+  phase      GamePhase  @default(LOBBY)
+  currentDay Int        @default(1) @map("current_day")
+
+  config Json
+
+  winningFaction String?  @map("winning_faction")
+  winningPlayers String[] @map("winning_players")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  room        Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  gameResults GameResult[]
+  gameEvents  GameEvent[]
+
+  @@index([status])
+  @@index([roomId])
+  @@index([createdAt])
+  @@map("games")
+}
+
+enum GameStatus {
+  WAITING
+  STARTING
+  PLAYING
+  FINISHED
+  CANCELLED
+}
+
+enum GamePhase {
+  LOBBY
+  NIGHT
+  DAY
+  VOTING
+  ENDED
+}
+
+model GameResult {
+  id     String @id @default(cuid())
+  gameId String @map("game_id")
+  userId String @map("user_id")
+
+  role     String
+  faction  String
+  won      Boolean @default(false)
+  survived Boolean @default(false)
+
+  duration    Int
+  playerCount Int @map("player_count")
+
+  playedAt DateTime @default(now()) @map("played_at")
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@index([userId])
+  @@index([playedAt])
+  @@index([won])
+  @@index([role])
+  @@map("game_results")
+}
+
+model GameEvent {
+  id        String    @id @default(cuid())
+  gameId    String    @map("game_id")
+  type      String
+  phase     GamePhase
+  day       Int
+  data      Json
+  visible   Boolean   @default(true)
+  timestamp DateTime  @default(now())
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("game_events")
+}
+
+model Achievement {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String
+  icon        String?
+  category    String
+  points      Int     @default(0)
+
+  conditions Json
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String @id @default(cuid())
+  userId        String @map("user_id")
+  achievementId String @map("achievement_id")
+
+  progress   Json      @default("{}")
+  completed  Boolean   @default(false)
+  unlockedAt DateTime? @map("unlocked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@index([completed])
+  @@index([unlockedAt])
+  @@map("user_achievements")
+}
+
+model ChatMessage {
+  id       String      @id @default(cuid())
+  userId   String      @map("user_id")
+  roomId   String?     @map("room_id")
+  channel  ChatChannel @default(PUBLIC)
+  message  String
+  filtered Boolean     @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([channel])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+enum ChatChannel {
+  LOBBY
+  ROOM
+  PUBLIC
+  WEREWOLF
+  SPECTATOR
+  SYSTEM
+}
+</file>
+
+<file path="backend/src/app.ts">
+// 🐺 LOBISOMEM ONLINE - Express Application Setup
+// ⚠️ CRÍTICO: Preparado para separação REST/WebSocket na Fase 2
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
+import { config } from '@/config/environment';
+import { checkDatabaseHealth } from '@/config/database';
+import { checkRedisHealth } from '@/config/redis';
+
+// =============================================================================
+// EXPRESS APPLICATION
+// =============================================================================
+const app = express();
+
+// =============================================================================
+// SECURITY MIDDLEWARE
+// =============================================================================
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
+// =============================================================================
+// CORS CONFIGURATION
+// =============================================================================
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, postman, etc.)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://localhost:3000',
+      'https://localhost:3001',
+    ];
+
+    if (config.IS_PRODUCTION) {
+      // Add production origins here
+      allowedOrigins.push('https://your-domain.com');
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
+// =============================================================================
+// GENERAL MIDDLEWARE
+// =============================================================================
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logging
+if (config.IS_DEVELOPMENT) {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
+// =============================================================================
+// HEALTH CHECK ENDPOINTS
+// =============================================================================
+app.get('/health', async (req, res) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const redisHealth = await checkRedisHealth();
+
+    const health = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      service: {
+        id: config.SERVICE_ID,
+        type: config.SERVICE_TYPE,
+        mode: config.DISTRIBUTED_MODE ? 'distributed' : 'monolithic',
+      },
+      database: dbHealth,
+      redis: redisHealth,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+    };
+
+    // If any service is unhealthy, return 503
+    if (dbHealth.status === 'unhealthy' ||
+      (config.SHOULD_USE_REDIS && redisHealth.status === 'unhealthy')) {
+      return res.status(503).json(health);
+    }
+
+    res.json(health);
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.get('/health/ready', (req, res) => {
+  res.json({
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    service: config.SERVICE_ID,
+  });
+});
+
+app.get('/health/live', (req, res) => {
+  res.json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// =============================================================================
+// API ROUTES (Will be added in next steps)
+// =============================================================================
+// TODO: Add routes in next development steps
+// app.use('/api/auth', authRoutes);
+// app.use('/api/users', userRoutes);
+// app.use('/api/rooms', roomRoutes);
+// app.use('/api/games', gameRoutes);
+// app.use('/api/leaderboard', leaderboardRoutes);
+
+// =============================================================================
+// ROOT ENDPOINT
+// =============================================================================
+app.get('/', (req, res) => {
+  res.json({
+    message: '🐺 Werewolf Online API',
+    version: '1.0.0',
+    phase: config.DISTRIBUTED_MODE ? 'Phase 2 (Distributed)' : 'Phase 1 (Monolithic)',
+    service: config.SERVICE_TYPE,
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      ready: '/health/ready',
+      live: '/health/live',
+      // TODO: Add API endpoints as they are implemented
+    },
+  });
+});
+
+// =============================================================================
+// ERROR HANDLING MIDDLEWARE
+// =============================================================================
+app.use((req, res, next) => {
+  res.status(404).json({
+    error: 'Not Found',
+    message: `Route ${req.method} ${req.path} not found`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('❌ Express Error:', error);
+
+  // Don't leak error details in production
+  const isDev = config.IS_DEVELOPMENT;
+
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: isDev ? error.message : 'Something went wrong',
+    timestamp: new Date().toISOString(),
+    ...(isDev && { stack: error.stack }),
+  });
+});
+
+export default app;
+</file>
+
+<file path="backend/src/config/database.ts">
+// 🐺 LOBISOMEM ONLINE - Database Configuration
+// PostgreSQL connection and Prisma setup
+
+import { PrismaClient } from '@prisma/client';
+import { config } from './environment';
+
+// =============================================================================
+// PRISMA CLIENT SINGLETON
+// =============================================================================
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: config.IS_DEVELOPMENT ? ['query', 'info', 'warn', 'error'] : ['error'],
+    datasources: {
+      db: {
+        url: config.DATABASE_URL,
+      },
+    },
+  });
+
+if (!config.IS_PRODUCTION) globalForPrisma.prisma = prisma;
+
+// =============================================================================
+// DATABASE CONNECTION HELPERS
+// =============================================================================
+export async function connectDatabase(): Promise<void> {
+  try {
+    await prisma.$connect();
+    console.log('✅ PostgreSQL connected successfully');
+
+    // Test connection with a simple query
+    const result = await prisma.$queryRaw`SELECT 1 as connected`;
+    console.log('🔍 Database health check:', result);
+  } catch (error) {
+    console.error('❌ Failed to connect to PostgreSQL:', error);
+    throw error;
+  }
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  try {
+    await prisma.$disconnect();
+    console.log('👋 PostgreSQL disconnected');
+  } catch (error) {
+    console.error('❌ Error disconnecting from PostgreSQL:', error);
+  }
+}
+
+// =============================================================================
+// DATABASE HEALTH CHECK
+// =============================================================================
+export async function checkDatabaseHealth(): Promise<{
+  status: 'healthy' | 'unhealthy';
+  message: string;
+  timestamp: string;
+}> {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      status: 'healthy',
+      message: 'PostgreSQL is responding',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      message: error instanceof Error ? error.message : 'Unknown database error',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+// =============================================================================
+// GRACEFUL SHUTDOWN
+// =============================================================================
+export async function gracefulShutdown(): Promise<void> {
+  console.log('🛑 Shutting down database connections...');
+  await disconnectDatabase();
+}
+</file>
+
+<file path="backend/src/config/environment.ts">
+// 🐺 LOBISOMEM ONLINE - Environment Configuration
+// ⚠️ CRÍTICO: Configuration-driven para migração automática Fase 1 → Fase 2
+
+import { z } from 'zod';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+// =============================================================================
+// VALIDATION SCHEMA
+// =============================================================================
+const envSchema = z.object({
+  // Core settings
+  NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+  PORT: z.coerce.number().default(3001),
+
+  // Database
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  REDIS_URL: z.string().default('redis://localhost:6379'),
+
+  // Authentication
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // Architecture mode (CRÍTICO para migração)
+  DISTRIBUTED_MODE: z.coerce.boolean().default(false),
+  STORAGE_TYPE: z.enum(['memory', 'redis']).default('memory'),
+
+  // Service discovery (Fase 2)
+  SERVICE_ID: z.string().default('local-server'),
+  SERVICE_TYPE: z.enum(['monolith', 'lobby', 'game']).default('monolith'),
+
+  // WebSocket routing (Fase 2)
+  WS_BASE_PATH: z.string().default('/ws'),
+  WS_PORT: z.coerce.number().default(3001),
+
+  // Game settings
+  MIN_PLAYERS: z.coerce.number().default(6),
+  MAX_PLAYERS: z.coerce.number().default(15),
+  MAX_SPECTATORS: z.coerce.number().default(5),
+  NIGHT_DURATION: z.coerce.number().default(60000),
+  DAY_DURATION: z.coerce.number().default(120000),
+  VOTING_DURATION: z.coerce.number().default(30000),
+
+  // Email (opcional)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+});
+
+// =============================================================================
+// VALIDATE AND EXPORT CONFIG
+// =============================================================================
+const envVars = envSchema.parse(process.env);
+
+export const config = {
+  // Core settings
+  NODE_ENV: envVars.NODE_ENV,
+  PORT: envVars.PORT,
+  IS_PRODUCTION: envVars.NODE_ENV === 'production',
+  IS_DEVELOPMENT: envVars.NODE_ENV === 'development',
+
+  // Database
+  DATABASE_URL: envVars.DATABASE_URL,
+  REDIS_URL: envVars.REDIS_URL,
+
+  // Authentication
+  JWT_SECRET: envVars.JWT_SECRET,
+  JWT_EXPIRES_IN: envVars.JWT_EXPIRES_IN,
+
+  // Architecture mode (CRÍTICO)
+  DISTRIBUTED_MODE: envVars.DISTRIBUTED_MODE,
+  STORAGE_TYPE: envVars.STORAGE_TYPE,
+
+  // Service discovery (Fase 2)
+  SERVICE_ID: envVars.SERVICE_ID,
+  SERVICE_TYPE: envVars.SERVICE_TYPE,
+
+  // WebSocket routing (Fase 2)
+  WS_BASE_PATH: envVars.WS_BASE_PATH,
+  WS_PORT: envVars.WS_PORT,
+
+  // Game settings
+  GAME: {
+    MIN_PLAYERS: envVars.MIN_PLAYERS,
+    MAX_PLAYERS: envVars.MAX_PLAYERS,
+    MAX_SPECTATORS: envVars.MAX_SPECTATORS,
+    NIGHT_DURATION: envVars.NIGHT_DURATION,
+    DAY_DURATION: envVars.DAY_DURATION,
+    VOTING_DURATION: envVars.VOTING_DURATION,
+  },
+
+  // Email
+  EMAIL: {
+    SMTP_HOST: envVars.SMTP_HOST,
+    SMTP_PORT: envVars.SMTP_PORT,
+    SMTP_USER: envVars.SMTP_USER,
+    SMTP_PASS: envVars.SMTP_PASS,
+    ENABLED: !!(envVars.SMTP_HOST && envVars.SMTP_USER && envVars.SMTP_PASS),
+  },
+
+  // Derived flags
+  SHOULD_USE_REDIS: envVars.DISTRIBUTED_MODE || envVars.STORAGE_TYPE === 'redis',
+  IS_GAME_SERVICE: envVars.SERVICE_TYPE === 'game',
+  IS_LOBBY_SERVICE: envVars.SERVICE_TYPE === 'lobby',
+  IS_MONOLITH: envVars.SERVICE_TYPE === 'monolith',
+} as const;
+
+// =============================================================================
+// TYPE DEFINITIONS
+// =============================================================================
+export type Config = typeof config;
+export type StorageType = 'memory' | 'redis';
+export type ServiceType = 'monolith' | 'lobby' | 'game';
+
+// =============================================================================
+// VALIDATION HELPERS
+// =============================================================================
+export function validateConfig(): void {
+  console.log('🔧 Configuration loaded:');
+  console.log(`   Mode: ${config.NODE_ENV}`);
+  console.log(`   Architecture: ${config.DISTRIBUTED_MODE ? 'Distributed' : 'Monolithic'}`);
+  console.log(`   Service Type: ${config.SERVICE_TYPE}`);
+  console.log(`   Storage: ${config.STORAGE_TYPE}`);
+  console.log(`   Port: ${config.PORT}`);
+
+  if (config.IS_PRODUCTION && config.JWT_SECRET === 'your-super-secret-jwt-key-change-in-production') {
+    throw new Error('❌ JWT_SECRET must be changed in production!');
+  }
+
+  if (config.DISTRIBUTED_MODE && !config.SHOULD_USE_REDIS) {
+    throw new Error('❌ DISTRIBUTED_MODE requires Redis storage!');
+  }
+}
+</file>
+
+<file path="backend/src/config/jwt.ts">
+// 🐺 LOBISOMEM ONLINE - JWT Configuration
+// Authentication and token management
+
+import jwt from 'jsonwebtoken';
+import { config } from './environment';
+
+// =============================================================================
+// TYPE DEFINITIONS
+// =============================================================================
+export interface JWTPayload {
+  userId: string;
+  username: string;
+  email: string;
+  iat?: number;
+  exp?: number;
+}
+
+export interface TokenPair {
+  accessToken: string;
+  refreshToken?: string;
+}
+
+// =============================================================================
+// TOKEN GENERATION
+// =============================================================================
+export function generateAccessToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
+  return jwt.sign(payload, config.JWT_SECRET, {
+    expiresIn: config.JWT_EXPIRES_IN,
+    issuer: 'werewolf-online',
+    audience: 'werewolf-players',
+  });
+}
+
+export function generateRefreshToken(userId: string): string {
+  return jwt.sign(
+    { userId, type: 'refresh' },
+    config.JWT_SECRET,
+    {
+      expiresIn: '30d',
+      issuer: 'werewolf-online',
+      audience: 'werewolf-players',
+    }
+  );
+}
+
+export function generateTokenPair(payload: Omit<JWTPayload, 'iat' | 'exp'>): TokenPair {
+  return {
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload.userId),
+  };
+}
+
+// =============================================================================
+// TOKEN VERIFICATION
+// =============================================================================
+export function verifyAccessToken(token: string): JWTPayload {
+  try {
+    const decoded = jwt.verify(token, config.JWT_SECRET, {
+      issuer: 'werewolf-online',
+      audience: 'werewolf-players',
+    }) as JWTPayload;
+
+    return decoded;
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new Error('Token expired');
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      throw new Error('Invalid token');
+    }
+    throw new Error('Token verification failed');
+  }
+}
+
+export function verifyRefreshToken(token: string): { userId: string; type: string } {
+  try {
+    const decoded = jwt.verify(token, config.JWT_SECRET, {
+      issuer: 'werewolf-online',
+      audience: 'werewolf-players',
+    }) as { userId: string; type: string };
+
+    if (decoded.type !== 'refresh') {
+      throw new Error('Invalid refresh token type');
+    }
+
+    return decoded;
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new Error('Refresh token expired');
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      throw new Error('Invalid refresh token');
+    }
+    throw new Error('Refresh token verification failed');
+  }
+}
+
+// =============================================================================
+// TOKEN EXTRACTION
+// =============================================================================
+export function extractTokenFromHeader(authorization?: string): string | null {
+  if (!authorization) {
+    return null;
+  }
+
+  const parts = authorization.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    return null;
+  }
+
+  return parts[1];
+}
+
+export function extractTokenFromCookie(cookieHeader?: string): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookies = cookieHeader.split(';').map(cookie => cookie.trim());
+  const tokenCookie = cookies.find(cookie => cookie.startsWith('access_token='));
+
+  if (!tokenCookie) {
+    return null;
+  }
+
+  return tokenCookie.split('=')[1];
+}
+
+// =============================================================================
+// TOKEN UTILITIES
+// =============================================================================
+export function decodeTokenWithoutVerification(token: string): JWTPayload | null {
+  try {
+    return jwt.decode(token) as JWTPayload;
+  } catch {
+    return null;
+  }
+}
+
+export function isTokenExpired(token: string): boolean {
+  const decoded = decodeTokenWithoutVerification(token);
+  if (!decoded || !decoded.exp) {
+    return true;
+  }
+
+  return decoded.exp * 1000 < Date.now();
+}
+
+export function getTokenExpirationTime(token: string): Date | null {
+  const decoded = decodeTokenWithoutVerification(token);
+  if (!decoded || !decoded.exp) {
+    return null;
+  }
+
+  return new Date(decoded.exp * 1000);
+}
+
+// =============================================================================
+// WEBSOCKET TOKEN VALIDATION
+// =============================================================================
+export function extractTokenFromWebSocketRequest(request: {
+  headers: { [key: string]: string | string[] | undefined };
+  url?: string;
+}): string | null {
+  // Try Authorization header first
+  const authHeader = request.headers.authorization;
+  if (typeof authHeader === 'string') {
+    const token = extractTokenFromHeader(authHeader);
+    if (token) return token;
+  }
+
+  // Try Cookie header
+  const cookieHeader = request.headers.cookie;
+  if (typeof cookieHeader === 'string') {
+    const token = extractTokenFromCookie(cookieHeader);
+    if (token) return token;
+  }
+
+  // Try query parameter (less secure, use as fallback)
+  if (request.url) {
+    const url = new URL(request.url, 'http://localhost');
+    const token = url.searchParams.get('token');
+    if (token) return token;
+  }
+
+  return null;
+}
+
+// =============================================================================
+// PASSWORD RESET TOKENS
+// =============================================================================
+export function generatePasswordResetToken(userId: string, email: string): string {
+  return jwt.sign(
+    { userId, email, type: 'password_reset' },
+    config.JWT_SECRET,
+    {
+      expiresIn: '1h',
+      issuer: 'werewolf-online',
+      audience: 'werewolf-players',
+    }
+  );
+}
+
+export function verifyPasswordResetToken(token: string): { userId: string; email: string } {
+  try {
+    const decoded = jwt.verify(token, config.JWT_SECRET, {
+      issuer: 'werewolf-online',
+      audience: 'werewolf-players',
+    }) as { userId: string; email: string; type: string };
+
+    if (decoded.type !== 'password_reset') {
+      throw new Error('Invalid password reset token type');
+    }
+
+    return { userId: decoded.userId, email: decoded.email };
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new Error('Password reset token expired');
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      throw new Error('Invalid password reset token');
+    }
+    throw new Error('Password reset token verification failed');
+  }
+}
+</file>
+
+<file path="backend/src/config/redis.ts">
+// 🐺 LOBISOMEM ONLINE - Redis Configuration
+// Cache, session store, and inter-service communication
+
+import Redis from 'ioredis';
+import { config } from './environment';
+
+// =============================================================================
+// REDIS CLIENT SINGLETON
+// =============================================================================
+let redisClient: Redis | null = null;
+let redisSubscriber: Redis | null = null;
+let redisPublisher: Redis | null = null;
+
+// =============================================================================
+// REDIS CLIENT FACTORY
+// =============================================================================
+export function createRedisClient(): Redis {
+  return new Redis(config.REDIS_URL, {
+    retryDelayOnFailover: 100,
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+    keepAlive: 30000,
+    family: 4, // IPv4
+    connectTimeout: 10000,
+    commandTimeout: 5000,
+
+    // Connection pool
+    maxLoadingTimeout: 5000,
+
+    // Error handling
+    showFriendlyErrorStack: config.IS_DEVELOPMENT,
+  });
+}
+
+// =============================================================================
+// MAIN REDIS CLIENT
+// =============================================================================
+export function getRedisClient(): Redis {
+  if (!redisClient) {
+    if (!config.SHOULD_USE_REDIS) {
+      throw new Error('❌ Redis is not enabled in current configuration');
+    }
+
+    redisClient = createRedisClient();
+
+    redisClient.on('connect', () => {
+      console.log('🔗 Redis client connecting...');
+    });
+
+    redisClient.on('ready', () => {
+      console.log('✅ Redis client ready');
+    });
+
+    redisClient.on('error', (error) => {
+      console.error('❌ Redis client error:', error);
+    });
+
+    redisClient.on('close', () => {
+      console.log('🔌 Redis client disconnected');
+    });
+  }
+
+  return redisClient;
+}
+
+// =============================================================================
+// PUB/SUB CLIENTS (PHASE 2)
+// =============================================================================
+export function getRedisSubscriber(): Redis {
+  if (!redisSubscriber) {
+    if (!config.SHOULD_USE_REDIS) {
+      throw new Error('❌ Redis Pub/Sub is not enabled in current configuration');
+    }
+
+    redisSubscriber = createRedisClient();
+
+    redisSubscriber.on('connect', () => {
+      console.log('🔗 Redis subscriber connecting...');
+    });
+
+    redisSubscriber.on('ready', () => {
+      console.log('✅ Redis subscriber ready');
+    });
+
+    redisSubscriber.on('error', (error) => {
+      console.error('❌ Redis subscriber error:', error);
+    });
+  }
+
+  return redisSubscriber;
+}
+
+export function getRedisPublisher(): Redis {
+  if (!redisPublisher) {
+    if (!config.SHOULD_USE_REDIS) {
+      throw new Error('❌ Redis Pub/Sub is not enabled in current configuration');
+    }
+
+    redisPublisher = createRedisClient();
+
+    redisPublisher.on('connect', () => {
+      console.log('🔗 Redis publisher connecting...');
+    });
+
+    redisPublisher.on('ready', () => {
+      console.log('✅ Redis publisher ready');
+    });
+
+    redisPublisher.on('error', (error) => {
+      console.error('❌ Redis publisher error:', error);
+    });
+  }
+
+  return redisPublisher;
+}
+
+// =============================================================================
+// CONNECTION MANAGEMENT
+// =============================================================================
+export async function connectRedis(): Promise<void> {
+  if (!config.SHOULD_USE_REDIS) {
+    console.log('⏭️  Redis disabled in current configuration');
+    return;
+  }
+
+  try {
+    const client = getRedisClient();
+    await client.connect();
+
+    // Test connection
+    const pong = await client.ping();
+    if (pong === 'PONG') {
+      console.log('✅ Redis connected successfully');
+    }
+  } catch (error) {
+    console.error('❌ Failed to connect to Redis:', error);
+    throw error;
+  }
+}
+
+export async function disconnectRedis(): Promise<void> {
+  const promises: Promise<void>[] = [];
+
+  if (redisClient) {
+    promises.push(redisClient.disconnect());
+  }
+
+  if (redisSubscriber) {
+    promises.push(redisSubscriber.disconnect());
+  }
+
+  if (redisPublisher) {
+    promises.push(redisPublisher.disconnect());
+  }
+
+  try {
+    await Promise.all(promises);
+    console.log('👋 Redis clients disconnected');
+  } catch (error) {
+    console.error('❌ Error disconnecting Redis clients:', error);
+  }
+
+  redisClient = null;
+  redisSubscriber = null;
+  redisPublisher = null;
+}
+
+// =============================================================================
+// HEALTH CHECK
+// =============================================================================
+export async function checkRedisHealth(): Promise<{
+  status: 'healthy' | 'unhealthy';
+  message: string;
+  timestamp: string;
+}> {
+  if (!config.SHOULD_USE_REDIS) {
+    return {
+      status: 'healthy',
+      message: 'Redis disabled in configuration',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const client = getRedisClient();
+    const pong = await client.ping();
+
+    return {
+      status: pong === 'PONG' ? 'healthy' : 'unhealthy',
+      message: pong === 'PONG' ? 'Redis is responding' : 'Redis ping failed',
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      message: error instanceof Error ? error.message : 'Unknown Redis error',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+// =============================================================================
+// GRACEFUL SHUTDOWN
+// =============================================================================
+export async function gracefulShutdown(): Promise<void> {
+  console.log('🛑 Shutting down Redis connections...');
+  await disconnectRedis();
+}
+</file>
+
+<file path="backend/src/config/websocket.ts">
+// 🐺 LOBISOMEM ONLINE - WebSocket Configuration
+// ⚠️ CRÍTICO: Estruturado para roteamento NGINX na Fase 2
+
+import { config } from './environment';
+import type { IncomingMessage } from 'http';
+import type WebSocket from 'ws';
+
+// =============================================================================
+// WEBSOCKET CONFIGURATION
+// =============================================================================
+export const wsConfig = {
+  // Base path for WebSocket connections
+  path: config.WS_BASE_PATH,
+
+  // Fase 1: '/ws'
+  // Fase 2: '/ws/game/server-X/' (para roteamento NGINX)
+  getConnectionPath: (roomId?: string): string => {
+    if (config.DISTRIBUTED_MODE && roomId) {
+      // Fase 2: Path específico do servidor
+      return `${config.WS_BASE_PATH}/game/${config.SERVICE_ID}/${roomId}`;
+    }
+
+    // Fase 1: Path simples
+    return config.WS_BASE_PATH;
+  },
+
+  // WebSocket Server options
+  server: {
+    port: config.WS_PORT,
+    path: config.WS_BASE_PATH,
+
+    // Connection limits
+    maxPayload: 1024 * 1024, // 1MB
+    backlog: 511,
+
+    // Timeouts
+    handshakeTimeout: 5000,
+
+    // Compression
+    perMessageDeflate: {
+      zlibDeflateOptions: {
+        level: 3,
+        chunkSize: 1024,
+      },
+      threshold: 1024,
+      concurrencyLimit: 10,
+      serverMaxNoContextTakeover: false,
+      clientMaxNoContextTakeover: false,
+      serverMaxWindowBits: 15,
+      clientMaxWindowBits: 15,
+    },
+  },
+
+  // Heartbeat configuration
+  heartbeat: {
+    interval: 30000, // 30 seconds
+    timeout: 5000,   // 5 seconds to respond
+  },
+
+  // Reconnection settings
+  reconnection: {
+    timeout: 120000, // 2 minutes before removing player
+    maxAttempts: 5,
+  },
+} as const;
+
+// =============================================================================
+// TYPE DEFINITIONS
+// =============================================================================
+export interface WebSocketConnection {
+  ws: WebSocket;
+  userId: string;
+  username: string;
+  roomId?: string;
+  isAlive: boolean;
+  lastPing: number;
+  reconnectAttempts: number;
+  metadata: {
+    userAgent?: string;
+    ip?: string;
+    connectedAt: Date;
+  };
+}
+
+export interface WebSocketMessage {
+  type: string;
+  data?: any;
+  timestamp?: string;
+  messageId?: string;
+}
+
+// Prepared for NGINX routing (Phase 2)
+export interface ConnectionContext {
+  roomId?: string;
+  serverId?: string;
+  userId: string;
+  username: string;
+  isSpectator?: boolean;
+}
+
+// =============================================================================
+// URL PARSING FOR ROUTING
+// =============================================================================
+export function parseWebSocketURL(url: string): {
+  roomId?: string;
+  serverId?: string;
+  isValid: boolean;
+  path: string;
+} {
+  try {
+    const urlObj = new URL(url, 'ws://localhost');
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+
+    // Remove 'ws' from path parts
+    if (pathParts[0] === 'ws') {
+      pathParts.shift();
+    }
+
+    // Fase 2 pattern: /ws/game/server-X/room-123
+    if (config.DISTRIBUTED_MODE && pathParts.length >= 3) {
+      if (pathParts[0] === 'game') {
+        return {
+          serverId: pathParts[1],
+          roomId: pathParts[2],
+          isValid: true,
+          path: urlObj.pathname,
+        };
+      }
+    }
+
+    // Fase 1 pattern: /ws or /ws/room-123
+    if (pathParts.length === 0) {
+      // Just /ws
+      return {
+        isValid: true,
+        path: urlObj.pathname,
+      };
+    }
+
+    if (pathParts.length === 1) {
+      // /ws/room-123
+      return {
+        roomId: pathParts[0],
+        isValid: true,
+        path: urlObj.pathname,
+      };
+    }
+
+    return {
+      isValid: false,
+      path: urlObj.pathname,
+    };
+  } catch {
+    return {
+      isValid: false,
+      path: url,
+    };
+  }
+}
+
+// =============================================================================
+// CONNECTION METADATA EXTRACTION
+// =============================================================================
+export function extractConnectionMetadata(request: IncomingMessage): {
+  userAgent?: string;
+  ip?: string;
+  origin?: string;
+} {
+  const forwarded = request.headers['x-forwarded-for'];
+  const realIp = request.headers['x-real-ip'];
+
+  let ip = request.socket.remoteAddress;
+
+  // Handle forwarded IPs (behind proxy)
+  if (typeof forwarded === 'string') {
+    ip = forwarded.split(',')[0].trim();
+  } else if (typeof realIp === 'string') {
+    ip = realIp;
+  }
+
+  return {
+    userAgent: request.headers['user-agent'],
+    ip,
+    origin: request.headers.origin,
+  };
+}
+
+// =============================================================================
+// MESSAGE VALIDATION
+// =============================================================================
+export function validateWebSocketMessage(data: any): {
+  isValid: boolean;
+  message?: WebSocketMessage;
+  error?: string;
+} {
+  try {
+    let parsed: any;
+
+    if (typeof data === 'string') {
+      parsed = JSON.parse(data);
+    } else {
+      parsed = data;
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return {
+        isValid: false,
+        error: 'Message must be a valid JSON object',
+      };
+    }
+
+    if (!parsed.type || typeof parsed.type !== 'string') {
+      return {
+        isValid: false,
+        error: 'Message must have a valid type field',
+      };
+    }
+
+    return {
+      isValid: true,
+      message: {
+        type: parsed.type,
+        data: parsed.data,
+        timestamp: parsed.timestamp || new Date().toISOString(),
+        messageId: parsed.messageId,
+      },
+    };
+  } catch (error) {
+    return {
+      isValid: false,
+      error: 'Invalid JSON format',
+    };
+  }
+}
+
+// =============================================================================
+// WEBSOCKET RESPONSE HELPERS
+// =============================================================================
+export function createWebSocketResponse(
+  type: string,
+  data?: any,
+  messageId?: string
+): string {
+  return JSON.stringify({
+    type,
+    data,
+    timestamp: new Date().toISOString(),
+    messageId,
+  });
+}
+
+export function createErrorResponse(message: string, code?: string): string {
+  return createWebSocketResponse('error', {
+    message,
+    code,
+  });
+}
+
+export function createSuccessResponse(data?: any, messageId?: string): string {
+  return createWebSocketResponse('success', data, messageId);
+}
+
+// =============================================================================
+// HEARTBEAT HELPERS
+// =============================================================================
+export function createPingMessage(): string {
+  return createWebSocketResponse('ping', {
+    timestamp: Date.now(),
+  });
+}
+
+export function createPongMessage(): string {
+  return createWebSocketResponse('pong', {
+    timestamp: Date.now(),
+  });
+}
+</file>
+
+<file path="backend/src/server.ts">
+// 🐺 LOBISOMEM ONLINE - Server Entry Point
+// ⚠️ CRÍTICO: Inicialização preparada para migração Fase 1 → Fase 2
+
+import http from 'http';
+import app from './app';
+import { config, validateConfig } from '@/config/environment';
+import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
+import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
+
+// Services will be imported and initialized as they are created
+// import { WebSocketManager } from '@/websocket/WebSocketManager';
+// import { ServiceFactory } from '@/services/infrastructure/ServiceFactory';
+
+// =============================================================================
+// SERVER INITIALIZATION
+// =============================================================================
+async function startServer(): Promise<void> {
+  try {
+    console.log('🐺 Starting Werewolf Online Server...');
+
+    // Validate configuration
+    validateConfig();
+
+    // Connect to databases
+    console.log('📡 Connecting to services...');
+    await connectDatabase();
+    await connectRedis();
+
+    // Initialize services (Phase 1: All in one, Phase 2: Separate)
+    console.log('🔧 Initializing services...');
+    // TODO: Initialize services as they are created
+    // const serviceFactory = new ServiceFactory();
+    // const gameStateService = serviceFactory.getGameStateService();
+    // const eventBus = serviceFactory.getEventBus();
+
+    // Create HTTP server
+    const server = http.createServer(app);
+
+    // Initialize WebSocket (Phase 1: Integrated, Phase 2: Separate service)
+    if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
+      console.log('🔌 Setting up WebSocket server...');
+      // TODO: Initialize WebSocket manager
+      // const wsManager = new WebSocketManager(gameStateService, eventBus, config);
+      // wsManager.setupWebSocketServer(server);
+    }
+
+    // Service registration (Phase 2)
+    if (config.DISTRIBUTED_MODE) {
+      console.log('📋 Registering service...');
+      // TODO: Register service in Redis
+      // const serviceRegistry = serviceFactory.getServiceRegistry();
+      // await serviceRegistry.registerService(config.SERVICE_ID, {
+      //   type: config.SERVICE_TYPE,
+      //   host: 'localhost',
+      //   port: config.PORT,
+      //   capabilities: config.IS_GAME_SERVICE ? ['werewolf-game'] : ['lobby'],
+      //   maxRooms: config.IS_GAME_SERVICE ? 10 : 0,
+      // });
+    }
+
+    // Start listening
+    server.listen(config.PORT, () => {
+      console.log('🚀 Server started successfully!');
+      console.log(`   🌐 HTTP: http://localhost:${config.PORT}`);
+      console.log(`   🔌 WebSocket: ws://localhost:${config.PORT}${config.WS_BASE_PATH}`);
+      console.log(`   📊 Health: http://localhost:${config.PORT}/health`);
+      console.log(`   🏗️  Architecture: ${config.DISTRIBUTED_MODE ? 'Distributed' : 'Monolithic'}`);
+      console.log(`   🎯 Service Type: ${config.SERVICE_TYPE}`);
+      console.log(`   💾 Storage: ${config.STORAGE_TYPE}`);
+      console.log('');
+      console.log('🎮 Ready to accept players!');
+    });
+
+    // Setup graceful shutdown
+    setupGracefulShutdown(server);
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// =============================================================================
+// GRACEFUL SHUTDOWN
+// =============================================================================
+function setupGracefulShutdown(server: http.Server): void {
+  const shutdown = async (signal: string) => {
+    console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+
+    try {
+      // Stop accepting new connections
+      server.close(() => {
+        console.log('🔌 HTTP server closed');
+      });
+
+      // Unregister service (Phase 2)
+      if (config.DISTRIBUTED_MODE) {
+        console.log('📋 Unregistering service...');
+        // TODO: Unregister from service registry
+        // const serviceRegistry = ServiceFactory.getServiceRegistry();
+        // await serviceRegistry.unregisterService(config.SERVICE_ID);
+      }
+
+      // Close WebSocket connections
+      console.log('🔌 Closing WebSocket connections...');
+      // TODO: Close WebSocket connections gracefully
+      // wsManager.closeAllConnections();
+
+      // Close database connections
+      await shutdownDatabase();
+      await shutdownRedis();
+
+      console.log('✅ Graceful shutdown completed');
+      process.exit(0);
+    } catch (error) {
+      console.error('❌ Error during shutdown:', error);
+      process.exit(1);
+    }
+  };
+
+  // Listen for termination signals
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+    shutdown('UNCAUGHT_EXCEPTION');
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    shutdown('UNHANDLED_REJECTION');
+  });
+}
+
+// =============================================================================
+// DEVELOPMENT HELPERS
+// =============================================================================
+if (config.IS_DEVELOPMENT) {
+  // Hot reload handling
+  if (module.hot) {
+    module.hot.accept();
+    module.hot.dispose(() => {
+      console.log('🔄 Hot reload triggered');
+    });
+  }
+}
+
+// =============================================================================
+// START SERVER
+// =============================================================================
+if (require.main === module) {
+  startServer();
+}
+
+export default app;
+</file>
+
+<file path="backend/src/types/api.ts">
+// 🐺 LOBISOMEM ONLINE - API Types
+// Common API response types and request interfaces
+
+// =============================================================================
+// STANDARD API RESPONSES
+// =============================================================================
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+  timestamp: string;
+}
+
+export interface ApiError {
+  success: false;
+  error: string;
+  message: string;
+  code?: string;
+  details?: any;
+  timestamp: string;
+}
+
+export interface ApiSuccess<T = any> {
+  success: true;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
+// =============================================================================
+// PAGINATION
+// =============================================================================
+export interface PaginationQuery {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+}
+
+// =============================================================================
+// REQUEST CONTEXT
+// =============================================================================
+export interface AuthenticatedRequest {
+  userId: string;
+  username: string;
+  email: string;
+}
+
+export interface RequestContext extends AuthenticatedRequest {
+  ip?: string;
+  userAgent?: string;
+  timestamp: Date;
+}
+
+// =============================================================================
+// VALIDATION TYPES
+// =============================================================================
+export interface ValidationError {
+  field: string;
+  message: string;
+  value?: any;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+}
+
+// =============================================================================
+// SERVICE INTERFACES (CRITICAL FOR PHASE 2)
+// =============================================================================
+
+// Base service interface
+export interface IService {
+  readonly serviceName: string;
+  healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }>;
+}
+
+// Event bus for inter-service communication
+export interface IEventBus {
+  publish<T>(channel: string, event: T): Promise<void>;
+  subscribe<T>(channel: string, handler: (event: T) => void): Promise<void>;
+  unsubscribe(channel: string): Promise<void>;
+}
+
+// Service registry for discovery (Phase 2)
+export interface IServiceRegistry {
+  registerService(serviceId: string, metadata: ServiceMetadata): Promise<void>;
+  getAvailableServices(serviceType: string): Promise<string[]>;
+  unregisterService(serviceId: string): Promise<void>;
+  getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null>;
+}
+
+export interface ServiceMetadata {
+  id: string;
+  type: 'lobby' | 'game' | 'chat';
+  host: string;
+  port: number;
+  capabilities: string[];
+  maxRooms?: number;
+  currentRooms?: number;
+  status: 'healthy' | 'unhealthy';
+  lastHeartbeat: Date;
+}
+
+// =============================================================================
+// HTTP STATUS HELPERS
+// =============================================================================
+export const HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503,
+} as const;
+
+// =============================================================================
+// API ENDPOINT TYPES
+// =============================================================================
+export interface ApiEndpoint {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  path: string;
+  requiresAuth: boolean;
+  rateLimited: boolean;
+  description: string;
+}
+
+// =============================================================================
+// RATE LIMITING
+// =============================================================================
+export interface RateLimitConfig {
+  windowMs: number;
+  maxRequests: number;
+  message?: string;
+  skipSuccessfulRequests?: boolean;
+  skipFailedRequests?: boolean;
+}
+
+export interface RateLimitInfo {
+  limit: number;
+  remaining: number;
+  resetTime: Date;
+}
+
+// =============================================================================
+// HEALTH CHECK
+// =============================================================================
+export interface HealthCheck {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  service: {
+    id: string;
+    type: string;
+    mode: string;
+  };
+  database: {
+    status: 'healthy' | 'unhealthy';
+    message: string;
+    timestamp: string;
+  };
+  redis: {
+    status: 'healthy' | 'unhealthy';
+    message: string;
+    timestamp: string;
+  };
+  uptime: number;
+  memory: NodeJS.MemoryUsage;
+}
+</file>
+
+<file path="backend/src/types/game.ts">
+// 🐺 LOBISOMEM ONLINE - Game Types
+// Type definitions for game-related functionality
+
+// =============================================================================
+// GAME ENUMS
+// =============================================================================
+export enum GameStatus {
+  WAITING = 'WAITING',
+  STARTING = 'STARTING',
+  PLAYING = 'PLAYING',
+  FINISHED = 'FINISHED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum GamePhase {
+  LOBBY = 'LOBBY',
+  NIGHT = 'NIGHT',
+  DAY = 'DAY',
+  VOTING = 'VOTING',
+  ENDED = 'ENDED',
+}
+
+export enum Role {
+  // Town roles
+  VILLAGER = 'VILLAGER',
+  SHERIFF = 'SHERIFF',
+  DOCTOR = 'DOCTOR',
+  VIGILANTE = 'VIGILANTE',
+
+  // Werewolf roles
+  WEREWOLF = 'WEREWOLF',
+  WEREWOLF_KING = 'WEREWOLF_KING',
+
+  // Neutral roles
+  JESTER = 'JESTER',
+  SERIAL_KILLER = 'SERIAL_KILLER',
+}
+
+export enum Faction {
+  TOWN = 'TOWN',
+  WEREWOLF = 'WEREWOLF',
+  NEUTRAL = 'NEUTRAL',
+}
+
+export enum ActionType {
+  INVESTIGATE = 'INVESTIGATE',
+  PROTECT = 'PROTECT',
+  KILL = 'KILL',
+  VOTE = 'VOTE',
+}
+
+// =============================================================================
+// GAME CONFIGURATION
+// =============================================================================
+export interface GameConfig {
+  minPlayers: number;
+  maxPlayers: number;
+  maxSpectators: number;
+  nightDuration: number; // milliseconds
+  dayDuration: number;   // milliseconds
+  votingDuration: number; // milliseconds
+  roleDistribution: RoleDistribution;
+  allowSpectators: boolean;
+  randomizeNicknames: boolean;
+}
+
+export interface RoleDistribution {
+  [Role.VILLAGER]: number;
+  [Role.SHERIFF]: number;
+  [Role.DOCTOR]: number;
+  [Role.VIGILANTE]: number;
+  [Role.WEREWOLF]: number;
+  [Role.WEREWOLF_KING]: number;
+  [Role.JESTER]: number;
+  [Role.SERIAL_KILLER]: number;
+}
+
+// =============================================================================
+// PLAYER STATE
+// =============================================================================
+export interface Player {
+  id: string;
+  userId: string;
+  username: string;
+  nickname?: string; // Temático (ex: "João Ferreiro")
+  avatar?: string;
+  role?: Role;
+  faction?: Faction;
+  isAlive: boolean;
+  isHost: boolean;
+  isReady: boolean;
+  isSpectator: boolean;
+
+  // Game state
+  votedFor?: string; // Player ID
+  votesReceived: number;
+  hasActed: boolean; // Used current phase action
+
+  // Role-specific state
+  roleData: Record<string, any>;
+
+  // Connection state
+  isConnected: boolean;
+  lastSeen: Date;
+  reconnectAttempts: number;
+}
+
+// =============================================================================
+// GAME STATE
+// =============================================================================
+export interface GameState {
+  gameId: string;
+  roomId: string;
+  status: GameStatus;
+  phase: GamePhase;
+
+  // Players
+  players: Player[];
+  spectators: Player[];
+  hostId: string;
+
+  // Game progress
+  currentDay: number;
+  timeLeft: number; // milliseconds remaining in current phase
+
+  // Events and history
+  events: GameEvent[];
+  eliminatedPlayers: EliminatedPlayer[];
+
+  // Winners (when game ends)
+  winners?: {
+    faction: Faction;
+    players: string[]; // Player IDs
+  };
+
+  // Configuration
+  config: GameConfig;
+
+  // Timestamps
+  createdAt: Date;
+  startedAt?: Date;
+  finishedAt?: Date;
+}
+
+// =============================================================================
+// GAME EVENTS
+// =============================================================================
+export interface GameEvent {
+  id: string;
+  type: GameEventType;
+  phase: GamePhase;
+  day: number;
+  data: Record<string, any>;
+  timestamp: Date;
+  visible: boolean; // Whether event is visible to players
+}
+
+export enum GameEventType {
+  GAME_STARTED = 'GAME_STARTED',
+  PHASE_CHANGED = 'PHASE_CHANGED',
+  PLAYER_JOINED = 'PLAYER_JOINED',
+  PLAYER_LEFT = 'PLAYER_LEFT',
+  PLAYER_DIED = 'PLAYER_DIED',
+  PLAYER_VOTED = 'PLAYER_VOTED',
+  PLAYER_EXECUTED = 'PLAYER_EXECUTED',
+  ACTION_PERFORMED = 'ACTION_PERFORMED',
+  GAME_ENDED = 'GAME_ENDED',
+}
+
+export interface EliminatedPlayer {
+  playerId: string;
+  username: string;
+  role: Role;
+  faction: Faction;
+  eliminatedBy: 'VOTE' | 'WEREWOLF' | 'VIGILANTE' | 'SERIAL_KILLER';
+  day: number;
+  phase: GamePhase;
+  timestamp: Date;
+}
+
+// =============================================================================
+// ACTIONS
+// =============================================================================
+export interface GameAction {
+  id: string;
+  playerId: string;
+  type: ActionType;
+  targetId?: string; // Target player ID
+  data?: Record<string, any>;
+  phase: GamePhase;
+  day: number;
+  timestamp: Date;
+}
+
+export interface ActionResult {
+  success: boolean;
+  message?: string;
+  effects?: ActionEffect[];
+}
+
+export interface ActionEffect {
+  type: 'PROTECT' | 'INVESTIGATE' | 'KILL' | 'BLOCK';
+  targetId: string;
+  data?: Record<string, any>;
+}
+
+// =============================================================================
+// VOTING
+// =============================================================================
+export interface Vote {
+  voterId: string;
+  targetId: string;
+  timestamp: Date;
+}
+
+export interface VotingResult {
+  eliminated?: {
+    playerId: string;
+    username: string;
+    role: Role;
+    voteCount: number;
+  };
+  votes: VoteCount[];
+  isTie: boolean;
+}
+
+export interface VoteCount {
+  playerId: string;
+  username: string;
+  votes: number;
+  voters: string[]; // Voter IDs
+}
+
+// =============================================================================
+// ROLE DEFINITIONS
+// =============================================================================
+export interface RoleDefinition {
+  role: Role;
+  faction: Faction;
+  name: string;
+  description: string;
+  abilities: string[];
+  goalDescription: string;
+
+  // Game mechanics
+  canAct: boolean;
+  actsDuring: GamePhase[];
+  hasNightChat: boolean; // Can chat during night (werewolves)
+  immuneToInvestigation: boolean; // Werewolf King
+
+  // Action limits
+  maxActions?: number; // Vigilante has 3 kills
+  cooldown?: number; // Actions per game/phase
+}
+
+// =============================================================================
+// WIN CONDITIONS
+// =============================================================================
+export interface WinCondition {
+  faction: Faction;
+  condition: WinConditionType;
+  achieved: boolean;
+  players: string[]; // Player IDs of winners
+}
+
+export enum WinConditionType {
+  TOWN_WINS = 'TOWN_WINS', // All werewolves eliminated
+  WEREWOLF_WINS = 'WEREWOLF_WINS', // Werewolves >= town
+  JESTER_WINS = 'JESTER_WINS', // Jester executed by vote
+  SERIAL_KILLER_WINS = 'SERIAL_KILLER_WINS', // Last player standing
+}
+
+// =============================================================================
+// GAME CREATION & MANAGEMENT
+// =============================================================================
+export interface CreateGameRequest {
+  roomId: string;
+  config?: Partial<GameConfig>;
+}
+
+export interface JoinGameRequest {
+  gameId: string;
+  asSpectator?: boolean;
+}
+
+export interface GameActionRequest {
+  type: ActionType;
+  targetId?: string;
+  data?: Record<string, any>;
+}
+</file>
+
+<file path="backend/src/types/room.ts">
+// 🐺 LOBISOMEM ONLINE - Room Types
+// Type definitions for room/lobby functionality
+
+// =============================================================================
+// ROOM ENUMS
+// =============================================================================
+export enum RoomStatus {
+  WAITING = 'WAITING',   // Waiting for players
+  PLAYING = 'PLAYING',   // Game in progress
+  FINISHED = 'FINISHED', // Game completed
+}
+
+// =============================================================================
+// ROOM INTERFACES
+// =============================================================================
+export interface Room {
+  id: string;
+  name: string;
+  code?: string; // For private rooms (6-digit code)
+  isPrivate: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  status: RoomStatus;
+
+  // Host information
+  hostId: string;
+  hostUsername: string;
+
+  // Current counts
+  currentPlayers: number;
+  currentSpectators: number;
+
+  // Server assignment (Phase 2)
+  serverId?: string;
+
+  // Timestamps
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RoomMetadata {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  currentPlayers: number;
+  maxPlayers: number;
+  currentSpectators: number;
+  maxSpectators: number;
+  status: RoomStatus;
+  hostUsername: string;
+  createdAt: Date;
+  canJoin: boolean; // Calculated field
+  isFull: boolean;  // Calculated field
+}
+
+export interface RoomPlayer {
+  id: string;
+  userId: string;
+  username: string;
+  avatar?: string;
+  isHost: boolean;
+  isReady: boolean;
+  isSpectator: boolean;
+  isConnected: boolean;
+  joinedAt: Date;
+  lastSeen: Date;
+}
+
+// =============================================================================
+// ROOM MANAGEMENT
+// =============================================================================
+export interface CreateRoomRequest {
+  name: string;
+  isPrivate?: boolean;
+  maxPlayers?: number;
+  maxSpectators?: number;
+}
+
+export interface CreateRoomResponse {
+  room: Room;
+  joinUrl: string; // WebSocket URL for Phase 2
+  code?: string;   // Private room code if applicable
+}
+
+export interface JoinRoomRequest {
+  roomId?: string;
+  code?: string; // For joining by code
+  asSpectator?: boolean;
+}
+
+export interface JoinRoomResponse {
+  room: Room;
+  players: RoomPlayer[];
+  spectators: RoomPlayer[];
+  joinUrl: string; // WebSocket URL
+  yourRole: 'PLAYER' | 'SPECTATOR' | 'HOST';
+}
+
+export interface LeaveRoomRequest {
+  roomId: string;
+}
+
+export interface UpdateRoomRequest {
+  name?: string;
+  maxPlayers?: number;
+  maxSpectators?: number;
+}
+
+export interface KickPlayerRequest {
+  playerId: string;
+}
+
+// =============================================================================
+// ROOM QUERIES
+// =============================================================================
+export interface ListRoomsQuery {
+  status?: RoomStatus;
+  includePrivate?: boolean;
+  hostId?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: 'createdAt' | 'name' | 'playerCount';
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface ListRoomsResponse {
+  rooms: RoomMetadata[];
+  total: number;
+  hasMore: boolean;
+}
+
+// =============================================================================
+// ROOM EVENTS (for real-time updates)
+// =============================================================================
+export interface RoomEvent {
+  type: RoomEventType;
+  roomId: string;
+  data: any;
+  timestamp: Date;
+}
+
+export enum RoomEventType {
+  ROOM_CREATED = 'ROOM_CREATED',
+  ROOM_UPDATED = 'ROOM_UPDATED',
+  ROOM_DELETED = 'ROOM_DELETED',
+  PLAYER_JOINED = 'PLAYER_JOINED',
+  PLAYER_LEFT = 'PLAYER_LEFT',
+  PLAYER_READY = 'PLAYER_READY',
+  PLAYER_KICKED = 'PLAYER_KICKED',
+  HOST_CHANGED = 'HOST_CHANGED',
+  GAME_STARTING = 'GAME_STARTING',
+  GAME_STARTED = 'GAME_STARTED',
+}
+
+// =============================================================================
+// ROOM CONFIGURATION
+// =============================================================================
+export interface RoomConfig {
+  maxPlayers: number;
+  maxSpectators: number;
+  allowSpectators: boolean;
+  autoStartWhenFull: boolean;
+  kickAfkPlayers: boolean;
+  afkTimeoutMinutes: number;
+  requireReadyToStart: boolean;
+}
+</file>
+
+<file path="backend/src/types/user.ts">
+// 🐺 LOBISOMEM ONLINE - User Types
+// Type definitions for user-related functionality
+
+export interface User {
+  id: string;
+  email: string;
+  username: string;
+  avatar?: string;
+  level: number;
+  totalGames: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
+  createdAt: Date;
+  updatedAt: Date;
+  lastLoginAt?: Date;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  username: string;
+  password: string;
+}
+
+export interface UpdateUserRequest {
+  username?: string;
+  avatar?: string;
+}
+
+export interface UserStatistics {
+  totalGames: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
+  level: number;
+  favoriteRole?: string;
+  longestWinStreak: number;
+  roleStats: RoleStatistics[];
+  recentGames: GameSummary[];
+}
+
+export interface RoleStatistics {
+  role: string;
+  gamesPlayed: number;
+  wins: number;
+  winRate: number;
+}
+
+export interface GameSummary {
+  gameId: string;
+  role: string;
+  faction: string;
+  won: boolean;
+  survived: boolean;
+  playedAt: Date;
+  duration: number; // in minutes
+}
+
+export interface UserProfile {
+  user: Omit<User, 'passwordHash'>;
+  statistics: UserStatistics;
+  achievements: UserAchievement[];
+}
+
+export interface UserAchievement {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  icon?: string;
+  category: string;
+  points: number;
+  progress: Record<string, any>;
+  completed: boolean;
+  unlockedAt?: Date;
+}
+
+// Authentication types
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  user: Omit<User, 'passwordHash'>;
+  accessToken: string;
+  refreshToken?: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  username: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+  confirmPassword: string;
+}
+
+// Leaderboard types
+export interface LeaderboardEntry {
+  rank: number;
+  user: {
+    id: string;
+    username: string;
+    avatar?: string;
+    level: number;
+  };
+  points: number;
+  totalGames: number;
+  winRate: number;
+  favoriteRole?: string;
+}
+
+export interface LeaderboardQuery {
+  period?: 'week' | 'month' | 'all';
+  role?: string;
+  limit?: number;
+  offset?: number;
+}
+</file>
+
+<file path="backend/src/types/websocket.ts">
+// 🐺 LOBISOMEM ONLINE - WebSocket Types
+// ⚠️ CRÍTICO: Estruturado para roteamento NGINX na Fase 2
+
+// =============================================================================
+// WEBSOCKET MESSAGE STRUCTURE
+// =============================================================================
+export interface WebSocketMessage {
+  type: string;
+  data?: any;
+  timestamp: string;
+  messageId?: string;
+}
+
+export interface WebSocketResponse extends WebSocketMessage {
+  success?: boolean;
+  error?: string;
+}
+
+// =============================================================================
+// CLIENT → SERVER EVENTS
+// =============================================================================
+export interface ClientEvents {
+  // Connection management
+  'ping': {};
+  'pong': {};
+  'heartbeat': { timestamp: number };
+
+  // Room events
+  'join-room': { roomId: string; asSpectator?: boolean };
+  'leave-room': { roomId: string };
+  'player-ready': { ready: boolean };
+  'kick-player': { playerId: string };
+  'start-game': {};
+
+  // Game events
+  'game-action': {
+    type: 'INVESTIGATE' | 'PROTECT' | 'KILL' | 'VOTE';
+    targetId?: string;
+    data?: any;
+  };
+  'vote': { targetId: string };
+  'unvote': {};
+
+  // Chat events
+  'chat-message': {
+    message: string;
+    channel?: 'public' | 'werewolf' | 'spectator';
+  };
+
+  // Spectator events
+  'spectate-room': { roomId: string };
+  'stop-spectating': {};
+}
+
+// =============================================================================
+// SERVER → CLIENT EVENTS
+// =============================================================================
+export interface ServerEvents {
+  // Connection events
+  'connected': { userId: string; username: string };
+  'disconnected': { reason?: string };
+  'error': { message: string; code?: string };
+  'ping': { timestamp: number };
+  'pong': { timestamp: number };
+
+  // Room events
+  'room-joined': {
+    room: {
+      id: string;
+      name: string;
+      hostId: string;
+      status: string;
+    };
+    players: Array<{
+      id: string;
+      username: string;
+      isHost: boolean;
+      isReady: boolean;
+      isSpectator: boolean;
+    }>;
+    yourRole: 'PLAYER' | 'SPECTATOR' | 'HOST';
+  };
+
+  'room-left': { roomId: string };
+
+  'player-joined': {
+    player: {
+      id: string;
+      username: string;
+      isSpectator: boolean;
+    };
+  };
+
+  'player-left': {
+    playerId: string;
+    username: string;
+  };
+
+  'player-ready': {
+    playerId: string;
+    ready: boolean;
+  };
+
+  'player-kicked': {
+    playerId: string;
+    kickedBy: string;
+  };
+
+  'host-changed': {
+    newHostId: string;
+    newHostUsername: string;
+  };
+
+  // Game events
+  'game-starting': {
+    countdown: number;
+  };
+
+  'game-started': {
+    gameId: string;
+    yourRole: string;
+    yourFaction: string;
+    players: Array<{
+      id: string;
+      username: string;
+      nickname?: string;
+      isAlive: boolean;
+    }>;
+  };
+
+  'game-state': {
+    gameId: string;
+    status: string;
+    phase: string;
+    timeLeft: number;
+    currentDay: number;
+    players: any[];
+    events: any[];
+  };
+
+  'phase-changed': {
+    phase: 'NIGHT' | 'DAY' | 'VOTING';
+    timeLeft: number;
+    day: number;
+  };
+
+  'player-died': {
+    playerId: string;
+    username: string;
+    role: string;
+    cause: 'VOTE' | 'WEREWOLF' | 'VIGILANTE' | 'SERIAL_KILLER';
+  };
+
+  'action-result': {
+    success: boolean;
+    message?: string;
+    result?: any;
+  };
+
+  'voting-started': {
+    timeLeft: number;
+  };
+
+  'vote-cast': {
+    voterId: string;
+    targetId: string;
+  };
+
+  'voting-result': {
+    eliminated?: {
+      playerId: string;
+      username: string;
+      role: string;
+      voteCount: number;
+    };
+    votes: Array<{
+      playerId: string;
+      username: string;
+      votes: number;
+    }>;
+    isTie: boolean;
+  };
+
+  'game-ended': {
+    winners: {
+      faction: string;
+      players: string[];
+    };
+    results: Array<{
+      playerId: string;
+      username: string;
+      role: string;
+      won: boolean;
+      survived: boolean;
+    }>;
+  };
+
+  // Chat events
+  'chat-message': {
+    id: string;
+    userId: string;
+    username: string;
+    message: string;
+    channel: string;
+    timestamp: string;
+    filtered?: boolean;
+  };
+
+  // Investigation results (private to Sheriff)
+  'investigation-result': {
+    targetId: string;
+    targetUsername: string;
+    result: 'SUSPICIOUS' | 'NOT_SUSPICIOUS';
+  };
+
+  // Spectator events
+  'spectator-joined': {
+    spectatorId: string;
+    username: string;
+  };
+
+  'spectator-left': {
+    spectatorId: string;
+    username: string;
+  };
+}
+
+// =============================================================================
+// WEBSOCKET CHANNELS
+// =============================================================================
+export type WebSocketChannel =
+  | 'lobby'          // Global lobby chat
+  | 'room'           // Room waiting area
+  | 'game-public'    // Day phase public chat
+  | 'game-werewolf'  // Night phase werewolf chat
+  | 'game-spectator' // Spectator chat
+  | 'game-system';   // System messages
+
+// =============================================================================
+// CONNECTION STATE
+// =============================================================================
+export interface ConnectionState {
+  userId: string;
+  username: string;
+  roomId?: string;
+  gameId?: string;
+  isSpectator: boolean;
+  isAlive: boolean;
+  role?: string;
+
+  // Connection health
+  isConnected: boolean;
+  lastPing: number;
+  reconnectAttempts: number;
+
+  // Metadata
+  connectedAt: Date;
+  userAgent?: string;
+  ip?: string;
+}
+
+// =============================================================================
+// ERROR TYPES
+// =============================================================================
+export interface WebSocketError {
+  code: WebSocketErrorCode;
+  message: string;
+  data?: any;
+}
+
+export enum WebSocketErrorCode {
+  INVALID_TOKEN = 'INVALID_TOKEN',
+  ROOM_NOT_FOUND = 'ROOM_NOT_FOUND',
+  ROOM_FULL = 'ROOM_FULL',
+  NOT_IN_ROOM = 'NOT_IN_ROOM',
+  NOT_HOST = 'NOT_HOST',
+  GAME_ALREADY_STARTED = 'GAME_ALREADY_STARTED',
+  INVALID_ACTION = 'INVALID_ACTION',
+  ACTION_NOT_ALLOWED = 'ACTION_NOT_ALLOWED',
+  PLAYER_NOT_FOUND = 'PLAYER_NOT_FOUND',
+  ALREADY_VOTED = 'ALREADY_VOTED',
+  VOTING_NOT_ACTIVE = 'VOTING_NOT_ACTIVE',
+  RATE_LIMITED = 'RATE_LIMITED',
+  INVALID_MESSAGE = 'INVALID_MESSAGE',
+}
+
+// =============================================================================
+// HEARTBEAT & RECONNECTION
+// =============================================================================
+export interface HeartbeatMessage {
+  type: 'ping' | 'pong';
+  timestamp: number;
+  serverId?: string;
+}
+
+export interface ReconnectionContext {
+  userId: string;
+  roomId?: string;
+  gameId?: string;
+  lastActivity: Date;
+  attempts: number;
+  maxAttempts: number;
+  timeout: number;
+}
+</file>
+
+<file path="backend/src/utils/constants.ts">
+// 🐺 LOBISOMEM ONLINE - Constants
+// Game rules, limits, and configuration constants
+
+import { Role, Faction, RoleDefinition } from '@/types/game';
+
+// =============================================================================
+// GAME LIMITS
+// =============================================================================
+export const GAME_LIMITS = {
+  MIN_PLAYERS: 6,
+  MAX_PLAYERS: 15,
+  MAX_SPECTATORS: 5,
+
+  // Room limits
+  MAX_ROOM_NAME_LENGTH: 30,
+  ROOM_CODE_LENGTH: 6,
+
+  // Time limits (milliseconds)
+  NIGHT_DURATION: 60000,  // 60 seconds
+  DAY_DURATION: 120000,   // 2 minutes
+  VOTING_DURATION: 30000, // 30 seconds
+
+  // Chat limits
+  MAX_MESSAGE_LENGTH: 500,
+  CHAT_RATE_LIMIT: 5, // messages per 10 seconds
+
+  // Reconnection
+  RECONNECT_TIMEOUT: 120000, // 2 minutes
+  MAX_RECONNECT_ATTEMPTS: 5,
+
+  // Heartbeat
+  HEARTBEAT_INTERVAL: 30000, // 30 seconds
+  HEARTBEAT_TIMEOUT: 5000,   // 5 seconds
+} as const;
+
+// =============================================================================
+// ROLE DEFINITIONS
+// =============================================================================
+export const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
+  [Role.VILLAGER]: {
+    role: Role.VILLAGER,
+    faction: Faction.TOWN,
+    name: 'Aldeão',
+    description: 'Cidadão comum da vila',
+    abilities: ['Votar durante o dia'],
+    goalDescription: 'Eliminar todos os Lobisomens',
+    canAct: false,
+    actsDuring: [],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+  },
+
+  [Role.SHERIFF]: {
+    role: Role.SHERIFF,
+    faction: Faction.TOWN,
+    name: 'Investigador',
+    description: 'Investiga pessoas durante a noite',
+    abilities: ['Investigar uma pessoa por noite'],
+    goalDescription: 'Encontrar e eliminar todos os Lobisomens',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+  },
+
+  [Role.DOCTOR]: {
+    role: Role.DOCTOR,
+    faction: Faction.TOWN,
+    name: 'Médico',
+    description: 'Protege pessoas da morte durante a noite',
+    abilities: ['Proteger uma pessoa por noite', 'Não pode se proteger consecutivamente'],
+    goalDescription: 'Manter a vila viva e eliminar os Lobisomens',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+  },
+
+  [Role.VIGILANTE]: {
+    role: Role.VIGILANTE,
+    faction: Faction.TOWN,
+    name: 'Vigilante',
+    description: 'Pode matar suspeitos durante a noite',
+    abilities: ['Matar uma pessoa por noite (máximo 3 vezes)', 'Perde próxima ação se matar inocente'],
+    goalDescription: 'Eliminar os inimigos da vila',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+    maxActions: 3,
+  },
+
+  [Role.WEREWOLF]: {
+    role: Role.WEREWOLF,
+    faction: Faction.WEREWOLF,
+    name: 'Lobisomem',
+    description: 'Elimina aldeões durante a noite',
+    abilities: ['Votar em quem matar durante a noite', 'Chat secreto com outros Lobisomens'],
+    goalDescription: 'Igualar ou superar o número de aldeões',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: true,
+    immuneToInvestigation: false,
+  },
+
+  [Role.WEREWOLF_KING]: {
+    role: Role.WEREWOLF_KING,
+    faction: Faction.WEREWOLF,
+    name: 'Rei dos Lobisomens',
+    description: 'Líder da alcateia, imune à investigação',
+    abilities: ['Liderar votação de morte noturna', 'Imune ao Investigador', 'Chat secreto com Lobisomens'],
+    goalDescription: 'Comandar a alcateia para a vitória',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: true,
+    immuneToInvestigation: true,
+  },
+
+  [Role.JESTER]: {
+    role: Role.JESTER,
+    faction: Faction.NEUTRAL,
+    name: 'Bobo da Corte',
+    description: 'Vence sendo executado por votação',
+    abilities: ['Vencer se for executado durante o dia'],
+    goalDescription: 'Ser executado por votação popular',
+    canAct: false,
+    actsDuring: [],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+  },
+
+  [Role.SERIAL_KILLER]: {
+    role: Role.SERIAL_KILLER,
+    faction: Faction.NEUTRAL,
+    name: 'Assassino em Série',
+    description: 'Mata uma pessoa por noite, vence sozinho',
+    abilities: ['Matar uma pessoa por noite', 'Imune a proteção na primeira noite'],
+    goalDescription: 'Ser o último sobrevivente',
+    canAct: true,
+    actsDuring: ['NIGHT'],
+    hasNightChat: false,
+    immuneToInvestigation: false,
+  },
+};
+
+// =============================================================================
+// ROLE DISTRIBUTIONS BY PLAYER COUNT
+// =============================================================================
+export const ROLE_DISTRIBUTIONS = {
+  6: { // Minimum players
+    [Role.VILLAGER]: 1,
+    [Role.SHERIFF]: 1,
+    [Role.DOCTOR]: 1,
+    [Role.WEREWOLF]: 2,
+    [Role.WEREWOLF_KING]: 0,
+    [Role.VIGILANTE]: 0,
+    [Role.JESTER]: 1,
+    [Role.SERIAL_KILLER]: 0,
+  },
+
+  9: { // Medium game
+    [Role.VILLAGER]: 2,
+    [Role.SHERIFF]: 1,
+    [Role.DOCTOR]: 1,
+    [Role.VIGILANTE]: 1,
+    [Role.WEREWOLF]: 1,
+    [Role.WEREWOLF_KING]: 1,
+    [Role.JESTER]: 1,
+    [Role.SERIAL_KILLER]: 1,
+  },
+
+  12: { // Standard game
+    [Role.VILLAGER]: 4,
+    [Role.SHERIFF]: 1,
+    [Role.DOCTOR]: 1,
+    [Role.VIGILANTE]: 1,
+    [Role.WEREWOLF]: 2,
+    [Role.WEREWOLF_KING]: 1,
+    [Role.JESTER]: 1,
+    [Role.SERIAL_KILLER]: 1,
+  },
+
+  15: { // Maximum players
+    [Role.VILLAGER]: 6,
+    [Role.SHERIFF]: 1,
+    [Role.DOCTOR]: 1,
+    [Role.VIGILANTE]: 1,
+    [Role.WEREWOLF]: 3,
+    [Role.WEREWOLF_KING]: 1,
+    [Role.JESTER]: 1,
+    [Role.SERIAL_KILLER]: 1,
+  },
+} as const;
+
+// =============================================================================
+// THEMED NICKNAMES (MEDIEVAL PORTUGUESE)
+// =============================================================================
+export const THEMED_NICKNAMES = [
+  // Profissões
+  'João Ferreiro', 'Maria Padeira', 'Pedro Lenhador', 'Ana Tecelã',
+  'Carlos Moleiro', 'Isabel Costureira', 'Francisco Carpinteiro', 'Catarina Oleira',
+  'Manuel Sapateiro', 'Teresa Lavadeira', 'António Pedreiro', 'Beatriz Bordadeira',
+  'José Curtidor', 'Luísa Fiandeira', 'Miguel Cordoeiro', 'Clara Rendilheira',
+
+  // Nomes medievais
+  'Afonso o Bravo', 'Constança a Sábia', 'Nuno o Valente', 'Urraca a Bela',
+  'Sancho o Forte', 'Mafalda a Justa', 'Garcia o Leal', 'Elvira a Piedosa',
+  'Bermudo o Jovem', 'Teresa a Corajosa', 'Ramiro o Audaz', 'Sancha a Prudente',
+
+  // Alcunhas regionais
+  'Pedro do Norte', 'Maria da Ribeira', 'João da Montanha', 'Ana do Vale',
+  'Carlos da Floresta', 'Isabel da Ponte', 'Francisco da Torre', 'Catarina do Campo',
+  'Manuel do Rio', 'Teresa da Vila', 'António da Praça', 'Beatriz do Castelo',
+
+  // Características
+  'Rodrigo Barba-Ruiva', 'Leonor Olhos-Verdes', 'Vasco Perna-de-Pau', 'Marta Cabelo-Dourado',
+  'Egas Mão-de-Ferro', 'Violante Voz-Doce', 'Álvaro Pé-Ligeiro', 'Branca Riso-Fácil',
+] as const;
+
+// =============================================================================
+// CHAT CHANNELS
+// =============================================================================
+export const CHAT_CHANNELS = {
+  LOBBY: 'lobby',
+  ROOM: 'room',
+  PUBLIC: 'public',
+  WEREWOLF: 'werewolf',
+  SPECTATOR: 'spectator',
+  SYSTEM: 'system',
+} as const;
+
+// =============================================================================
+// INVESTIGATION RESULTS
+// =============================================================================
+export const INVESTIGATION_RESULTS = {
+  SUSPICIOUS: 'SUSPICIOUS',
+  NOT_SUSPICIOUS: 'NOT_SUSPICIOUS',
+} as const;
+
+// =============================================================================
+// WIN CONDITIONS
+// =============================================================================
+export const WIN_CONDITIONS = {
+  TOWN_WINS: 'All werewolves have been eliminated',
+  WEREWOLF_WINS: 'Werewolves equal or outnumber the town',
+  JESTER_WINS: 'Jester was executed by vote',
+  SERIAL_KILLER_WINS: 'Serial Killer is the last survivor',
+} as const;
+
+// =============================================================================
+// ACHIEVEMENT CATEGORIES
+// =============================================================================
+export const ACHIEVEMENT_CATEGORIES = {
+  FIRST_TIME: 'first_time',
+  SURVIVAL: 'survival',
+  ROLE_MASTERY: 'role_mastery',
+  SOCIAL: 'social',
+  STRATEGIC: 'strategic',
+  SPECIAL: 'special',
+} as const;
+
+// =============================================================================
+// SYSTEM MESSAGES
+// =============================================================================
+export const SYSTEM_MESSAGES = {
+  GAME_STARTED: '🎮 O jogo começou! Boa sorte a todos!',
+  NIGHT_PHASE: '🌙 A noite caiu sobre a vila...',
+  DAY_PHASE: '☀️ O sol nasceu. É hora de discutir!',
+  VOTING_PHASE: '🗳️ Hora da votação! Escolham com sabedoria.',
+  PLAYER_ELIMINATED: (name: string, role: string) => `💀 ${name} foi eliminado! Era um(a) ${role}.`,
+  GAME_ENDED: (faction: string) => `🏆 Fim de jogo! ${faction} venceu!`,
+  PLAYER_JOINED: (name: string) => `👋 ${name} entrou na sala.`,
+  PLAYER_LEFT: (name: string) => `👋 ${name} saiu da sala.`,
+  RECONNECTED: (name: string) => `🔄 ${name} reconectou-se.`,
+} as const;
+
+// =============================================================================
+// ERROR MESSAGES
+// =============================================================================
+export const ERROR_MESSAGES = {
+  UNAUTHORIZED: 'Token de acesso inválido ou expirado',
+  FORBIDDEN: 'Você não tem permissão para esta ação',
+  NOT_FOUND: 'Recurso não encontrado',
+  ROOM_FULL: 'A sala está cheia',
+  GAME_IN_PROGRESS: 'O jogo já está em andamento',
+  INVALID_ACTION: 'Ação inválida',
+  RATE_LIMITED: 'Muitas tentativas. Tente novamente mais tarde',
+  VALIDATION_FAILED: 'Dados inválidos fornecidos',
+  SERVER_ERROR: 'Erro interno do servidor',
+} as const;
+</file>
+
+<file path="backend/src/utils/helper.ts">
+// 🐺 LOBISOMEM ONLINE - Helper Utilities
+// Common utility functions used throughout the application
+
+import crypto from 'crypto';
+import { THEMED_NICKNAMES, ROLE_DISTRIBUTIONS, GAME_LIMITS } from './constants';
+import type { Role, RoleDistribution } from '@/types/game';
+
+// =============================================================================
+// STRING UTILITIES
+// =============================================================================
+
+/**
+ * Generate a random room code
+ */
+export function generateRoomCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
+ * Generate a cryptographically secure random string
+ */
+export function generateSecureToken(length: number = 32): string {
+  return crypto.randomBytes(length).toString('hex');
+}
+
+/**
+ * Generate a random nickname from themed list
+ */
+export function generateRandomNickname(usedNicknames: Set<string> = new Set()): string {
+  const availableNicknames = THEMED_NICKNAMES.filter(nickname => !usedNicknames.has(nickname));
+
+  if (availableNicknames.length === 0) {
+    // Fallback to numbered nicknames if all are used
+    let counter = 1;
+    let nickname = '';
+    do {
+      nickname = `Cidadão ${counter}`;
+      counter++;
+    } while (usedNicknames.has(nickname));
+
+    return nickname;
+  }
+
+  return availableNicknames[Math.floor(Math.random() * availableNicknames.length)];
+}
+
+/**
+ * Slugify a string for URLs
+ */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9 -]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-'); // Replace multiple hyphens with single
+}
+
+/**
+ * Capitalize first letter of each word
+ */
+export function titleCase(text: string): string {
+  return text.replace(/\w\S*/g, (txt) =>
+    txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+  );
+}
+
+/**
+ * Truncate text to specified length
+ */
+export function truncate(text: string, length: number, suffix: string = '...'): string {
+  if (text.length <= length) return text;
+  return text.substring(0, length - suffix.length) + suffix;
+}
+
+// =============================================================================
+// ARRAY UTILITIES
+// =============================================================================
+
+/**
+ * Shuffle an array using Fisher-Yates algorithm
+ */
+export function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+/**
+ * Get random element from array
+ */
+export function randomElement<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+/**
+ * Get multiple random elements from array
+ */
+export function randomElements<T>(array: T[], count: number): T[] {
+  const shuffled = shuffleArray(array);
+  return shuffled.slice(0, Math.min(count, array.length));
+}
+
+/**
+ * Chunk array into smaller arrays
+ */
+export function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+// =============================================================================
+// TIME UTILITIES
+// =============================================================================
+
+/**
+ * Add milliseconds to a date
+ */
+export function addMilliseconds(date: Date, ms: number): Date {
+  return new Date(date.getTime() + ms);
+}
+
+/**
+ * Check if a date is expired
+ */
+export function isExpired(date: Date): boolean {
+  return date.getTime() < Date.now();
+}
+
+/**
+ * Format duration in milliseconds to human readable string
+ */
+export function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  }
+
+  return `${seconds}s`;
+}
+
+/**
+ * Get time remaining until target date
+ */
+export function getTimeRemaining(targetDate: Date): number {
+  return Math.max(0, targetDate.getTime() - Date.now());
+}
+
+// =============================================================================
+// GAME UTILITIES
+// =============================================================================
+
+/**
+ * Get role distribution based on player count
+ */
+export function getRoleDistribution(playerCount: number): RoleDistribution {
+  // Find the closest predefined distribution
+  const availableCounts = Object.keys(ROLE_DISTRIBUTIONS).map(Number).sort((a, b) => a - b);
+
+  let targetCount = availableCounts.find(count => count >= playerCount);
+  if (!targetCount) {
+    targetCount = availableCounts[availableCounts.length - 1]; // Use largest if exceeds max
+  }
+
+  const distribution = ROLE_DISTRIBUTIONS[targetCount as keyof typeof ROLE_DISTRIBUTIONS];
+
+  // Adjust distribution if needed to match exact player count
+  if (targetCount > playerCount) {
+    return adjustRoleDistribution(distribution, playerCount);
+  }
+
+  return distribution;
+}
+
+/**
+ * Adjust role distribution to match exact player count
+ */
+function adjustRoleDistribution(distribution: RoleDistribution, targetCount: number): RoleDistribution {
+  const newDistribution = { ...distribution };
+  const currentTotal = Object.values(newDistribution).reduce((sum, count) => sum + count, 0);
+  const difference = currentTotal - targetCount;
+
+  if (difference > 0) {
+    // Remove roles starting with villagers
+    let toRemove = difference;
+    const removeOrder: Role[] = ['VILLAGER', 'WEREWOLF', 'JESTER', 'SERIAL_KILLER'];
+
+    for (const role of removeOrder) {
+      if (toRemove <= 0) break;
+      const canRemove = Math.min(newDistribution[role], toRemove);
+      newDistribution[role] -= canRemove;
+      toRemove -= canRemove;
+    }
+  }
+
+  return newDistribution;
+}
+
+/**
+ * Distribute roles to players randomly
+ */
+export function distributeRoles(playerIds: string[], distribution: RoleDistribution): Map<string, Role> {
+  const roles: Role[] = [];
+
+  // Create array of roles based on distribution
+  for (const [role, count] of Object.entries(distribution)) {
+    for (let i = 0; i < count; i++) {
+      roles.push(role as Role);
+    }
+  }
+
+  // Shuffle players and roles
+  const shuffledPlayers = shuffleArray(playerIds);
+  const shuffledRoles = shuffleArray(roles);
+
+  // Create map of player to role
+  const roleAssignment = new Map<string, Role>();
+  shuffledPlayers.forEach((playerId, index) => {
+    if (index < shuffledRoles.length) {
+      roleAssignment.set(playerId, shuffledRoles[index]);
+    }
+  });
+
+  return roleAssignment;
+}
+
+/**
+ * Check if game can start with current player count
+ */
+export function canStartGame(playerCount: number): boolean {
+  return playerCount >= GAME_LIMITS.MIN_PLAYERS && playerCount <= GAME_LIMITS.MAX_PLAYERS;
+}
+
+/**
+ * Calculate win condition for current game state
+ */
+export function calculateWinCondition(alivePlayers: { role: Role; playerId: string }[]): {
+  hasWinner: boolean;
+  winningFaction?: string;
+  winningPlayers?: string[];
+} {
+  const aliveByFaction = alivePlayers.reduce((acc, player) => {
+    let faction: string;
+
+    if (['VILLAGER', 'SHERIFF', 'DOCTOR', 'VIGILANTE'].includes(player.role)) {
+      faction = 'TOWN';
+    } else if (['WEREWOLF', 'WEREWOLF_KING'].includes(player.role)) {
+      faction = 'WEREWOLF';
+    } else {
+      faction = 'NEUTRAL';
+    }
+
+    if (!acc[faction]) acc[faction] = [];
+    acc[faction].push(player.playerId);
+
+    return acc;
+  }, {} as Record<string, string[]>);
+
+  const townCount = aliveByFaction.TOWN?.length || 0;
+  const werewolfCount = aliveByFaction.WEREWOLF?.length || 0;
+  const neutralCount = aliveByFaction.NEUTRAL?.length || 0;
+
+  // Werewolves win if they equal or outnumber town
+  if (werewolfCount >= townCount && townCount > 0) {
+    return {
+      hasWinner: true,
+      winningFaction: 'WEREWOLF',
+      winningPlayers: aliveByFaction.WEREWOLF,
+    };
+  }
+
+  // Town wins if no werewolves left
+  if (werewolfCount === 0 && townCount > 0) {
+    return {
+      hasWinner: true,
+      winningFaction: 'TOWN',
+      winningPlayers: aliveByFaction.TOWN,
+    };
+  }
+
+  // Serial killer wins if alone
+  if (townCount + werewolfCount === 0 && neutralCount === 1) {
+    return {
+      hasWinner: true,
+      winningFaction: 'SERIAL_KILLER',
+      winningPlayers: aliveByFaction.NEUTRAL,
+    };
+  }
+
+  return { hasWinner: false };
+}
+
+// =============================================================================
+// VALIDATION UTILITIES
+// =============================================================================
+
+/**
+ * Check if string contains profanity (basic filter)
+ */
+export function containsProfanity(text: string): boolean {
+  const profanityList = [
+    'fuck', 'shit', 'damn', 'bitch', 'ass', 'hell',
+    'porra', 'merda', 'caralho', 'puta', 'fodase', 'buceta'
+    // Add more words as needed
+  ];
+
+  const lowerText = text.toLowerCase();
+  return profanityList.some(word => lowerText.includes(word));
+}
+
+/**
+ * Clean profanity from text
+ */
+export function cleanProfanity(text: string): string {
+  if (!containsProfanity(text)) return text;
+
+  const replacements = [
+    'barbaridade', 'caramba', 'nossa', 'eita', 'puxa', 'xi'
+  ];
+
+  return randomElement(replacements);
+}
+
+// =============================================================================
+// OBJECT UTILITIES
+// =============================================================================
+
+/**
+ * Deep clone an object
+ */
+export function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * Remove undefined properties from object
+ */
+export function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
+  const cleaned: Partial<T> = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      cleaned[key as keyof T] = value;
+    }
+  }
+
+  return cleaned;
+}
+
+/**
+ * Pick specific properties from object
+ */
+export function pick<T, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
+  const result = {} as Pick<T, K>;
+
+  for (const key of keys) {
+    if (key in obj) {
+      result[key] = obj[key];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Omit specific properties from object
+ */
+export function omit<T, K extends keyof T>(obj: T, keys: K[]): Omit<T, K> {
+  const result = { ...obj } as any;
+
+  for (const key of keys) {
+    delete result[key];
+  }
+
+  return result;
+}
+</file>
+
+<file path="backend/src/utils/logger.ts">
+// 🐺 LOBISOMEM ONLINE - Logger Utility
+// Structured logging for the application
+
+import { config } from '@/config/environment';
+
+// =============================================================================
+// LOG LEVELS
+// =============================================================================
+export enum LogLevel {
+  ERROR = 'ERROR',
+  WARN = 'WARN',
+  INFO = 'INFO',
+  DEBUG = 'DEBUG',
+}
+
+// =============================================================================
+// LOG ENTRY INTERFACE
+// =============================================================================
+export interface LogEntry {
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  service: string;
+  module?: string;
+  userId?: string;
+  roomId?: string;
+  gameId?: string;
+  metadata?: Record<string, any>;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+}
+
+// =============================================================================
+// LOGGER CLASS
+// =============================================================================
+class Logger {
+  private serviceName: string;
+  private moduleContext?: string;
+
+  constructor(serviceName: string = config.SERVICE_ID, moduleContext?: string) {
+    this.serviceName = serviceName;
+    this.moduleContext = moduleContext;
+  }
+
+  /**
+   * Create a child logger for a specific module
+   */
+  child(moduleContext: string): Logger {
+    return new Logger(this.serviceName, moduleContext);
+  }
+
+  /**
+   * Log an error message
+   */
+  error(message: string, error?: Error, metadata?: Record<string, any>): void {
+    this.log(LogLevel.ERROR, message, { error, metadata });
+  }
+
+  /**
+   * Log a warning message
+   */
+  warn(message: string, metadata?: Record<string, any>): void {
+    this.log(LogLevel.WARN, message, { metadata });
+  }
+
+  /**
+   * Log an info message
+   */
+  info(message: string, metadata?: Record<string, any>): void {
+    this.log(LogLevel.INFO, message, { metadata });
+  }
+
+  /**
+   * Log a debug message
+   */
+  debug(message: string, metadata?: Record<string, any>): void {
+    if (config.IS_DEVELOPMENT) {
+      this.log(LogLevel.DEBUG, message, { metadata });
+    }
+  }
+
+  /**
+   * Log game-specific events
+   */
+  game(
+    level: LogLevel,
+    message: string,
+    gameContext: {
+      userId?: string;
+      roomId?: string;
+      gameId?: string;
+      phase?: string;
+      action?: string;
+    },
+    metadata?: Record<string, any>
+  ): void {
+    this.log(level, message, {
+      metadata: {
+        ...gameContext,
+        ...metadata,
+      },
+    });
+  }
+
+  /**
+   * Log WebSocket events
+   */
+  websocket(
+    level: LogLevel,
+    message: string,
+    wsContext: {
+      userId?: string;
+      roomId?: string;
+      connectionId?: string;
+      event?: string;
+    },
+    metadata?: Record<string, any>
+  ): void {
+    this.log(level, message, {
+      metadata: {
+        ...wsContext,
+        ...metadata,
+        type: 'websocket',
+      },
+    });
+  }
+
+  /**
+   * Log authentication events
+   */
+  auth(
+    level: LogLevel,
+    message: string,
+    authContext: {
+      userId?: string;
+      email?: string;
+      action?: string;
+      ip?: string;
+    },
+    metadata?: Record<string, any>
+  ): void {
+    this.log(level, message, {
+      metadata: {
+        ...authContext,
+        ...metadata,
+        type: 'auth',
+      },
+    });
+  }
+
+  /**
+   * Core logging method
+   */
+  private log(
+    level: LogLevel,
+    message: string,
+    context?: {
+      error?: Error;
+      metadata?: Record<string, any>;
+    }
+  ): void {
+    const logEntry: LogEntry = {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      service: this.serviceName,
+      module: this.moduleContext,
+      ...context?.metadata,
+    };
+
+    // Add error details if present
+    if (context?.error) {
+      logEntry.error = {
+        name: context.error.name,
+        message: context.error.message,
+        stack: context.error.stack,
+      };
+    }
+
+    // Output based on environment
+    if (config.IS_PRODUCTION) {
+      // Structured JSON logging for production
+      console.log(JSON.stringify(logEntry));
+    } else {
+      // Pretty formatted logging for development
+      this.prettyLog(logEntry);
+    }
+  }
+
+  /**
+   * Pretty print logs for development
+   */
+  private prettyLog(entry: LogEntry): void {
+    const colors = {
+      [LogLevel.ERROR]: '\x1b[31m', // Red
+      [LogLevel.WARN]: '\x1b[33m',  // Yellow
+      [LogLevel.INFO]: '\x1b[36m',  // Cyan
+      [LogLevel.DEBUG]: '\x1b[37m', // White
+    };
+
+    const reset = '\x1b[0m';
+    const color = colors[entry.level];
+
+    const timestamp = new Date(entry.timestamp).toLocaleTimeString();
+    const service = entry.service;
+    const module = entry.module ? `[${entry.module}]` : '';
+
+    let logLine = `${color}${entry.level}${reset} ${timestamp} ${service}${module}: ${entry.message}`;
+
+    console.log(logLine);
+
+    // Log metadata if present
+    if (entry.metadata && Object.keys(entry.metadata).length > 0) {
+      console.log('  Metadata:', entry.metadata);
+    }
+
+    // Log error details if present
+    if (entry.error) {
+      console.log('  Error:', entry.error.message);
+      if (entry.error.stack && config.IS_DEVELOPMENT) {
+        console.log('  Stack:', entry.error.stack);
+      }
+    }
+  }
+}
+
+// =============================================================================
+// CREATE DEFAULT LOGGER INSTANCE
+// =============================================================================
+export const logger = new Logger();
+
+// =============================================================================
+// SPECIALIZED LOGGERS
+// =============================================================================
+export const gameLogger = logger.child('game');
+export const wsLogger = logger.child('websocket');
+export const authLogger = logger.child('auth');
+export const dbLogger = logger.child('database');
+export const redisLogger = logger.child('redis');
+
+// =============================================================================
+// PERFORMANCE LOGGING
+// =============================================================================
+export class PerformanceLogger {
+  private timers: Map<string, number> = new Map();
+
+  /**
+   * Start timing an operation
+   */
+  start(operationId: string): void {
+    this.timers.set(operationId, Date.now());
+  }
+
+  /**
+   * End timing and log the duration
+   */
+  end(operationId: string, description?: string): number {
+    const startTime = this.timers.get(operationId);
+    if (!startTime) {
+      logger.warn(`Performance timer not found: ${operationId}`);
+      return 0;
+    }
+
+    const duration = Date.now() - startTime;
+    this.timers.delete(operationId);
+
+    logger.debug(`Performance: ${description || operationId}`, {
+      operationId,
+      duration: `${duration}ms`,
+    });
+
+    return duration;
+  }
+
+  /**
+   * Measure an async operation
+   */
+  async measure<T>(
+    operationId: string,
+    operation: () => Promise<T>,
+    description?: string
+  ): Promise<T> {
+    this.start(operationId);
+    try {
+      const result = await operation();
+      this.end(operationId, description);
+      return result;
+    } catch (error) {
+      this.end(operationId, `${description || operationId} (failed)`);
+      throw error;
+    }
+  }
+}
+
+export const performanceLogger = new PerformanceLogger();
+
+// =============================================================================
+// REQUEST LOGGING MIDDLEWARE HELPER
+// =============================================================================
+export interface RequestLogContext {
+  method: string;
+  url: string;
+  userAgent?: string;
+  ip?: string;
+  userId?: string;
+  statusCode?: number;
+  duration?: number;
+}
+
+export function logRequest(context: RequestLogContext): void {
+  const level = context.statusCode && context.statusCode >= 400 ? LogLevel.WARN : LogLevel.INFO;
+
+  logger.log(level, `${context.method} ${context.url}`, {
+    metadata: {
+      type: 'http_request',
+      ...context,
+    },
+  });
+}
+
+// =============================================================================
+// EXPORT DEFAULT LOGGER
+// =============================================================================
+export default logger;
+</file>
+
+<file path="backend/src/utils/validators.ts">
+// 🐺 LOBISOMEM ONLINE - Validation Utilities
+// Input validation and sanitization functions
+
+import { z } from 'zod';
+import { GAME_LIMITS } from './constants';
+
+// =============================================================================
+// BASIC VALIDATION SCHEMAS
+// =============================================================================
+
+// User validation
+export const emailSchema = z
+  .string()
+  .email('Email inválido')
+  .toLowerCase()
+  .trim();
+
+export const usernameSchema = z
+  .string()
+  .min(3, 'Username deve ter pelo menos 3 caracteres')
+  .max(20, 'Username deve ter no máximo 20 caracteres')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Username só pode conter letras, números, _ e -')
+  .trim();
+
+export const passwordSchema = z
+  .string()
+  .min(6, 'Senha deve ter pelo menos 6 caracteres')
+  .max(50, 'Senha deve ter no máximo 50 caracteres')
+  .regex(/(?=.*[a-z])/, 'Senha deve conter pelo menos uma letra minúscula')
+  .regex(/(?=.*[A-Z])/, 'Senha deve conter pelo menos uma letra maiúscula')
+  .regex(/(?=.*\d)/, 'Senha deve conter pelo menos um número');
+
+// Room validation
+export const roomNameSchema = z
+  .string()
+  .min(1, 'Nome da sala é obrigatório')
+  .max(GAME_LIMITS.MAX_ROOM_NAME_LENGTH, `Nome deve ter no máximo ${GAME_LIMITS.MAX_ROOM_NAME_LENGTH} caracteres`)
+  .trim();
+
+export const roomCodeSchema = z
+  .string()
+  .length(GAME_LIMITS.ROOM_CODE_LENGTH, `Código deve ter ${GAME_LIMITS.ROOM_CODE_LENGTH} dígitos`)
+  .regex(/^\d+$/, 'Código deve conter apenas números');
+
+// Chat validation
+export const chatMessageSchema = z
+  .string()
+  .min(1, 'Mensagem não pode estar vazia')
+  .max(GAME_LIMITS.MAX_MESSAGE_LENGTH, `Mensagem deve ter no máximo ${GAME_LIMITS.MAX_MESSAGE_LENGTH} caracteres`)
+  .trim();
+
+// =============================================================================
+// AUTH REQUEST SCHEMAS
+// =============================================================================
+export const registerRequestSchema = z.object({
+  email: emailSchema,
+  username: usernameSchema,
+  password: passwordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Senhas não coincidem',
+  path: ['confirmPassword'],
+});
+
+export const loginRequestSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Senha é obrigatória'),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token é obrigatório'),
+  password: passwordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Senhas não coincidem',
+  path: ['confirmPassword'],
+});
+
+// =============================================================================
+// ROOM REQUEST SCHEMAS
+// =============================================================================
+export const createRoomSchema = z.object({
+  name: roomNameSchema,
+  isPrivate: z.boolean().optional().default(false),
+  maxPlayers: z
+    .number()
+    .min(GAME_LIMITS.MIN_PLAYERS, `Mínimo ${GAME_LIMITS.MIN_PLAYERS} jogadores`)
+    .max(GAME_LIMITS.MAX_PLAYERS, `Máximo ${GAME_LIMITS.MAX_PLAYERS} jogadores`)
+    .optional()
+    .default(GAME_LIMITS.MAX_PLAYERS),
+  maxSpectators: z
+    .number()
+    .min(0, 'Número de espectadores não pode ser negativo')
+    .max(GAME_LIMITS.MAX_SPECTATORS, `Máximo ${GAME_LIMITS.MAX_SPECTATORS} espectadores`)
+    .optional()
+    .default(GAME_LIMITS.MAX_SPECTATORS),
+});
+
+export const joinRoomSchema = z.object({
+  roomId: z.string().cuid().optional(),
+  code: roomCodeSchema.optional(),
+  asSpectator: z.boolean().optional().default(false),
+}).refine((data) => data.roomId || data.code, {
+  message: 'Room ID ou código é obrigatório',
+});
+
+export const updateRoomSchema = z.object({
+  name: roomNameSchema.optional(),
+  maxPlayers: z
+    .number()
+    .min(GAME_LIMITS.MIN_PLAYERS)
+    .max(GAME_LIMITS.MAX_PLAYERS)
+    .optional(),
+  maxSpectators: z
+    .number()
+    .min(0)
+    .max(GAME_LIMITS.MAX_SPECTATORS)
+    .optional(),
+});
+
+// =============================================================================
+// GAME REQUEST SCHEMAS
+// =============================================================================
+export const gameActionSchema = z.object({
+  type: z.enum(['INVESTIGATE', 'PROTECT', 'KILL', 'VOTE']),
+  targetId: z.string().cuid().optional(),
+  data: z.record(z.any()).optional(),
+});
+
+export const voteSchema = z.object({
+  targetId: z.string().cuid('ID do alvo inválido'),
+});
+
+// =============================================================================
+// CHAT SCHEMAS
+// =============================================================================
+export const chatMessageRequestSchema = z.object({
+  message: chatMessageSchema,
+  channel: z.enum(['public', 'werewolf', 'spectator']).optional().default('public'),
+});
+
+// =============================================================================
+// PAGINATION SCHEMAS
+// =============================================================================
+export const paginationSchema = z.object({
+  page: z
+    .string()
+    .transform((val) => parseInt(val))
+    .pipe(z.number().min(1, 'Página deve ser maior que 0'))
+    .optional()
+    .default('1'),
+  limit: z
+    .string()
+    .transform((val) => parseInt(val))
+    .pipe(z.number().min(1).max(100, 'Limite máximo de 100 itens por página'))
+    .optional()
+    .default('10'),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
+});
+
+// =============================================================================
+// CUSTOM VALIDATION FUNCTIONS
+// =============================================================================
+
+/**
+ * Validate if a string is a valid CUID
+ */
+export function isValidCuid(id: string): boolean {
+  return z.string().cuid().safeParse(id).success;
+}
+
+/**
+ * Validate if a user can perform an action in a game
+ */
+export function canPerformAction(
+  role: string,
+  phase: string,
+  action: string
+): boolean {
+  const nightActions = ['INVESTIGATE', 'PROTECT', 'KILL'];
+  const dayActions = ['VOTE'];
+
+  if (phase === 'NIGHT' && nightActions.includes(action)) {
+    return ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'WEREWOLF_KING', 'VIGILANTE', 'SERIAL_KILLER'].includes(role);
+  }
+
+  if (phase === 'VOTING' && action === 'VOTE') {
+    return true; // Everyone can vote
+  }
+
+  return false;
+}
+
+/**
+ * Validate room code format
+ */
+export function generateRoomCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
+ * Sanitize chat message (remove harmful content)
+ */
+export function sanitizeChatMessage(message: string): string {
+  return message
+    .trim()
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .substring(0, GAME_LIMITS.MAX_MESSAGE_LENGTH);
+}
+
+/**
+ * Validate if email domain is allowed
+ */
+export function isAllowedEmailDomain(email: string): boolean {
+  // Add email domain restrictions if needed
+  const blockedDomains = ['tempmail.com', '10minutemail.com'];
+  const domain = email.split('@')[1]?.toLowerCase();
+  return !blockedDomains.includes(domain);
+}
+
+/**
+ * Validate username availability pattern
+ */
+export function hasValidUsernamePattern(username: string): boolean {
+  // Block offensive patterns
+  const blockedPatterns = [
+    /admin/i,
+    /moderator/i,
+    /system/i,
+    /bot/i,
+    /fuck/i,
+    /shit/i,
+    // Add more as needed
+  ];
+
+  return !blockedPatterns.some(pattern => pattern.test(username));
+}
+
+/**
+ * Rate limiting validation
+ */
+export function validateRateLimit(
+  requests: number,
+  windowMs: number,
+  maxRequests: number
+): { allowed: boolean; retryAfter?: number } {
+  if (requests >= maxRequests) {
+    return {
+      allowed: false,
+      retryAfter: windowMs,
+    };
+  }
+
+  return { allowed: true };
+}
+
+// =============================================================================
+// WEBSOCKET VALIDATION
+// =============================================================================
+export const websocketMessageSchema = z.object({
+  type: z.string().min(1, 'Message type is required'),
+  data: z.any().optional(),
+  timestamp: z.string().optional(),
+  messageId: z.string().optional(),
+});
+
+// =============================================================================
+// EXPORT VALIDATION HELPER
+// =============================================================================
+export function createValidator<T>(schema: z.ZodSchema<T>) {
+  return (data: unknown): { success: true; data: T } | { success: false; errors: string[] } => {
+    const result = schema.safeParse(data);
+
+    if (result.success) {
+      return { success: true, data: result.data };
+    }
+
+    const errors = result.error.errors.map(err =>
+      `${err.path.join('.')}: ${err.message}`
+    );
+
+    return { success: false, errors };
+  };
+}
+</file>
+
+<file path="backend/tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": [
+      "ES2022"
+    ],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": [
+        "*"
+      ],
+      "@/config/*": [
+        "config/*"
+      ],
+      "@/controllers/*": [
+        "controllers/*"
+      ],
+      "@/middleware/*": [
+        "middleware/*"
+      ],
+      "@/models/*": [
+        "models/*"
+      ],
+      "@/routes/*": [
+        "routes/*"
+      ],
+      "@/services/*": [
+        "services/*"
+      ],
+      "@/websocket/*": [
+        "websocket/*"
+      ],
+      "@/game/*": [
+        "game/*"
+      ],
+      "@/database/*": [
+        "database/*"
+      ],
+      "@/utils/*": [
+        "utils/*"
+      ],
+      "@/types/*": [
+        "types/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs"
+    }
+  }
+}
+</file>
+
+<file path="database/init.sql">
+-- 🐺 LOBISOMEM ONLINE - Database Initialization
+-- Initial database setup for PostgreSQL
+
+-- Create database if not exists (PostgreSQL doesn't support this syntax, but docker will handle it)
+-- The database is created via POSTGRES_DB environment variable
+
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Create custom types (these will be handled by Prisma migrations)
+-- But we can create some functions for future use
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Function to calculate win rate
+CREATE OR REPLACE FUNCTION calculate_win_rate(total_wins INTEGER, total_games INTEGER)
+RETURNS DECIMAL(5,4) AS $$
+BEGIN
+    IF total_games = 0 THEN
+        RETURN 0.0;
+    END IF;
+    RETURN ROUND((total_wins::DECIMAL / total_games::DECIMAL), 4);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to generate room codes
+CREATE OR REPLACE FUNCTION generate_room_code()
+RETURNS TEXT AS $$
+BEGIN
+    RETURN LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Initial notification for successful setup
+SELECT 'Database initialized successfully!' as status;
+</file>
+
+<file path="docker-compose.dev.yml">
+# 🐺 LOBISOMEM ONLINE - Docker Compose Development (Fase 1 - Só Backend)
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: werewolf-postgres
+    environment:
+      POSTGRES_DB: werewolf_dev
+      POSTGRES_USER: werewolf
+      POSTGRES_PASSWORD: werewolf123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - werewolf-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U werewolf -d werewolf_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: werewolf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - werewolf-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # Backend Development (Monolítico - Fase 1)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: werewolf-backend
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://werewolf:werewolf123@postgres:5432/werewolf_dev
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-super-secret-jwt-key-for-development-only
+      - JWT_EXPIRES_IN=7d
+      - DISTRIBUTED_MODE=false
+      - STORAGE_TYPE=memory
+      - SERVICE_ID=local-server
+      - SERVICE_TYPE=monolith
+      - WS_BASE_PATH=/ws
+      - WS_PORT=3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - werewolf-network
+    command: npm run dev
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_node_modules: {}
+
+networks:
+  werewolf-network:
+    driver: bridge
+</file>
+
+<file path="docker-start.bat">
+@echo off
+echo 🐺 LOBISOMEM ONLINE - Quick Start
+echo ==============================
+
+REM Parar containers antigos
+echo 🛑 Parando containers antigos...
+docker-compose -f docker-compose.dev.yml down --remove-orphans
+
+REM Copiar .env se não existir
+if not exist .env (
+    echo 📋 Copiando .env.example para .env...
+    copy .env.example .env
+)
+
+REM Subir containers
+echo 🚀 Subindo containers...
+docker-compose -f docker-compose.dev.yml up -d --build
+
+REM Aguardar um pouco
+echo ⏳ Aguardando containers ficarem prontos...
+timeout /t 15 /nobreak >nul
+
+REM Verificar status
+echo 📊 Status dos containers:
+docker-compose -f docker-compose.dev.yml ps
+
+echo.
+echo 🎉 PRONTO!
+echo.
+echo 📋 Verificações:
+echo    Backend: http://localhost:3001/health
+echo    PostgreSQL: localhost:5432 (werewolf/werewolf123)
+echo    Redis: localhost:6379
+echo.
+echo 📱 Comandos úteis:
+echo    Ver logs: docker-compose -f docker-compose.dev.yml logs -f
+echo    Parar: docker-compose -f docker-compose.dev.yml down
+echo.
+pause
+</file>
+
+<file path="docker-start.sh">
+#!/bin/bash
+
+echo "🐺 LOBISOMEM ONLINE - Quick Start"
+echo "=============================="
+
+# Parar containers antigos
+echo "🛑 Parando containers antigos..."
+docker-compose -f docker-compose.dev.yml down --remove-orphans
+
+# Copiar .env se não existir
+if [ ! -f .env ]; then
+    echo "📋 Copiando .env.example para .env..."
+    cp .env.example .env
+fi
+
+# Subir containers
+echo "🚀 Subindo containers..."
+docker-compose -f docker-compose.dev.yml up -d --build
+
+# Aguardar um pouco
+echo "⏳ Aguardando containers ficarem prontos..."
+sleep 15
+
+# Verificar status
+echo "📊 Status dos containers:"
+docker-compose -f docker-compose.dev.yml ps
+
+echo ""
+echo "🎉 PRONTO!"
+echo ""
+echo "📋 Verificações:"
+echo "   Backend: http://localhost:3001/health"
+echo "   PostgreSQL: localhost:5432 (werewolf/werewolf123)"
+echo "   Redis: localhost:6379"
+echo ""
+echo "📱 Comandos úteis:"
+echo "   Ver logs: docker-compose -f docker-compose.dev.yml logs -f"
+echo "   Parar: docker-compose -f docker-compose.dev.yml down"
+echo ""
+</file>
+
+<file path="package.json">
+{
+  "name": "werewolf-online",
+  "version": "1.0.0",
+  "description": "🐺 Lobisomem Online - Multiplayer Real-time Game Platform",
+  "private": true,
+  "scripts": {
+    "setup": "chmod +x scripts/setup.sh && ./scripts/setup.sh",
+    "dev": "docker-compose -f docker-compose.dev.yml up",
+    "dev:build": "docker-compose -f docker-compose.dev.yml up --build",
+    "dev:down": "docker-compose -f docker-compose.dev.yml down",
+    "dev:logs": "docker-compose -f docker-compose.dev.yml logs -f",
+    "dev:clean": "docker-compose -f docker-compose.dev.yml down -v --remove-orphans",
+    "backend:dev": "cd backend && npm run dev",
+    "backend:build": "cd backend && npm run build",
+    "backend:logs": "docker-compose -f docker-compose.dev.yml logs -f backend",
+    "backend:shell": "docker-compose -f docker-compose.dev.yml exec backend sh",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:logs": "docker-compose -f docker-compose.dev.yml logs -f frontend",
+    "frontend:shell": "docker-compose -f docker-compose.dev.yml exec frontend sh",
+    "db:shell": "docker-compose -f docker-compose.dev.yml exec postgres psql -U werewolf -d werewolf_dev",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:seed": "cd backend && npm run db:seed",
+    "redis:shell": "docker-compose -f docker-compose.dev.yml exec redis redis-cli",
+    "health": "curl -s http://localhost:3001/health | jq .",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "clean": "npm run dev:clean && docker system prune -f",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/werewolf-online.git"
+  },
+  "keywords": [
+    "werewolf",
+    "mafia",
+    "town-of-salem",
+    "multiplayer",
+    "websocket",
+    "realtime",
+    "game",
+    "nodejs",
+    "react",
+    "typescript"
+  ],
+  "author": "Werewolf Team",
+  "license": "MIT"
+}
+</file>
+
+<file path="README.md">
+# 🐺 LOBISOMEM ONLINE
+
+**Plataforma de Jogos Multiplayer em Tempo Real - Baseado em Town of Salem**
+
+## 🎯 Sobre o Projeto
+
+Lobisomem Online é um jogo de dedução social onde jogadores assumem papéis secretos e tentam eliminar uns aos outros através de estratégia, blefe e investigação. Suporta de 6-15 jogadores simultâneos com comunicação em tempo real via WebSockets.
+
+### 🎮 Gameplay
+- **Vila**: Eliminar todos os Lobisomens
+- **Lobisomens**: Igualar ou superar o número da Vila  
+- **Neutros**: Objetivos únicos específicos
+
+### 🏗️ Arquitetura
+
+**Fase 1 (MVP)**: Monolítico
+- Backend único com REST API + WebSockets
+- Estado em memória + PostgreSQL
+- Ideal para desenvolvimento e testes
+
+**Fase 2 (Produção)**: Microserviços Distribuídos
+- Servidor de Lobby (REST) + Múltiplos Servidores de Jogo (WebSocket)
+- Redis para coordenação e state sharing
+- NGINX como reverse proxy
+
+## 🚀 Quick Start
+
+### Pré-requisitos
+- Docker & Docker Compose
+- Node.js 18+ (para desenvolvimento local)
+- Git
+
+### 🔥 Rodando o Projeto
+
+```bash
+# Clone o repositório
+git clone [seu-repo]
+cd werewolf-online
+
+# Copie as variáveis de ambiente
+cp .env.example .env
+
+# Suba todos os serviços
+docker-compose -f docker-compose.dev.yml up -d
+
+# Acesse a aplicação
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:3001
+# PostgreSQL: localhost:5432
+# Redis: localhost:6379
+```
+
+### 🛠️ Desenvolvimento Local
+
+```bash
+# Backend
+cd backend
+npm install
+npm run dev
+
+# Frontend
+cd frontend  
+npm install
+npm run dev
+```
+
+## 📁 Estrutura do Projeto
+
+```
+werewolf-online/
+├── 📁 frontend/          # React/Next.js
+├── 📁 backend/           # Node.js/Express (Fase 1)
+├── 📁 services/          # Microserviços (Fase 2)  
+├── 📁 database/          # Migrations & Seeds
+├── 📁 nginx/             # Configuração proxy
+├── 📁 docs/              # Documentação
+├── 📁 scripts/           # Automação
+├── 📄 docker-compose.yml # Produção
+└── 📄 docker-compose.dev.yml # Desenvolvimento
+```
+
+## 🎲 Como Jogar
+
+### Roles Disponíveis
+
+**🏘️ Vila**
+- **Sheriff**: Investiga jogadores (suspeito/não suspeito)
+- **Doctor**: Protege jogadores da morte
+- **Vigilante**: Elimina jogadores (3 usos)
+- **Villager**: Participa das votações
+
+**🐺 Lobisomens**  
+- **Werewolf King**: Líder (imune ao Sheriff)
+- **Werewolf**: Vota nas eliminações noturnas
+
+**⚡ Neutros**
+- **Jester**: Vence se for executado por votação
+- **Serial Killer**: Vence sendo o último sobrevivente
+
+### Fases do Jogo
+
+1. **🌙 Noite**: Ações secretas (60s)
+   - Lobisomens escolhem vítima
+   - Sheriff investiga alguém  
+   - Doctor protege alguém
+   - Chat privado dos Lobisomens
+
+2. **☀️ Dia**: Discussão e votação (120s + 30s)
+   - Chat público liberado
+   - Discussão sobre suspeitos
+   - Votação para executar alguém
+
+## 🛡️ Tecnologias
+
+### Backend
+- **Node.js** + **TypeScript** + **Express**
+- **PostgreSQL** (dados persistentes)
+- **Redis** (cache + coordenação)
+- **WebSocket nativo** (biblioteca `ws`)
+- **Prisma** (ORM)
+- **JWT** (autenticação)
+
+### Frontend  
+- **React** + **Next.js** + **TypeScript**
+- **Tailwind CSS** (styling)
+- **WebSocket nativo** (tempo real)
+
+### DevOps
+- **Docker** + **Docker Compose**
+- **NGINX** (reverse proxy - Fase 2)
+
+## 📚 Documentação
+
+- [**Regras do Jogo**](docs/GAME_RULES.md)
+- [**API Documentation**](docs/API.md)
+- [**WebSocket Events**](docs/WEBSOCKET.md)
+- [**Deployment Guide**](docs/DEPLOYMENT.md)
+
+## 🎯 Roadmap
+
+- [x] **Fase 1**: MVP Monolítico
+- [ ] **Fase 2**: Arquitetura Distribuída
+- [ ] Sistema de Rankings
+- [ ] Chat com Filtros
+- [ ] Espectadores
+- [ ] Mobile App
+
+## 🤝 Contribuição
+
+Este é um projeto acadêmico. Pull requests são bem-vindos!
+
+## 📄 Licença
+
+MIT License - veja [LICENSE](LICENSE) para detalhes.
+
+---
+
+**🎮 Desenvolvido como parte do Desafio Relâmpago 4 - Plataforma de Jogos Multiplayer em Tempo Real**
+</file>
+
+<file path="scripts/setup.sh">
+#!/bin/bash
+
+# 🐺 LOBISOMEM ONLINE - Setup Script
+# Configura todo o ambiente de desenvolvimento
+
+set -e
+
+echo "🐺 LOBISOMEM ONLINE - Setup Inicial"
+echo "=================================="
+
+# Cores para output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Função para logs coloridos
+log_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+log_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+log_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+log_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+# Verificar se Docker está instalado
+if ! command -v docker &> /dev/null; then
+    log_error "Docker não está instalado! Instale o Docker primeiro."
+    exit 1
+fi
+
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    log_error "Docker Compose não está instalado! Instale o Docker Compose primeiro."
+    exit 1
+fi
+
+log_success "Docker e Docker Compose encontrados!"
+
+# Verificar se Node.js está instalado (para desenvolvimento local)
+if ! command -v node &> /dev/null; then
+    log_warning "Node.js não encontrado. Será usado apenas via Docker."
+else
+    NODE_VERSION=$(node --version)
+    log_success "Node.js encontrado: $NODE_VERSION"
+fi
+
+# Criar arquivo .env se não existir
+if [ ! -f .env ]; then
+    log_info "Criando arquivo .env..."
+    cp .env.example .env
+    log_success "Arquivo .env criado! Edite conforme necessário."
+else
+    log_info "Arquivo .env já existe."
+fi
+
+# Criar diretórios necessários
+log_info "Criando diretórios necessários..."
+mkdir -p database/seeds
+mkdir -p backend/logs
+mkdir -p backend/uploads
+mkdir -p nginx/logs
+
+# Parar containers existentes
+log_info "Parando containers existentes..."
+docker-compose -f docker-compose.dev.yml down --remove-orphans 2>/dev/null || true
+
+# Construir e iniciar containers
+log_info "Construindo e iniciando containers..."
+docker-compose -f docker-compose.dev.yml up -d --build
+
+# Aguardar containers ficarem prontos
+log_info "Aguardando containers ficarem prontos..."
+sleep 10
+
+# Verificar se PostgreSQL está pronto
+log_info "Verificando PostgreSQL..."
+until docker-compose -f docker-compose.dev.yml exec -T postgres pg_isready -h localhost -U werewolf; do
+    log_info "Aguardando PostgreSQL..."
+    sleep 2
+done
+log_success "PostgreSQL está pronto!"
+
+# Verificar se Redis está pronto
+log_info "Verificando Redis..."
+until docker-compose -f docker-compose.dev.yml exec -T redis redis-cli ping; do
+    log_info "Aguardando Redis..."
+    sleep 2
+done
+log_success "Redis está pronto!"
+
+# Instalar dependências do backend
+if [ -f backend/package.json ]; then
+    log_info "Instalando dependências do backend..."
+    cd backend
+    npm install
+    log_success "Dependências do backend instaladas!"
+    
+    # Gerar cliente Prisma
+    log_info "Gerando cliente Prisma..."
+    npx prisma generate
+    log_success "Cliente Prisma gerado!"
+    
+    # Executar migrations
+    log_info "Executando migrations..."
+    npx prisma db push
+    log_success "Migrations executadas!"
+    
+    # Voltar ao diretório raiz
+    cd ..
+else
+    log_warning "package.json do backend não encontrado. Pulando instalação de dependências."
+fi
+
+# Verificar se o backend está respondendo
+log_info "Verificando se o backend está respondendo..."
+sleep 5
+if curl -f http://localhost:3001/health > /dev/null 2>&1; then
+    log_success "Backend está respondendo na porta 3001!"
+else
+    log_warning "Backend não está respondendo ainda. Pode demorar alguns minutos para ficar pronto."
+fi
+
+# Exibir status dos containers
+log_info "Status dos containers:"
+docker-compose -f docker-compose.dev.yml ps
+
+echo ""
+echo "🎉 SETUP CONCLUÍDO!"
+echo "==================="
+echo ""
+echo "📋 Próximos passos:"
+echo "   1. Verifique se todos os containers estão rodando: docker-compose -f docker-compose.dev.yml ps"
+echo "   2. Acesse o backend: http://localhost:3001/health"
+echo "   3. PostgreSQL: localhost:5432 (werewolf/werewolf123)"
+echo "   4. Redis: localhost:6379"
+echo ""
+echo "📱 Comandos úteis:"
+echo "   • Ver logs: docker-compose -f docker-compose.dev.yml logs -f"
+echo "   • Parar: docker-compose -f docker-compose.dev.yml down"
+echo "   • Reiniciar: docker-compose -f docker-compose.dev.yml restart"
+echo "   • Prisma Studio: cd backend && npx prisma studio"
+echo ""
+echo "🐺 Happy coding! 🚀"
+</file>
+
+</files>

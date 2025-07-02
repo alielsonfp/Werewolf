@@ -1,0 +1,88 @@
+# 🐺 LOBISOMEM ONLINE - Docker Compose Development (SOLUÇÃO ELEGANTE)
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: werewolf-postgres
+    environment:
+      POSTGRES_DB: werewolf_dev
+      POSTGRES_USER: werewolf
+      POSTGRES_PASSWORD: werewolf123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - werewolf-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U werewolf -d werewolf_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: werewolf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - werewolf-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # Backend Development
+  backend:
+    build:
+      context: .           # 🎯 SOLUÇÃO: Contexto expandido para acessar package-lock.json
+      dockerfile: backend/Dockerfile
+      target: development
+    container_name: werewolf-backend
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://werewolf:werewolf123@postgres:5432/werewolf_dev
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-super-secret-jwt-key-for-development-only
+      - JWT_EXPIRES_IN=7d
+      - DISTRIBUTED_MODE=false
+      - STORAGE_TYPE=memory
+      - SERVICE_ID=local-server
+      - SERVICE_TYPE=monolith
+      - WS_BASE_PATH=/ws
+      - WS_PORT=3001
+    ports:
+      - "3001:3001"
+    volumes:
+      # 🚀 SOLUÇÃO: Volume limpo sem conflitos
+      - ./backend/src:/app/backend/src
+      - ./backend/prisma:/app/backend/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - werewolf-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  werewolf-network:
+    driver: bridge
