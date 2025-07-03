@@ -15,6 +15,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx src/database/seeds/index.ts",
     "db:studio": "prisma studio",
+    "test:auth": "chmod +x ../scripts/test-auth.sh && ../scripts/test-auth.sh",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "type-check": "tsc --noEmit",
