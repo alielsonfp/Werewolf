@@ -1,0 +1,820 @@
+{
+    "info": {
+        "name": "🐺 Lobisomem Online - Room API",
+        "description": "Complete test collection for Room endpoints",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3001",
+            "type": "string"
+        },
+        {
+            "key": "authToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "roomId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "privateRoomCode",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "🔐 Authentication",
+            "item": [
+                {
+                    "name": "Register Test User",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const response = pm.response.json();",
+                                    "    pm.collectionVariables.set('authToken', response.data.accessToken);",
+                                    "    pm.test('User registered successfully', () => {",
+                                    "        pm.expect(response.success).to.be.true;",
+                                    "    });",
+                                    "} else if (pm.response.code === 409) {",
+                                    "    pm.test('User already exists (expected)', () => {",
+                                    "        pm.expect(pm.response.code).to.equal(409);",
+                                    "    });",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"testuser@rooms.com\",\n    \"username\": \"RoomTester\",\n    \"password\": \"Test123!\",\n    \"confirmPassword\": \"Test123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "register"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login Test User",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Login successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "if (response.success) {",
+                                    "    pm.collectionVariables.set('authToken', response.data.accessToken);",
+                                    "    pm.test('Access token received', () => {",
+                                    "        pm.expect(response.data.accessToken).to.be.a('string');",
+                                    "    });",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"testuser@rooms.com\",\n    \"password\": \"Test123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🏠 Room Management",
+            "item": [
+                {
+                    "name": "List Rooms (Empty)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('List rooms successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Response has correct structure', () => {",
+                                    "    pm.expect(response.success).to.be.true;",
+                                    "    pm.expect(response.data.rooms).to.be.an('array');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Public Room",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Room created successfully', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(201);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "if (response.success) {",
+                                    "    pm.collectionVariables.set('roomId', response.data.room.id);",
+                                    "    pm.test('Room has correct properties', () => {",
+                                    "        pm.expect(response.data.room.name).to.equal('Sala Pública Teste');",
+                                    "        pm.expect(response.data.room.isPrivate).to.be.false;",
+                                    "        pm.expect(response.data.room.maxPlayers).to.equal(10);",
+                                    "    });",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Sala Pública Teste\",\n    \"isPrivate\": false,\n    \"maxPlayers\": 10,\n    \"maxSpectators\": 3\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Private Room",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Private room created successfully', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(201);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "if (response.success) {",
+                                    "    pm.collectionVariables.set('privateRoomCode', response.data.room.code);",
+                                    "    pm.test('Private room has code', () => {",
+                                    "        pm.expect(response.data.room.code).to.be.a('string');",
+                                    "        pm.expect(response.data.room.code).to.have.lengthOf(6);",
+                                    "        pm.expect(response.data.room.isPrivate).to.be.true;",
+                                    "    });",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Sala Privada Teste\",\n    \"isPrivate\": true,\n    \"maxPlayers\": 8,\n    \"maxSpectators\": 2\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Room Details",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Get room details successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Room details are correct', () => {",
+                                    "    pm.expect(response.success).to.be.true;",
+                                    "    pm.expect(response.data.name).to.equal('Sala Pública Teste');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "{{roomId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Rooms (With Data)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('List rooms with data successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Rooms list contains public room', () => {",
+                                    "    pm.expect(response.data.rooms).to.be.an('array');",
+                                    "    pm.expect(response.data.total).to.be.greaterThan(0);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "👥 Room Joining",
+            "item": [
+                {
+                    "name": "Register Second User",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201 || pm.response.code === 409) {",
+                                    "    pm.test('Second user ready', () => {",
+                                    "        pm.expect([201, 409]).to.include(pm.response.code);",
+                                    "    });",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"testuser2@rooms.com\",\n    \"username\": \"RoomTester2\",\n    \"password\": \"Test123!\",\n    \"confirmPassword\": \"Test123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "register"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login Second User",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Second user login successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "if (response.success) {",
+                                    "    pm.collectionVariables.set('authToken2', response.data.accessToken);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"testuser2@rooms.com\",\n    \"password\": \"Test123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Join Room by ID",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Join room successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Join response is correct', () => {",
+                                    "    pm.expect(response.success).to.be.true;",
+                                    "    pm.expect(response.data.wsUrl).to.be.a('string');",
+                                    "    pm.expect(response.data.yourRole).to.equal('PLAYER');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken2}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"asSpectator\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/{{roomId}}/join",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "{{roomId}}",
+                                "join"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Join Room by Code",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Join by code successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Join by code response is correct', () => {",
+                                    "    pm.expect(response.success).to.be.true;",
+                                    "    pm.expect(response.data.room.isPrivate).to.be.true;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken2}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"code\": \"{{privateRoomCode}}\",\n    \"asSpectator\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/join-by-code",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "join-by-code"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "❌ Error Cases",
+            "item": [
+                {
+                    "name": "Duplicate Room Creation",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Duplicate room creation blocked', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(409);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Error message is correct', () => {",
+                                    "    pm.expect(response.success).to.be.false;",
+                                    "    pm.expect(response.error).to.equal('ROOM_ALREADY_EXISTS');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Sala Duplicada\",\n    \"isPrivate\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Room Not Found",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Room not found handled correctly', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(404);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Error response is correct', () => {",
+                                    "    pm.expect(response.success).to.be.false;",
+                                    "    pm.expect(response.error).to.equal('ROOM_NOT_FOUND');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/non-existent-id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "non-existent-id"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Invalid Room Code",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Invalid room code handled correctly', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(404);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Error response is correct', () => {",
+                                    "    pm.expect(response.success).to.be.false;",
+                                    "    pm.expect(response.error).to.equal('ROOM_NOT_FOUND');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken2}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"code\": \"999999\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/join-by-code",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "join-by-code"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Unauthorized Room Deletion",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Unauthorized deletion blocked', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(403);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Forbidden error is correct', () => {",
+                                    "    pm.expect(response.success).to.be.false;",
+                                    "    pm.expect(response.error).to.include('FORBIDDEN');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken2}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "{{roomId}}"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🗑 Cleanup",
+            "item": [
+                {
+                    "name": "Delete Room (Host)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Room deletion successful', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(200);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Deletion response is correct', () => {",
+                                    "    pm.expect(response.success).to.be.true;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "{{roomId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Verify Room Deleted",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Room no longer exists', () => {",
+                                    "    pm.expect(pm.response.code).to.equal(404);",
+                                    "});",
+                                    "",
+                                    "const response = pm.response.json();",
+                                    "pm.test('Room not found after deletion', () => {",
+                                    "    pm.expect(response.success).to.be.false;",
+                                    "    pm.expect(response.error).to.equal('ROOM_NOT_FOUND');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "rooms",
+                                "{{roomId}}"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

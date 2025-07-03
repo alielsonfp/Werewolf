@@ -1,13 +1,11 @@
 // 🐺 LOBISOMEM ONLINE - Validation Utilities
 // Input validation and sanitization functions
-
 import { z } from 'zod';
 import { GAME_LIMITS } from './constants';
 
-// =============================================================================
+//====================================================================
 // BASIC VALIDATION SCHEMAS
-// =============================================================================
-
+//====================================================================
 // User validation
 export const emailSchema = z
   .string()
@@ -49,9 +47,9 @@ export const chatMessageSchema = z
   .max(GAME_LIMITS.MAX_MESSAGE_LENGTH, `Mensagem deve ter no máximo ${GAME_LIMITS.MAX_MESSAGE_LENGTH} caracteres`)
   .trim();
 
-// =============================================================================
+//====================================================================
 // AUTH REQUEST SCHEMAS
-// =============================================================================
+//====================================================================
 export const registerRequestSchema = z.object({
   email: emailSchema,
   username: usernameSchema,
@@ -80,9 +78,9 @@ export const resetPasswordSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// =============================================================================
+//====================================================================
 // ROOM REQUEST SCHEMAS
-// =============================================================================
+//====================================================================
 export const createRoomSchema = z.object({
   name: roomNameSchema,
   isPrivate: z.boolean().optional().default(false),
@@ -122,9 +120,9 @@ export const updateRoomSchema = z.object({
     .optional(),
 });
 
-// =============================================================================
+//====================================================================
 // GAME REQUEST SCHEMAS
-// =============================================================================
+//====================================================================
 export const gameActionSchema = z.object({
   type: z.enum(['INVESTIGATE', 'PROTECT', 'KILL', 'VOTE']),
   targetId: z.string().cuid().optional(),
@@ -135,17 +133,17 @@ export const voteSchema = z.object({
   targetId: z.string().cuid('ID do alvo inválido'),
 });
 
-// =============================================================================
+//====================================================================
 // CHAT SCHEMAS
-// =============================================================================
+//====================================================================
 export const chatMessageRequestSchema = z.object({
   message: chatMessageSchema,
   channel: z.enum(['public', 'werewolf', 'spectator']).optional().default('public'),
 });
 
-// =============================================================================
+//====================================================================
 // PAGINATION SCHEMAS
-// =============================================================================
+//====================================================================
 export const paginationSchema = z.object({
   page: z
     .string()
@@ -163,10 +161,9 @@ export const paginationSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
-// =============================================================================
+//====================================================================
 // CUSTOM VALIDATION FUNCTIONS
-// =============================================================================
-
+//====================================================================
 /**
  * Validate if a string is a valid CUID
  */
@@ -220,8 +217,9 @@ export function sanitizeChatMessage(message: string): string {
 export function isAllowedEmailDomain(email: string): boolean {
   // Add email domain restrictions if needed
   const blockedDomains = ['tempmail.com', '10minutemail.com'];
-  const domain = email.split('@')[1]?.toLowerCase();
-  return !blockedDomains.includes(domain);
+  const domain = email.split('@')[1];
+  if (!domain) return false;
+  return !blockedDomains.includes(domain.toLowerCase());
 }
 
 /**
@@ -260,9 +258,9 @@ export function validateRateLimit(
   return { allowed: true };
 }
 
-// =============================================================================
+//====================================================================
 // WEBSOCKET VALIDATION
-// =============================================================================
+//====================================================================
 export const websocketMessageSchema = z.object({
   type: z.string().min(1, 'Message type is required'),
   data: z.any().optional(),
@@ -270,9 +268,9 @@ export const websocketMessageSchema = z.object({
   messageId: z.string().optional(),
 });
 
-// =============================================================================
+//====================================================================
 // EXPORT VALIDATION HELPER
-// =============================================================================
+//====================================================================
 export function createValidator<T>(schema: z.ZodSchema<T>) {
   return (data: unknown): { success: true; data: T } | { success: false; errors: string[] } => {
     const result = schema.safeParse(data);

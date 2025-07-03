@@ -1,18 +1,22 @@
 // 🐺 LOBISOMEM ONLINE - Room Types
 // Type definitions for room/lobby functionality
 
-// =============================================================================
+//======================================================================
+
 // ROOM ENUMS
-// =============================================================================
+//======================================================================
+
 export enum RoomStatus {
-  WAITING = 'WAITING',   // Waiting for players
-  PLAYING = 'PLAYING',   // Game in progress
+  WAITING = 'WAITING', // Waiting for players
+  PLAYING = 'PLAYING', // Game in progress
   FINISHED = 'FINISHED', // Game completed
 }
 
-// =============================================================================
+//======================================================================
+
 // ROOM INTERFACES
-// =============================================================================
+//======================================================================
+
 export interface Room {
   id: string;
   name: string;
@@ -21,18 +25,18 @@ export interface Room {
   maxPlayers: number;
   maxSpectators: number;
   status: RoomStatus;
-
+  
   // Host information
   hostId: string;
   hostUsername: string;
-
+  
   // Current counts
   currentPlayers: number;
   currentSpectators: number;
-
+  
   // Server assignment (Phase 2)
   serverId?: string;
-
+  
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
@@ -50,7 +54,7 @@ export interface RoomMetadata {
   hostUsername: string;
   createdAt: Date;
   canJoin: boolean; // Calculated field
-  isFull: boolean;  // Calculated field
+  isFull: boolean; // Calculated field
 }
 
 export interface RoomPlayer {
@@ -66,9 +70,11 @@ export interface RoomPlayer {
   lastSeen: Date;
 }
 
-// =============================================================================
+//======================================================================
+
 // ROOM MANAGEMENT
-// =============================================================================
+//======================================================================
+
 export interface CreateRoomRequest {
   name: string;
   isPrivate?: boolean;
@@ -79,7 +85,7 @@ export interface CreateRoomRequest {
 export interface CreateRoomResponse {
   room: Room;
   joinUrl: string; // WebSocket URL for Phase 2
-  code?: string;   // Private room code if applicable
+  code?: string; // Private room code if applicable
 }
 
 export interface JoinRoomRequest {
@@ -110,9 +116,11 @@ export interface KickPlayerRequest {
   playerId: string;
 }
 
-// =============================================================================
+//======================================================================
+
 // ROOM QUERIES
-// =============================================================================
+//======================================================================
+
 export interface ListRoomsQuery {
   status?: RoomStatus;
   includePrivate?: boolean;
@@ -129,9 +137,11 @@ export interface ListRoomsResponse {
   hasMore: boolean;
 }
 
-// =============================================================================
+//======================================================================
+
 // ROOM EVENTS (for real-time updates)
-// =============================================================================
+//======================================================================
+
 export interface RoomEvent {
   type: RoomEventType;
   roomId: string;
@@ -152,9 +162,11 @@ export enum RoomEventType {
   GAME_STARTED = 'GAME_STARTED',
 }
 
-// =============================================================================
+//======================================================================
+
 // ROOM CONFIGURATION
-// =============================================================================
+//======================================================================
+
 export interface RoomConfig {
   maxPlayers: number;
   maxSpectators: number;
