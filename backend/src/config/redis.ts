@@ -1,6 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Redis Configuration
-// Cache, session store, and inter-service communication
-
+// 🐺 LOBISOMEM ONLINE - Redis Configuration (CORRIGIDO)
 import Redis from 'ioredis';
 import { config } from './environment';
 
@@ -10,26 +8,13 @@ import { config } from './environment';
 let redisClient: Redis | null = null;
 let redisSubscriber: Redis | null = null;
 let redisPublisher: Redis | null = null;
+let isConnecting = false;
 
 // =============================================================================
 // REDIS CLIENT FACTORY
 // =============================================================================
 export function createRedisClient(): Redis {
-  return new Redis(config.REDIS_URL, {
-    retryDelayOnFailover: 100,
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-    keepAlive: 30000,
-    family: 4, // IPv4
-    connectTimeout: 10000,
-    commandTimeout: 5000,
-
-    // Connection pool
-    maxLoadingTimeout: 5000,
-
-    // Error handling
-    showFriendlyErrorStack: config.IS_DEVELOPMENT,
-  });
+  return new Redis(config.REDIS_URL);
 }
 
 // =============================================================================
@@ -123,9 +108,38 @@ export async function connectRedis(): Promise<void> {
     return;
   }
 
+  if (isConnecting) {
+    console.log('⏭️  Redis connection already in progress');
+    return;
+  }
+
+  if (redisClient && redisClient.status === 'ready') {
+    console.log('⏭️  Redis already connected');
+    return;
+  }
+
   try {
+    isConnecting = true;
     const client = getRedisClient();
-    await client.connect();
+
+    // Aguardar conexão estar ready
+    if (client.status !== 'ready') {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Redis connection timeout'));
+        }, 10000);
+
+        client.once('ready', () => {
+          clearTimeout(timeout);
+          resolve(void 0);
+        });
+
+        client.once('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+    }
 
     // Test connection
     const pong = await client.ping();
@@ -134,27 +148,24 @@ export async function connectRedis(): Promise<void> {
     }
   } catch (error) {
     console.error('❌ Failed to connect to Redis:', error);
-    throw error;
+    // NÃO fazer throw - deixar continuar sem Redis
+    console.log('⏭️  Continuing without Redis...');
+  } finally {
+    isConnecting = false;
   }
 }
 
 export async function disconnectRedis(): Promise<void> {
-  const promises: Promise<void>[] = [];
-
-  if (redisClient) {
-    promises.push(redisClient.disconnect());
-  }
-
-  if (redisSubscriber) {
-    promises.push(redisSubscriber.disconnect());
-  }
-
-  if (redisPublisher) {
-    promises.push(redisPublisher.disconnect());
-  }
-
   try {
-    await Promise.all(promises);
+    if (redisClient) {
+      redisClient.disconnect();
+    }
+    if (redisSubscriber) {
+      redisSubscriber.disconnect();
+    }
+    if (redisPublisher) {
+      redisPublisher.disconnect();
+    }
     console.log('👋 Redis clients disconnected');
   } catch (error) {
     console.error('❌ Error disconnecting Redis clients:', error);
@@ -163,6 +174,7 @@ export async function disconnectRedis(): Promise<void> {
   redisClient = null;
   redisSubscriber = null;
   redisPublisher = null;
+  isConnecting = false;
 }
 
 // =============================================================================
@@ -182,8 +194,15 @@ export async function checkRedisHealth(): Promise<{
   }
 
   try {
-    const client = getRedisClient();
-    const pong = await client.ping();
+    if (!redisClient || redisClient.status !== 'ready') {
+      return {
+        status: 'unhealthy',
+        message: 'Redis not connected',
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const pong = await redisClient.ping();
 
     return {
       status: pong === 'PONG' ? 'healthy' : 'unhealthy',
