@@ -6,13 +6,9 @@ import { prisma } from '@/config/database';
 import { generateRoomCode } from '@/utils/helper';
 import { logger } from '@/utils/logger';
 import { ERROR_MESSAGES, GAME_LIMITS } from '@/utils/constants';
-import {
-    createRoomSchema,
-    joinRoomSchema,
-    roomCodeSchema
-} from '@/utils/validators';
-import type { ApiResponse } from '@/types/api';
-import type { Room, RoomStatus } from '@/types/room';
+import { validateCreateRoomRequest, validateRoomCode } from '@/utils/simpleValidators';
+import type { ApiResponse } from '@/types';
+import type { Room, RoomStatus } from '@/types';
 
 //====================================================================
 // ROOM CONTROLLER
@@ -89,19 +85,18 @@ export const listRooms = async (req: Request, res: Response): Promise<void> => {
 export const createRoom = async (req: Request, res: Response): Promise<void> => {
     try {
         // Validate request body
-        const validation = createRoomSchema.safeParse(req.body);
+        const validation = validateCreateRoomRequest(req.body);
         if (!validation.success) {
-            const errors = validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
-                message: errors.join(', '),
+                message: validation.error,
                 timestamp: new Date().toISOString(),
             } as ApiResponse);
             return;
         }
 
-        const { name, isPrivate, maxPlayers, maxSpectators } = validation.data;
+        const { name, isPrivate, maxPlayers, maxSpectators } = validation.data!;
 
         // Check if host already has an active room
         const existingRoom = await prisma.room.findFirst({
@@ -336,9 +331,9 @@ export const joinRoom = async (req: Request, res: Response): Promise<void> => {
  */
 export const joinRoomByCode = async (req: Request, res: Response): Promise<void> => {
     try {
-        // Validate request body
-        const validation = roomCodeSchema.safeParse(req.body.code);
-        if (!validation.success) {
+        const { code } = req.body;
+
+        if (!code || !validateRoomCode(code)) {
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
@@ -348,7 +343,6 @@ export const joinRoomByCode = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        const code = validation.data;
         const { asSpectator = false } = req.body;
 
         // Find room by code

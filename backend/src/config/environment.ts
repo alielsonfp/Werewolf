@@ -9,6 +9,28 @@ dotenv.config();
 // =============================================================================
 // VALIDATION SCHEMA
 // =============================================================================
+
+export interface AppConfig {
+  NODE_ENV: string;
+  PORT: number;
+  IS_PRODUCTION: boolean;
+  IS_DEVELOPMENT: boolean;
+  DATABASE_URL: string;
+  REDIS_URL: string;
+  JWT_SECRET: string;
+  JWT_EXPIRES_IN: string;
+  DISTRIBUTED_MODE: boolean;
+  STORAGE_TYPE: string;
+  SERVICE_ID: string;
+  SERVICE_TYPE: string;
+  WS_BASE_PATH: string;
+  WS_PORT: number;
+  SHOULD_USE_REDIS: boolean;
+  IS_GAME_SERVICE: boolean;
+  IS_LOBBY_SERVICE: boolean;
+  IS_MONOLITH: boolean;
+}
+
 const envSchema = z.object({
   // Core settings
   NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
@@ -19,10 +41,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   // Authentication
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
   JWT_EXPIRES_IN: z.string().default('7d'),
-
   // Architecture mode (CRÍTICO para migração)
+  
   DISTRIBUTED_MODE: z.coerce.boolean().default(false),
   STORAGE_TYPE: z.enum(['memory', 'redis']).default('memory'),
 

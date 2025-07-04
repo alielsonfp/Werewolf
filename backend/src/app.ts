@@ -8,7 +8,7 @@ import morgan from 'morgan';
 import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
-
+import { ServiceFactory } from '@/websocket/ServiceFactory';
 // Import routes
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
@@ -87,6 +87,10 @@ app.get('/health', async (req, res) => {
     const dbHealth = await checkDatabaseHealth();
     const redisHealth = await checkRedisHealth();
 
+    // Check WebSocket services health
+    const servicesHealth = await ServiceFactory.getServicesHealth();
+    const servicesStats = ServiceFactory.getServicesStats();
+
     const health = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -97,13 +101,36 @@ app.get('/health', async (req, res) => {
       },
       database: dbHealth,
       redis: redisHealth,
+      services: servicesHealth,
+      stats: servicesStats,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
     };
 
-    // If any service is unhealthy, return 503
-    if (dbHealth.status === 'unhealthy' ||
-      (config.SHOULD_USE_REDIS && redisHealth.status === 'unhealthy')) {
+    // CORREÇÃO: Health check inteligente baseado na fase
+    let hasUnhealthyService = false;
+
+    if (config.DISTRIBUTED_MODE) {
+      // Fase 2: Todos os serviços devem estar healthy
+      hasUnhealthyService = Object.values(servicesHealth).some(
+        (service: any) => service.status === 'unhealthy'
+      );
+    } else {
+      // Fase 1: Só verificar serviços críticos (gameState)
+      const criticalServices = ['gameState'];
+      hasUnhealthyService = criticalServices.some(serviceName => {
+        const service = servicesHealth[serviceName];
+        return service && service.status === 'unhealthy';
+      });
+    }
+
+    // Determinar status final
+    const isSystemHealthy =
+      dbHealth.status === 'healthy' &&
+      (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy') &&
+      !hasUnhealthyService;
+
+    if (!isSystemHealthy) {
       res.status(503).json(health);
       return;
     }
@@ -134,6 +161,27 @@ app.get('/health/live', (req, res) => {
   });
 });
 
+// WebSocket-specific health endpoint
+app.get('/health/websocket', async (req, res) => {
+  try {
+    const servicesHealth = await ServiceFactory.getServicesHealth();
+    const servicesStats = ServiceFactory.getServicesStats();
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: servicesHealth,
+      stats: servicesStats,
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'WebSocket health check failed',
+    });
+  }
+});
+
 //=====================================================================
 // API ROUTES
 //=====================================================================
@@ -155,8 +203,14 @@ app.get('/', (req, res) => {
     phase: config.DISTRIBUTED_MODE ? 'Phase 2 (Distributed)' : 'Phase 1 (Monolithic)',
     service: config.SERVICE_TYPE,
     timestamp: new Date().toISOString(),
+    websocket: {
+      enabled: config.IS_MONOLITH || config.IS_GAME_SERVICE,
+      path: config.WS_BASE_PATH,
+      url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
+    },
     endpoints: {
       health: '/health',
+      websocketHealth: '/health/websocket',
       ready: '/health/ready',
       live: '/health/live',
       auth: {
@@ -174,6 +228,13 @@ app.get('/', (req, res) => {
         join: 'POST /api/rooms/:id/join',
         joinByCode: 'POST /api/rooms/join-by-code',
         delete: 'DELETE /api/rooms/:id',
+      },
+      websocket: {
+        connect: `WS ${config.WS_BASE_PATH}`,
+        events: [
+          'join-room', 'leave-room', 'player-ready', 'start-game',
+          'chat-message', 'game-action', 'vote', 'kick-player'
+        ],
       },
     },
   });
@@ -195,7 +256,6 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
 
   // Don't leak error details in production
   const isDev = config.IS_DEVELOPMENT;
-
   res.status(500).json({
     error: 'Internal Server Error',
     message: isDev ? error.message : 'Something went wrong',

@@ -8,35 +8,31 @@ import { generateTokenPair, generatePasswordResetToken, verifyPasswordResetToken
 import { authLogger } from '@/utils/logger';
 import { ERROR_MESSAGES } from '@/utils/constants';
 import {
-    registerRequestSchema,
-    loginRequestSchema,
-    forgotPasswordSchema,
-    resetPasswordSchema
-} from '@/utils/validators';
-import type { ApiResponse } from '@/types/api';
+    validateRegisterRequest,
+    validateLoginRequest,
+    validateEmail
+} from '@/utils/simpleValidators';
+import type { ApiResponse } from '@/types';
 
 //======================================================================
-
 // REGISTER USER
 //======================================================================
 
 export const register = async (req: Request, res: Response): Promise<void> => {
     try {
         // Validate request body
-        const validation = registerRequestSchema.safeParse(req.body);
+        const validation = validateRegisterRequest(req.body);
         if (!validation.success) {
-            const errors = validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
-
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
-                message: errors.join(', '),
+                message: validation.error,
                 timestamp: new Date().toISOString(),
             } as ApiResponse);
             return;
         }
 
-        const { email, username, password } = validation.data;
+        const { email, username, password } = validation.data!;
 
         // Check if user already exists
         const existingUser = await prisma.user.findFirst({
@@ -131,27 +127,24 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 };
 
 //======================================================================
-
 // LOGIN USER
 //======================================================================
 
 export const login = async (req: Request, res: Response): Promise<void> => {
     try {
         // Validate request body
-        const validation = loginRequestSchema.safeParse(req.body);
+        const validation = validateLoginRequest(req.body);
         if (!validation.success) {
-            const errors = validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
-
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
-                message: errors.join(', '),
+                message: validation.error,
                 timestamp: new Date().toISOString(),
             } as ApiResponse);
             return;
         }
 
-        const { email, password } = validation.data;
+        const { email, password } = validation.data!;
 
         // Find user by email
         const user = await prisma.user.findUnique({
@@ -240,27 +233,22 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 };
 
 //======================================================================
-
 // FORGOT PASSWORD
 //======================================================================
 
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-        // Validate request body
-        const validation = forgotPasswordSchema.safeParse(req.body);
-        if (!validation.success) {
-            const errors = validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
+        const { email } = req.body;
 
+        if (!email || !validateEmail(email)) {
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
-                message: errors.join(', '),
+                message: 'Email inválido',
                 timestamp: new Date().toISOString(),
             } as ApiResponse);
             return;
         }
-
-        const { email } = validation.data;
 
         // Find user by email
         const user = await prisma.user.findUnique({
@@ -322,27 +310,32 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 };
 
 //======================================================================
-
 // RESET PASSWORD
 //======================================================================
 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-        // Validate request body
-        const validation = resetPasswordSchema.safeParse(req.body);
-        if (!validation.success) {
-            const errors = validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
+        const { token, password } = req.body;
 
+        if (!token || typeof token !== 'string') {
             res.status(400).json({
                 success: false,
                 error: ERROR_MESSAGES.VALIDATION_FAILED,
-                message: errors.join(', '),
+                message: 'Token é obrigatório',
                 timestamp: new Date().toISOString(),
             } as ApiResponse);
             return;
         }
 
-        const { token, password } = validation.data;
+        if (!password || typeof password !== 'string' || password.length < 6) {
+            res.status(400).json({
+                success: false,
+                error: ERROR_MESSAGES.VALIDATION_FAILED,
+                message: 'Senha deve ter pelo menos 6 caracteres',
+                timestamp: new Date().toISOString(),
+            } as ApiResponse);
+            return;
+        }
 
         // Verify reset token
         let tokenPayload;
@@ -423,7 +416,6 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 };
 
 //======================================================================
-
 // GET CURRENT USER PROFILE
 //======================================================================
 

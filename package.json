@@ -34,5 +34,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.9.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
   }
 }
