@@ -1,0 +1,21 @@
+{
+  "name": "Lobisomem Online",
+  "short_name": "Lobisomem",
+  "description": "Jogo de dedução social baseado em Town of Salem",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2D1B1E",
+  "theme_color": "#8B925A",
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ]
+}

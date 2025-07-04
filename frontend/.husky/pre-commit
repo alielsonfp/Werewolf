@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 🐺 LOBISOMEM ONLINE - Pre-commit Hook
+# Executa verificações antes do commit
+
+echo "🐺 Executando verificações pré-commit..."
+
+# Executar lint-staged para arquivos modificados
+echo "📝 Verificando código modificado..."
+npx lint-staged
+
+# Verificar tipos TypeScript
+echo "🔍 Verificando tipos TypeScript..."
+npm run type-check
+
+# Se chegou até aqui, está tudo ok!
+echo "✅ Verificações concluídas com sucesso!"
+echo "🎮 Pronto para commit!"

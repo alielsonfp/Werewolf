@@ -1,0 +1,103 @@
+# 🐺 LOBISOMEM ONLINE - Repomix Ignore (Frontend)
+# Arquivo para focar a análise de IA no código-fonte essencial.
+
+# =============================================================================
+# DEPENDÊNCIAS E PACOTES
+# =============================================================================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =============================================================================
+# ARQUIVOS DE BUILD E CACHE DO NEXT.JS
+# =============================================================================
+.next/
+out/
+.vercel/
+
+# =============================================================================
+# AMBIENTE E SEGREDOS
+# =============================================================================
+.env
+.env.local
+.env.*.local
+# Manter o .env.example para referência de configuração
+!.env.example
+
+# =============================================================================
+# ARQUIVOS GERADOS E DE CONFIGURAÇÃO DE LINGUAGEM
+# =============================================================================
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+tsconfig.json # A configuração do TS pode ser útil, mas vamos ignorar para focar no código.
+
+# =============================================================================
+# CONFIGURAÇÕES DE FERRAMENTAS (LINTING, FORMATTING, ETC.)
+# =============================================================================
+.eslintrc.json
+.prettierrc
+postcss.config.js
+tailwind.config.js
+next.config.js # Configuração do Next.js, ignorar para focar no código da aplicação.
+package.json # Ignorar para focar nos arquivos .ts/.tsx.
+
+# =============================================================================
+# LOGS E ARQUIVOS TEMPORÁRIOS
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.cache/
+tmp/
+temp/
+
+# =============================================================================
+# HOOKS DE GIT E SCRIPTS
+# =============================================================================
+.husky/
+quick-fix.bat
+
+# =============================================================================
+# DOCUMENTAÇÃO E ARQUIVOS META
+# =============================================================================
+README.md
+LICENSE
+.gitignore
+.repomixignore # Ignorar o próprio arquivo.
+
+# =============================================================================
+# ARQUIVOS PÚBLICOS E ASSETS
+# (Imagens, fontes, sons, etc. não são código-fonte relevante para o bug)
+# =============================================================================
+public/
+src/styles/ # O CSS global é importante, mas para o bug de JS, podemos ignorar temporariamente.
+
+# =============================================================================
+# ARQUIVOS DE SAÍDA DO REPOMIX
+# =============================================================================
+repomix-output.xml
+*.xml
+
+# =============================================================================
+# ARQUIVOS DE TESTE (se houver)
+# =============================================================================
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# =============================================================================
+# ARQUIVOS DE EDITOR E SISTEMA OPERACIONAL
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
