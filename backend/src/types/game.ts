@@ -1,9 +1,9 @@
 // 🐺 LOBISOMEM ONLINE - Game Types
 // Type definitions for game-related functionality
 
-// =============================================================================
+//====================================================================
 // GAME ENUMS
-// =============================================================================
+//====================================================================
 export enum GameStatus {
   WAITING = 'WAITING',
   STARTING = 'STARTING',
@@ -26,11 +26,9 @@ export enum Role {
   SHERIFF = 'SHERIFF',
   DOCTOR = 'DOCTOR',
   VIGILANTE = 'VIGILANTE',
-
   // Werewolf roles
   WEREWOLF = 'WEREWOLF',
   WEREWOLF_KING = 'WEREWOLF_KING',
-
   // Neutral roles
   JESTER = 'JESTER',
   SERIAL_KILLER = 'SERIAL_KILLER',
@@ -49,15 +47,15 @@ export enum ActionType {
   VOTE = 'VOTE',
 }
 
-// =============================================================================
+//====================================================================
 // GAME CONFIGURATION
-// =============================================================================
+//====================================================================
 export interface GameConfig {
   minPlayers: number;
   maxPlayers: number;
   maxSpectators: number;
   nightDuration: number; // milliseconds
-  dayDuration: number;   // milliseconds
+  dayDuration: number; // milliseconds
   votingDuration: number; // milliseconds
   roleDistribution: RoleDistribution;
   allowSpectators: boolean;
@@ -75,9 +73,9 @@ export interface RoleDistribution {
   [Role.SERIAL_KILLER]: number;
 }
 
-// =============================================================================
+//====================================================================
 // PLAYER STATE
-// =============================================================================
+//====================================================================
 export interface Player {
   id: string;
   userId: string;
@@ -105,9 +103,9 @@ export interface Player {
   reconnectAttempts: number;
 }
 
-// =============================================================================
+//====================================================================
 // GAME STATE
-// =============================================================================
+//====================================================================
 export interface GameState {
   gameId: string;
   roomId: string;
@@ -142,9 +140,9 @@ export interface GameState {
   finishedAt?: Date;
 }
 
-// =============================================================================
+//====================================================================
 // GAME EVENTS
-// =============================================================================
+//====================================================================
 export interface GameEvent {
   id: string;
   type: GameEventType;
@@ -178,9 +176,9 @@ export interface EliminatedPlayer {
   timestamp: Date;
 }
 
-// =============================================================================
+//====================================================================
 // ACTIONS
-// =============================================================================
+//====================================================================
 export interface GameAction {
   id: string;
   playerId: string;
@@ -204,9 +202,9 @@ export interface ActionEffect {
   data?: Record<string, any>;
 }
 
-// =============================================================================
+//====================================================================
 // VOTING
-// =============================================================================
+//====================================================================
 export interface Vote {
   voterId: string;
   targetId: string;
@@ -231,9 +229,9 @@ export interface VoteCount {
   voters: string[]; // Voter IDs
 }
 
-// =============================================================================
+//====================================================================
 // ROLE DEFINITIONS
-// =============================================================================
+//====================================================================
 export interface RoleDefinition {
   role: Role;
   faction: Faction;
@@ -253,9 +251,9 @@ export interface RoleDefinition {
   cooldown?: number; // Actions per game/phase
 }
 
-// =============================================================================
+//====================================================================
 // WIN CONDITIONS
-// =============================================================================
+//====================================================================
 export interface WinCondition {
   faction: Faction;
   condition: WinConditionType;
@@ -270,9 +268,9 @@ export enum WinConditionType {
   SERIAL_KILLER_WINS = 'SERIAL_KILLER_WINS', // Last player standing
 }
 
-// =============================================================================
+//====================================================================
 // GAME CREATION & MANAGEMENT
-// =============================================================================
+//====================================================================
 export interface CreateGameRequest {
   roomId: string;
   config?: Partial<GameConfig>;

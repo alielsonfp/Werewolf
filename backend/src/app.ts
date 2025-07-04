@@ -1,6 +1,5 @@
 // 🐺 LOBISOMEM ONLINE - Express Application Setup
-// ⚠️ CRÍTICO: Preparado para separação REST/WebSocket na Fase 2
-
+// ⚠ CRÍTICO: Preparado para separação REST/WebSocket na Fase 2
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,14 +9,18 @@ import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
 
-// =============================================================================
+// Import routes
+import authRoutes from '@/routes/auth';
+import roomRoutes from '@/routes/rooms';
+
+//=====================================================================
 // EXPRESS APPLICATION
-// =============================================================================
+//=====================================================================
 const app = express();
 
-// =============================================================================
+//=====================================================================
 // SECURITY MIDDLEWARE
-// =============================================================================
+//=====================================================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -31,9 +34,9 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// =============================================================================
+//=====================================================================
 // CORS CONFIGURATION
-// =============================================================================
+//=====================================================================
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, postman, etc.)
@@ -62,9 +65,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
-// =============================================================================
+//=====================================================================
 // GENERAL MIDDLEWARE
-// =============================================================================
+//=====================================================================
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -76,9 +79,9 @@ if (config.IS_DEVELOPMENT) {
   app.use(morgan('combined'));
 }
 
-// =============================================================================
+//=====================================================================
 // HEALTH CHECK ENDPOINTS
-// =============================================================================
+//=====================================================================
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
@@ -101,7 +104,8 @@ app.get('/health', async (req, res) => {
     // If any service is unhealthy, return 503
     if (dbHealth.status === 'unhealthy' ||
       (config.SHOULD_USE_REDIS && redisHealth.status === 'unhealthy')) {
-      return res.status(503).json(health);
+      res.status(503).json(health);
+      return;
     }
 
     res.json(health);
@@ -130,19 +134,20 @@ app.get('/health/live', (req, res) => {
   });
 });
 
-// =============================================================================
-// API ROUTES (Will be added in next steps)
-// =============================================================================
-// TODO: Add routes in next development steps
-// app.use('/api/auth', authRoutes);
+//=====================================================================
+// API ROUTES
+//=====================================================================
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+
+// TODO: Add more routes as they are implemented
 // app.use('/api/users', userRoutes);
-// app.use('/api/rooms', roomRoutes);
 // app.use('/api/games', gameRoutes);
 // app.use('/api/leaderboard', leaderboardRoutes);
 
-// =============================================================================
+//=====================================================================
 // ROOT ENDPOINT
-// =============================================================================
+//=====================================================================
 app.get('/', (req, res) => {
   res.json({
     message: '🐺 Werewolf Online API',
@@ -154,14 +159,29 @@ app.get('/', (req, res) => {
       health: '/health',
       ready: '/health/ready',
       live: '/health/live',
-      // TODO: Add API endpoints as they are implemented
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        forgotPassword: 'POST /api/auth/forgot-password',
+        resetPassword: 'POST /api/auth/reset-password',
+        profile: 'GET /api/auth/profile',
+        logout: 'POST /api/auth/logout',
+      },
+      rooms: {
+        list: 'GET /api/rooms',
+        create: 'POST /api/rooms',
+        details: 'GET /api/rooms/:id',
+        join: 'POST /api/rooms/:id/join',
+        joinByCode: 'POST /api/rooms/join-by-code',
+        delete: 'DELETE /api/rooms/:id',
+      },
     },
   });
 });
 
-// =============================================================================
+//=====================================================================
 // ERROR HANDLING MIDDLEWARE
-// =============================================================================
+//=====================================================================
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',

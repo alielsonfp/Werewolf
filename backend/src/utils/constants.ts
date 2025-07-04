@@ -1,11 +1,54 @@
 // 🐺 LOBISOMEM ONLINE - Constants
 // Game rules, limits, and configuration constants
 
-import { Role, Faction, RoleDefinition } from '@/types/game';
+//====================================================================
+// BASIC TYPES DEFINITIONS
+//====================================================================
+export enum Role {
+  // Town roles
+  VILLAGER = 'VILLAGER',
+  SHERIFF = 'SHERIFF',
+  DOCTOR = 'DOCTOR',
+  VIGILANTE = 'VIGILANTE',
+  // Werewolf roles
+  WEREWOLF = 'WEREWOLF',
+  WEREWOLF_KING = 'WEREWOLF_KING',
+  // Neutral roles
+  JESTER = 'JESTER',
+  SERIAL_KILLER = 'SERIAL_KILLER',
+}
 
-// =============================================================================
+export enum Faction {
+  TOWN = 'TOWN',
+  WEREWOLF = 'WEREWOLF',
+  NEUTRAL = 'NEUTRAL',
+}
+
+export enum GamePhase {
+  LOBBY = 'LOBBY',
+  NIGHT = 'NIGHT',
+  DAY = 'DAY',
+  VOTING = 'VOTING',
+  ENDED = 'ENDED',
+}
+
+export interface RoleDefinition {
+  role: Role;
+  faction: Faction;
+  name: string;
+  description: string;
+  abilities: string[];
+  goalDescription: string;
+  canAct: boolean;
+  actsDuring: string[];
+  hasNightChat: boolean;
+  immuneToInvestigation: boolean;
+  maxActions?: number;
+}
+
+//====================================================================
 // GAME LIMITS
-// =============================================================================
+//====================================================================
 export const GAME_LIMITS = {
   MIN_PLAYERS: 6,
   MAX_PLAYERS: 15,
@@ -16,8 +59,8 @@ export const GAME_LIMITS = {
   ROOM_CODE_LENGTH: 6,
 
   // Time limits (milliseconds)
-  NIGHT_DURATION: 60000,  // 60 seconds
-  DAY_DURATION: 120000,   // 2 minutes
+  NIGHT_DURATION: 60000, // 60 seconds
+  DAY_DURATION: 120000, // 2 minutes
   VOTING_DURATION: 30000, // 30 seconds
 
   // Chat limits
@@ -30,12 +73,12 @@ export const GAME_LIMITS = {
 
   // Heartbeat
   HEARTBEAT_INTERVAL: 30000, // 30 seconds
-  HEARTBEAT_TIMEOUT: 5000,   // 5 seconds
+  HEARTBEAT_TIMEOUT: 5000, // 5 seconds
 } as const;
 
-// =============================================================================
+//====================================================================
 // ROLE DEFINITIONS
-// =============================================================================
+//====================================================================
 export const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
   [Role.VILLAGER]: {
     role: Role.VILLAGER,
@@ -143,9 +186,9 @@ export const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
   },
 };
 
-// =============================================================================
+//====================================================================
 // ROLE DISTRIBUTIONS BY PLAYER COUNT
-// =============================================================================
+//====================================================================
 export const ROLE_DISTRIBUTIONS = {
   6: { // Minimum players
     [Role.VILLAGER]: 1,
@@ -157,7 +200,6 @@ export const ROLE_DISTRIBUTIONS = {
     [Role.JESTER]: 1,
     [Role.SERIAL_KILLER]: 0,
   },
-
   9: { // Medium game
     [Role.VILLAGER]: 2,
     [Role.SHERIFF]: 1,
@@ -168,7 +210,6 @@ export const ROLE_DISTRIBUTIONS = {
     [Role.JESTER]: 1,
     [Role.SERIAL_KILLER]: 1,
   },
-
   12: { // Standard game
     [Role.VILLAGER]: 4,
     [Role.SHERIFF]: 1,
@@ -179,7 +220,6 @@ export const ROLE_DISTRIBUTIONS = {
     [Role.JESTER]: 1,
     [Role.SERIAL_KILLER]: 1,
   },
-
   15: { // Maximum players
     [Role.VILLAGER]: 6,
     [Role.SHERIFF]: 1,
@@ -192,9 +232,9 @@ export const ROLE_DISTRIBUTIONS = {
   },
 } as const;
 
-// =============================================================================
+//====================================================================
 // THEMED NICKNAMES (MEDIEVAL PORTUGUESE)
-// =============================================================================
+//====================================================================
 export const THEMED_NICKNAMES = [
   // Profissões
   'João Ferreiro', 'Maria Padeira', 'Pedro Lenhador', 'Ana Tecelã',
@@ -217,9 +257,9 @@ export const THEMED_NICKNAMES = [
   'Egas Mão-de-Ferro', 'Violante Voz-Doce', 'Álvaro Pé-Ligeiro', 'Branca Riso-Fácil',
 ] as const;
 
-// =============================================================================
+//====================================================================
 // CHAT CHANNELS
-// =============================================================================
+//====================================================================
 export const CHAT_CHANNELS = {
   LOBBY: 'lobby',
   ROOM: 'room',
@@ -229,17 +269,17 @@ export const CHAT_CHANNELS = {
   SYSTEM: 'system',
 } as const;
 
-// =============================================================================
+//====================================================================
 // INVESTIGATION RESULTS
-// =============================================================================
+//====================================================================
 export const INVESTIGATION_RESULTS = {
   SUSPICIOUS: 'SUSPICIOUS',
   NOT_SUSPICIOUS: 'NOT_SUSPICIOUS',
 } as const;
 
-// =============================================================================
+//====================================================================
 // WIN CONDITIONS
-// =============================================================================
+//====================================================================
 export const WIN_CONDITIONS = {
   TOWN_WINS: 'All werewolves have been eliminated',
   WEREWOLF_WINS: 'Werewolves equal or outnumber the town',
@@ -247,9 +287,9 @@ export const WIN_CONDITIONS = {
   SERIAL_KILLER_WINS: 'Serial Killer is the last survivor',
 } as const;
 
-// =============================================================================
+//====================================================================
 // ACHIEVEMENT CATEGORIES
-// =============================================================================
+//====================================================================
 export const ACHIEVEMENT_CATEGORIES = {
   FIRST_TIME: 'first_time',
   SURVIVAL: 'survival',
@@ -259,14 +299,14 @@ export const ACHIEVEMENT_CATEGORIES = {
   SPECIAL: 'special',
 } as const;
 
-// =============================================================================
+//====================================================================
 // SYSTEM MESSAGES
-// =============================================================================
+//====================================================================
 export const SYSTEM_MESSAGES = {
   GAME_STARTED: '🎮 O jogo começou! Boa sorte a todos!',
   NIGHT_PHASE: '🌙 A noite caiu sobre a vila...',
-  DAY_PHASE: '☀️ O sol nasceu. É hora de discutir!',
-  VOTING_PHASE: '🗳️ Hora da votação! Escolham com sabedoria.',
+  DAY_PHASE: '☀ O sol nasceu. É hora de discutir!',
+  VOTING_PHASE: '🗳 Hora da votação! Escolham com sabedoria.',
   PLAYER_ELIMINATED: (name: string, role: string) => `💀 ${name} foi eliminado! Era um(a) ${role}.`,
   GAME_ENDED: (faction: string) => `🏆 Fim de jogo! ${faction} venceu!`,
   PLAYER_JOINED: (name: string) => `👋 ${name} entrou na sala.`,
@@ -274,9 +314,9 @@ export const SYSTEM_MESSAGES = {
   RECONNECTED: (name: string) => `🔄 ${name} reconectou-se.`,
 } as const;
 
-// =============================================================================
+//====================================================================
 // ERROR MESSAGES
-// =============================================================================
+//====================================================================
 export const ERROR_MESSAGES = {
   UNAUTHORIZED: 'Token de acesso inválido ou expirado',
   FORBIDDEN: 'Você não tem permissão para esta ação',
