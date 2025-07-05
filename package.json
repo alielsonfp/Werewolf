@@ -15,7 +15,8 @@
     "build": "npm run build --workspace=backend",
     "test": "npm run test --workspace=backend",
     "lint": "npm run lint --workspace=backend",
-    "clean": "docker-compose -f docker-compose.dev.yml down -v && docker system prune -f"
+    "clean": "docker-compose -f docker-compose.dev.yml down -v && docker system prune -f",
+    "test:logic": "tsx --tsconfig backend/tsconfig.json scripts/test-game-logic.ts"
   },
   "keywords": [
     "werewolf",
