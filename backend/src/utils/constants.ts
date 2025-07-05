@@ -1,8 +1,8 @@
-// 🐺 LOBISOMEM ONLINE - Constants
-// Game rules, limits, and configuration constants
+// 🐺 LOBISOMEM ONLINE - Constants (REFATORADO)
+// ✅ APENAS definições básicas - roles vêm de RoleSystem.ts
 
 //====================================================================
-// BASIC TYPES DEFINITIONS
+// ENUMS DEFINITIONS (ÚNICOS AQUI)
 //====================================================================
 export enum Role {
   // Town roles
@@ -30,20 +30,6 @@ export enum GamePhase {
   DAY = 'DAY',
   VOTING = 'VOTING',
   ENDED = 'ENDED',
-}
-
-export interface RoleDefinition {
-  role: Role;
-  faction: Faction;
-  name: string;
-  description: string;
-  abilities: string[];
-  goalDescription: string;
-  canAct: boolean;
-  actsDuring: string[];
-  hasNightChat: boolean;
-  immuneToInvestigation: boolean;
-  maxActions?: number;
 }
 
 //====================================================================
@@ -74,162 +60,6 @@ export const GAME_LIMITS = {
   // Heartbeat
   HEARTBEAT_INTERVAL: 30000, // 30 seconds
   HEARTBEAT_TIMEOUT: 5000, // 5 seconds
-} as const;
-
-//====================================================================
-// ROLE DEFINITIONS
-//====================================================================
-export const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
-  [Role.VILLAGER]: {
-    role: Role.VILLAGER,
-    faction: Faction.TOWN,
-    name: 'Aldeão',
-    description: 'Cidadão comum da vila',
-    abilities: ['Votar durante o dia'],
-    goalDescription: 'Eliminar todos os Lobisomens',
-    canAct: false,
-    actsDuring: [],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-  },
-
-  [Role.SHERIFF]: {
-    role: Role.SHERIFF,
-    faction: Faction.TOWN,
-    name: 'Investigador',
-    description: 'Investiga pessoas durante a noite',
-    abilities: ['Investigar uma pessoa por noite'],
-    goalDescription: 'Encontrar e eliminar todos os Lobisomens',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-  },
-
-  [Role.DOCTOR]: {
-    role: Role.DOCTOR,
-    faction: Faction.TOWN,
-    name: 'Médico',
-    description: 'Protege pessoas da morte durante a noite',
-    abilities: ['Proteger uma pessoa por noite', 'Não pode se proteger consecutivamente'],
-    goalDescription: 'Manter a vila viva e eliminar os Lobisomens',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-  },
-
-  [Role.VIGILANTE]: {
-    role: Role.VIGILANTE,
-    faction: Faction.TOWN,
-    name: 'Vigilante',
-    description: 'Pode matar suspeitos durante a noite',
-    abilities: ['Matar uma pessoa por noite (máximo 3 vezes)', 'Perde próxima ação se matar inocente'],
-    goalDescription: 'Eliminar os inimigos da vila',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-    maxActions: 3,
-  },
-
-  [Role.WEREWOLF]: {
-    role: Role.WEREWOLF,
-    faction: Faction.WEREWOLF,
-    name: 'Lobisomem',
-    description: 'Elimina aldeões durante a noite',
-    abilities: ['Votar em quem matar durante a noite', 'Chat secreto com outros Lobisomens'],
-    goalDescription: 'Igualar ou superar o número de aldeões',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: true,
-    immuneToInvestigation: false,
-  },
-
-  [Role.WEREWOLF_KING]: {
-    role: Role.WEREWOLF_KING,
-    faction: Faction.WEREWOLF,
-    name: 'Rei dos Lobisomens',
-    description: 'Líder da alcateia, imune à investigação',
-    abilities: ['Liderar votação de morte noturna', 'Imune ao Investigador', 'Chat secreto com Lobisomens'],
-    goalDescription: 'Comandar a alcateia para a vitória',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: true,
-    immuneToInvestigation: true,
-  },
-
-  [Role.JESTER]: {
-    role: Role.JESTER,
-    faction: Faction.NEUTRAL,
-    name: 'Bobo da Corte',
-    description: 'Vence sendo executado por votação',
-    abilities: ['Vencer se for executado durante o dia'],
-    goalDescription: 'Ser executado por votação popular',
-    canAct: false,
-    actsDuring: [],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-  },
-
-  [Role.SERIAL_KILLER]: {
-    role: Role.SERIAL_KILLER,
-    faction: Faction.NEUTRAL,
-    name: 'Assassino em Série',
-    description: 'Mata uma pessoa por noite, vence sozinho',
-    abilities: ['Matar uma pessoa por noite', 'Imune a proteção na primeira noite'],
-    goalDescription: 'Ser o último sobrevivente',
-    canAct: true,
-    actsDuring: ['NIGHT'],
-    hasNightChat: false,
-    immuneToInvestigation: false,
-  },
-};
-
-//====================================================================
-// ROLE DISTRIBUTIONS BY PLAYER COUNT
-//====================================================================
-export const ROLE_DISTRIBUTIONS = {
-  6: { // Minimum players
-    [Role.VILLAGER]: 1,
-    [Role.SHERIFF]: 1,
-    [Role.DOCTOR]: 1,
-    [Role.WEREWOLF]: 2,
-    [Role.WEREWOLF_KING]: 0,
-    [Role.VIGILANTE]: 0,
-    [Role.JESTER]: 1,
-    [Role.SERIAL_KILLER]: 0,
-  },
-  9: { // Medium game
-    [Role.VILLAGER]: 2,
-    [Role.SHERIFF]: 1,
-    [Role.DOCTOR]: 1,
-    [Role.VIGILANTE]: 1,
-    [Role.WEREWOLF]: 1,
-    [Role.WEREWOLF_KING]: 1,
-    [Role.JESTER]: 1,
-    [Role.SERIAL_KILLER]: 1,
-  },
-  12: { // Standard game
-    [Role.VILLAGER]: 4,
-    [Role.SHERIFF]: 1,
-    [Role.DOCTOR]: 1,
-    [Role.VIGILANTE]: 1,
-    [Role.WEREWOLF]: 2,
-    [Role.WEREWOLF_KING]: 1,
-    [Role.JESTER]: 1,
-    [Role.SERIAL_KILLER]: 1,
-  },
-  15: { // Maximum players
-    [Role.VILLAGER]: 6,
-    [Role.SHERIFF]: 1,
-    [Role.DOCTOR]: 1,
-    [Role.VIGILANTE]: 1,
-    [Role.WEREWOLF]: 3,
-    [Role.WEREWOLF_KING]: 1,
-    [Role.JESTER]: 1,
-    [Role.SERIAL_KILLER]: 1,
-  },
 } as const;
 
 //====================================================================

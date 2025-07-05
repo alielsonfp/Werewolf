@@ -1,129 +1,123 @@
-// 🐺 LOBISOMEM ONLINE - Service Factory
+// 🐺 LOBISOMEM ONLINE - Service Factory (REFATORADO)
 // ✅ PREPARADO PARA MIGRAÇÃO AUTOMÁTICA → microservices
 import { config } from '@/config/environment';
 import { getRedisClient } from '@/config/redis';
 import { logger } from '@/utils/logger';
-import type { IGameStateService, IEventBus, IServiceRegistry, Game, GameConfig, GameState, Player, ServiceMetadata } from '@/types';
-
+import { GameState, Player } from '@/game/Game'; // ✅ Usar classe real
+import type {
+    IGameStateService,
+    IEventBus,
+    IServiceRegistry,
+    GameConfig,
+    ServiceMetadata
+} from '@/types';
 
 //====================================================================
-// MEMORY IMPLEMENTATIONS (PHASE 1)
+// MEMORY IMPLEMENTATIONS (PHASE 1) - CORRIGIDAS
 //====================================================================
 
 class MemoryGameStateService implements IGameStateService {
-    private games = new Map<string, Game>();
-    private gameStates = new Map<string, GameState>();
+    private games = new Map<string, GameState>(); // ✅ Usar GameState não Game
     private players = new Map<string, Map<string, Player>>();
 
-    async createGame(hostId: string, config: GameConfig): Promise<Game> {
-        const gameId = `game-${Date.now()}`;
-        const game: Game = {
-            id: gameId,
-            roomId: config.roomId || `room-${gameId}`,
-            status: 'WAITING',
-            phase: 'LOBBY',
-            players: [],
-            spectators: [],
-            gameConfig: config,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-        this.games.set(gameId, game);
+    async createGame(hostId: string, config: GameConfig): Promise<GameState> {
+        const gameId = `game-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        // ✅ Criar GameState real
+        const gameState = new GameState(gameId, config, hostId);
+
+        this.games.set(gameId, gameState);
         this.players.set(gameId, new Map());
-        return game;
+
+        logger.info('Game created in memory', { gameId, hostId });
+        return gameState;
     }
 
-    async addPlayer(gameId: string, player: Player): Promise<void> {
-        const game = this.games.get(gameId);
-        if (!game) throw new Error(`Game ${gameId} not found`);
-        const gamePlayers = this.players.get(gameId)!;
-        gamePlayers.set(player.id, player);
-
-        // CORREÇÃO: Adicionando tipo explícito para 'p'
-        game.players = Array.from(gamePlayers.values()).filter((p: Player) => !p.isSpectator);
-        game.spectators = Array.from(gamePlayers.values()).filter((p: Player) => p.isSpectator);
-    }
-    // ... (restante dos métodos de MemoryGameStateService)
-
-    async getGame(gameId: string): Promise<Game | null> {
+    async getGame(gameId: string): Promise<GameState | null> {
         return this.games.get(gameId) || null;
     }
 
     async updateGameState(gameId: string, updates: Partial<GameState>): Promise<void> {
-        const currentState = this.gameStates.get(gameId);
-        if (currentState) {
-            Object.assign(currentState, updates, { updatedAt: new Date() });
-        }
+        const gameState = this.games.get(gameId);
+        if (!gameState) throw new Error(`Game ${gameId} not found`);
+
+        // ✅ Aplicar updates na classe real
+        Object.assign(gameState, updates);
+        gameState.updatedAt = new Date();
     }
 
     async deleteGame(gameId: string): Promise<void> {
         this.games.delete(gameId);
-        this.gameStates.delete(gameId);
         this.players.delete(gameId);
         logger.info('Game deleted from memory', { gameId });
     }
 
+    async addPlayer(gameId: string, player: Player): Promise<void> {
+        const gameState = this.games.get(gameId);
+        if (!gameState) throw new Error(`Game ${gameId} not found`);
+
+        // ✅ Usar método da classe GameState
+        const success = gameState.addPlayer(player);
+        if (!success) {
+            throw new Error('Failed to add player to game');
+        }
+
+        // Manter cache de players para queries rápidas
+        const gamePlayers = this.players.get(gameId)!;
+        gamePlayers.set(player.id, player);
+    }
+
     async removePlayer(gameId: string, playerId: string): Promise<void> {
+        const gameState = this.games.get(gameId);
+        if (!gameState) return;
+
+        gameState.removePlayer(playerId);
+
         const gamePlayers = this.players.get(gameId);
-        if (!gamePlayers) return;
-
-        gamePlayers.delete(playerId);
-
-        const game = this.games.get(gameId);
-        if (game) {
-            game.players = Array.from(gamePlayers.values()).filter((p: Player) => !p.isSpectator);
-            game.spectators = Array.from(gamePlayers.values()).filter((p: Player) => p.isSpectator);
-            game.updatedAt = new Date();
+        if (gamePlayers) {
+            gamePlayers.delete(playerId);
         }
     }
 
     async updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void> {
-        const gamePlayers = this.players.get(gameId);
-        if (!gamePlayers) return;
+        const gameState = this.games.get(gameId);
+        if (!gameState) return;
 
-        const player = gamePlayers.get(playerId);
+        const player = gameState.getPlayer(playerId);
         if (player) {
             Object.assign(player, updates);
+        }
+
+        // Atualizar cache também
+        const gamePlayers = this.players.get(gameId);
+        if (gamePlayers) {
+            const cachedPlayer = gamePlayers.get(playerId);
+            if (cachedPlayer) {
+                Object.assign(cachedPlayer, updates);
+            }
         }
     }
 
     async getGameState(gameId: string): Promise<GameState | null> {
-        const game = this.games.get(gameId);
-        if (!game) return null;
-
-        return {
-            gameId,
-            roomId: game.roomId,
-            status: game.status,
-            phase: game.phase,
-            players: game.players,
-            spectators: game.spectators,
-            hostId: game.players.find((p: Player) => p.isHost)?.userId || '',
-            currentDay: 1,
-            timeLeft: 0,
-            events: [],
-            eliminatedPlayers: [],
-            config: game.gameConfig,
-            createdAt: game.createdAt,
-            updatedAt: game.updatedAt,
-        };
+        // ✅ Retornar o estado real da classe
+        return this.games.get(gameId) || null;
     }
 
     async getPlayer(gameId: string, playerId: string): Promise<Player | null> {
-        const gamePlayers = this.players.get(gameId);
-        return gamePlayers?.get(playerId) || null;
+        const gameState = this.games.get(gameId);
+        return gameState?.getPlayer(playerId) || null;
     }
 
     async getAllPlayers(gameId: string): Promise<Player[]> {
-        const gamePlayers = this.players.get(gameId);
-        return gamePlayers ? Array.from(gamePlayers.values()) : [];
+        const gameState = this.games.get(gameId);
+        return gameState ? gameState.players : [];
     }
 
-    async getGamesByRoom(roomId: string): Promise<Game[]> {
-        const games: Game[] = [];
-        for (const game of this.games.values()) {
-            if (game.roomId === roomId) {
-                games.push(game);
+    async getGamesByRoom(roomId: string): Promise<GameState[]> {
+        const games: GameState[] = [];
+        for (const gameState of this.games.values()) {
+            if (gameState.roomId === roomId) {
+                games.push(gameState);
             }
         }
         return games;
@@ -131,27 +125,43 @@ class MemoryGameStateService implements IGameStateService {
 
     async getActiveGamesCount(): Promise<number> {
         let count = 0;
-        for (const game of this.games.values()) {
-            if (game.status === 'PLAYING' || game.status === 'STARTING') {
+        for (const gameState of this.games.values()) {
+            if (gameState.status === 'PLAYING' || gameState.status === 'STARTING') {
                 count++;
             }
         }
         return count;
     }
 
-    cleanup(): number { return 0; }
+    cleanup(): number {
+        const count = this.games.size;
+        this.games.clear();
+        this.players.clear();
+        return count;
+    }
 
     async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
-        return { status: 'healthy', message: 'Memory OK' };
+        return {
+            status: 'healthy',
+            message: `Memory storage OK - ${this.games.size} games active`
+        };
     }
 }
+
 class LocalEventBus implements IEventBus {
     private listeners = new Map<string, Array<(event: any) => void>>();
 
     async publish<T>(channel: string, event: T): Promise<void> {
         const channelListeners = this.listeners.get(channel) || [];
         for (const listener of channelListeners) {
-            listener(event);
+            try {
+                listener(event);
+            } catch (error) {
+                logger.error('Error in event listener', error instanceof Error ? error : new Error('Unknown listener error'), {
+                    channel,
+                    event: typeof event === 'object' ? JSON.stringify(event) : String(event)
+                });
+            }
         }
     }
 
@@ -167,51 +177,161 @@ class LocalEventBus implements IEventBus {
     }
 
     async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
-        return { status: 'healthy', message: 'Local Bus OK' };
+        return {
+            status: 'healthy',
+            message: `Local EventBus OK - ${this.listeners.size} channels`
+        };
     }
 }
+
 class MockServiceRegistry implements IServiceRegistry {
     private services = new Map<string, ServiceMetadata>();
-    async registerService(serviceId: string, metadata: ServiceMetadata): Promise<void> { this.services.set(serviceId, metadata); }
-    async getAvailableServices(serviceType: string): Promise<string[]> { return []; }
-    async unregisterService(serviceId: string): Promise<void> { this.services.delete(serviceId); }
-    async getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null> { return this.services.get(serviceId) || null; }
-    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> { return { status: 'healthy', message: 'Mock Registry OK' }; }
+
+    async registerService(serviceId: string, metadata: ServiceMetadata): Promise<void> {
+        this.services.set(serviceId, metadata);
+        logger.debug('Service registered', { serviceId, type: metadata.type });
+    }
+
+    async getAvailableServices(serviceType: string): Promise<string[]> {
+        const services: string[] = [];
+        for (const [serviceId, metadata] of this.services.entries()) {
+            if (metadata.type === serviceType) {
+                services.push(serviceId);
+            }
+        }
+        return services;
+    }
+
+    async unregisterService(serviceId: string): Promise<void> {
+        this.services.delete(serviceId);
+        logger.debug('Service unregistered', { serviceId });
+    }
+
+    async getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null> {
+        return this.services.get(serviceId) || null;
+    }
+
+    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
+        return {
+            status: 'healthy',
+            message: `Mock Registry OK - ${this.services.size} services`
+        };
+    }
 }
 
-// ... Implementações Redis ...
+//====================================================================
+// REDIS IMPLEMENTATIONS (PHASE 2) - PLACEHOLDERS CORRIGIDOS
+//====================================================================
+
 class RedisGameStateService implements IGameStateService {
     constructor(private redisUrl: string) { }
-    async createGame(hostId: string, config: GameConfig): Promise<Game> { throw new Error('Not implemented'); }
-    async getGame(gameId: string): Promise<Game | null> { throw new Error('Not implemented'); }
-    async updateGameState(gameId: string, updates: Partial<GameState>): Promise<void> { throw new Error('Not implemented'); }
-    async deleteGame(gameId: string): Promise<void> { throw new Error('Not implemented'); }
-    async addPlayer(gameId: string, player: Player): Promise<void> { throw new Error('Not implemented'); }
-    async removePlayer(gameId: string, playerId: string): Promise<void> { throw new Error('Not implemented'); }
-    async updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void> { throw new Error('Not implemented'); }
-    async getGameState(gameId: string): Promise<GameState | null> { throw new Error('Not implemented'); }
-    async getPlayer(gameId: string, playerId: string): Promise<Player | null> { throw new Error('Not implemented'); }
-    async getAllPlayers(gameId: string): Promise<Player[]> { throw new Error('Not implemented'); }
-    async getGamesByRoom(roomId: string): Promise<Game[]> { throw new Error('Not implemented'); }
-    async getActiveGamesCount(): Promise<number> { throw new Error('Not implemented'); }
-    cleanup(): number { return 0; }
-    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> { return { status: 'unhealthy', message: 'Not implemented' }; }
+
+    async createGame(hostId: string, config: GameConfig): Promise<GameState> {
+        // TODO: Implementar Redis
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getGame(gameId: string): Promise<GameState | null> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async updateGameState(gameId: string, updates: Partial<GameState>): Promise<void> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async deleteGame(gameId: string): Promise<void> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async addPlayer(gameId: string, player: Player): Promise<void> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async removePlayer(gameId: string, playerId: string): Promise<void> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getGameState(gameId: string): Promise<GameState | null> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getPlayer(gameId: string, playerId: string): Promise<Player | null> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getAllPlayers(gameId: string): Promise<Player[]> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getGamesByRoom(roomId: string): Promise<GameState[]> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    async getActiveGamesCount(): Promise<number> {
+        throw new Error('Redis GameStateService not implemented yet');
+    }
+
+    cleanup(): number {
+        return 0;
+    }
+
+    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
+        return { status: 'unhealthy', message: 'Redis GameStateService not implemented' };
+    }
 }
+
 class RedisEventBus implements IEventBus {
     constructor(private redisUrl: string) { }
-    async publish<T>(channel: string, event: T): Promise<void> { throw new Error('Not implemented'); }
-    async subscribe<T>(channel: string, handler: (event: T) => void): Promise<void> { throw new Error('Not implemented'); }
-    async unsubscribe(channel: string): Promise<void> { throw new Error('Not implemented'); }
-    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> { return { status: 'unhealthy', message: 'Not implemented' }; }
+
+    async publish<T>(channel: string, event: T): Promise<void> {
+        // TODO: Implementar Redis Pub/Sub
+        throw new Error('Redis EventBus not implemented yet');
+    }
+
+    async subscribe<T>(channel: string, handler: (event: T) => void): Promise<void> {
+        throw new Error('Redis EventBus not implemented yet');
+    }
+
+    async unsubscribe(channel: string): Promise<void> {
+        throw new Error('Redis EventBus not implemented yet');
+    }
+
+    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
+        return { status: 'unhealthy', message: 'Redis EventBus not implemented' };
+    }
 }
+
 class RedisServiceRegistry implements IServiceRegistry {
     constructor(private redisUrl: string) { }
-    async registerService(serviceId: string, metadata: ServiceMetadata): Promise<void> { throw new Error('Not implemented'); }
-    async getAvailableServices(serviceType: string): Promise<string[]> { throw new Error('Not implemented'); }
-    async unregisterService(serviceId: string): Promise<void> { throw new Error('Not implemented'); }
-    async getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null> { throw new Error('Not implemented'); }
-    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> { return { status: 'unhealthy', message: 'Not implemented' }; }
+
+    async registerService(serviceId: string, metadata: ServiceMetadata): Promise<void> {
+        throw new Error('Redis ServiceRegistry not implemented yet');
+    }
+
+    async getAvailableServices(serviceType: string): Promise<string[]> {
+        throw new Error('Redis ServiceRegistry not implemented yet');
+    }
+
+    async unregisterService(serviceId: string): Promise<void> {
+        throw new Error('Redis ServiceRegistry not implemented yet');
+    }
+
+    async getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null> {
+        throw new Error('Redis ServiceRegistry not implemented yet');
+    }
+
+    async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
+        return { status: 'unhealthy', message: 'Redis ServiceRegistry not implemented' };
+    }
 }
+
+//====================================================================
+// SERVICE FACTORY - CORRIGIDA
+//====================================================================
 
 export class ServiceFactory {
     private static instances = new Map<string, any>();
@@ -222,6 +342,7 @@ export class ServiceFactory {
                 ? new RedisGameStateService(config.REDIS_URL)
                 : new MemoryGameStateService();
             this.instances.set('gameState', service);
+            logger.info('GameStateService initialized', { type: config.STORAGE_TYPE });
         }
         return this.instances.get('gameState');
     }
@@ -232,6 +353,7 @@ export class ServiceFactory {
                 ? new RedisEventBus(config.REDIS_URL)
                 : new LocalEventBus();
             this.instances.set('eventBus', bus);
+            logger.info('EventBus initialized', { type: config.DISTRIBUTED_MODE ? 'redis' : 'local' });
         }
         return this.instances.get('eventBus');
     }
@@ -242,6 +364,7 @@ export class ServiceFactory {
                 ? new RedisServiceRegistry(config.REDIS_URL)
                 : new MockServiceRegistry();
             this.instances.set('serviceRegistry', registry);
+            logger.info('ServiceRegistry initialized', { type: config.DISTRIBUTED_MODE ? 'redis' : 'mock' });
         }
         return this.instances.get('serviceRegistry');
     }
@@ -255,18 +378,34 @@ export class ServiceFactory {
         ];
 
         for (const { name, service } of services) {
-            if (service.healthCheck) {
-                health[name] = await service.healthCheck();
+            try {
+                if (service.healthCheck) {
+                    health[name] = await service.healthCheck();
+                } else {
+                    health[name] = { status: 'healthy', message: 'No health check available' };
+                }
+            } catch (error) {
+                health[name] = {
+                    status: 'unhealthy',
+                    message: error instanceof Error ? error.message : 'Unknown error'
+                };
             }
         }
         return health;
     }
 
     static getServicesStats(): Record<string, any> {
-        // Implementar lógica para obter estatísticas, se necessário.
         return {
-            gameState: { type: config.STORAGE_TYPE },
-            eventBus: { type: config.DISTRIBUTED_MODE ? 'redis' : 'local' }
+            gameState: {
+                type: config.STORAGE_TYPE,
+                distributed: config.DISTRIBUTED_MODE
+            },
+            eventBus: {
+                type: config.DISTRIBUTED_MODE ? 'redis' : 'local'
+            },
+            serviceRegistry: {
+                type: config.DISTRIBUTED_MODE ? 'redis' : 'mock'
+            }
         };
     }
 
@@ -274,8 +413,11 @@ export class ServiceFactory {
         const gameStateService = this.getGameStateService();
         if (gameStateService.cleanup) {
             const cleanedCount = gameStateService.cleanup();
-            logger.info('GameStateService cleanup ran', { cleanedCount });
+            logger.info('GameStateService cleanup completed', { cleanedCount });
         }
+
+        this.instances.clear();
+        logger.info('ServiceFactory instances cleared');
     }
 
     static clearInstances(): void {
