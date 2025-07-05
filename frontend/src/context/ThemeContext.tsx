@@ -1,16 +1,14 @@
-'use client';
-
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import audioService from '@/services/audioService';
 
 // =============================================================================
-// SIMPLIFIED TYPES
+// TYPES
 // =============================================================================
-export enum GamePhase {
-  LOBBY = 'LOBBY',
-  NIGHT = 'NIGHT',
-  DAY = 'DAY',
-  VOTING = 'VOTING',
-  ENDED = 'ENDED',
+interface PhaseColors {
+  background: string;
+  text: string;
+  accent: string;
+  border: string;
 }
 
 interface AudioConfig {
@@ -19,235 +17,162 @@ interface AudioConfig {
   enabled: boolean;
 }
 
-interface PhaseColors {
-  background: string;
-  text: string;
-  accent: string;
-  border: string;
-}
-
-// =============================================================================
-// CONTEXT TYPES
-// =============================================================================
 interface ThemeContextType {
-  // Theme state
-  isDark: boolean;
-  currentPhase: GamePhase;
-
-  // Audio state
-  audioConfig: AudioConfig;
-
-  // Actions
-  toggleDarkMode: () => void;
-  setGamePhase: (phase: GamePhase) => void;
-  updateAudioConfig: (config: Partial<AudioConfig>) => void;
-  playSound: (soundId: string, volume?: number) => void;
-  playMusic: (musicId: string, loop?: boolean) => void;
+  theme: 'werewolf' | 'medieval' | 'modern';
+  setTheme: (theme: 'werewolf' | 'medieval' | 'modern') => void;
+  playSound: (soundId: string) => void;
+  playMusic: (musicId: string) => void;
   stopMusic: () => void;
-
-  // Utils
+  setMusicVolume: (volume: number) => void;
+  setSoundVolume: (volume: number) => void;
+  musicVolume: number;
+  soundVolume: number;
+  isMusicPlaying: boolean;
+  isAudioUnblocked: boolean;
   getPhaseColors: () => PhaseColors;
   getThemeClass: () => string;
+  audioConfig: AudioConfig;
+  updateAudioConfig: (config: Partial<AudioConfig>) => void;
 }
 
 // =============================================================================
-// CONTEXT CREATION
+// THEME CONTEXT
 // =============================================================================
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 // =============================================================================
-// PROVIDER COMPONENT
+// THEME PROVIDER
 // =============================================================================
-interface ThemeProviderProps {
-  children: ReactNode;
-}
-
-export function ThemeProvider({ children }: ThemeProviderProps) {
-  // Theme state
-  const [isDark, setIsDark] = useState(true); // Default dark for medieval theme
-  const [currentPhase, setCurrentPhase] = useState<GamePhase>(GamePhase.LOBBY);
-
-  // Audio state
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<'werewolf' | 'medieval' | 'modern'>('werewolf');
   const [audioConfig, setAudioConfig] = useState<AudioConfig>({
-    musicVolume: 0.3,
+    musicVolume: 0.5,
     sfxVolume: 0.7,
     enabled: true,
   });
 
   // =============================================================================
-  // THEME ACTIONS
+  // AUDIO FUNCTIONS (delegando para o audioService)
   // =============================================================================
-  const toggleDarkMode = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    localStorage.setItem('werewolf-theme', newTheme ? 'dark' : 'light');
-
-    // Update document class
-    if (typeof window !== 'undefined') {
-      document.documentElement.classList.toggle('dark', newTheme);
+  const playSound = (soundId: string) => {
+    if (audioConfig.enabled) {
+      audioService.playSound(soundId);
     }
   };
 
-  const setGamePhase = (phase: GamePhase) => {
-    setCurrentPhase(phase);
-    // Simplified - no audio for now
-    console.log(`🎮 Game phase changed to: ${phase}`);
-  };
-
-  // =============================================================================
-  // AUDIO ACTIONS (SIMPLIFIED)
-  // =============================================================================
-  const updateAudioConfig = (config: Partial<AudioConfig>) => {
-    const newConfig = { ...audioConfig, ...config };
-    setAudioConfig(newConfig);
-    localStorage.setItem('werewolf-audio', JSON.stringify(newConfig));
-  };
-
-  const playSound = (soundId: string, volume?: number) => {
-    if (!audioConfig.enabled) return;
-    console.log(`🔊 Playing sound: ${soundId} at volume ${volume || audioConfig.sfxVolume}`);
-    // Simplified - no actual audio for now
-  };
-
-  const playMusic = (musicId: string, loop = false) => {
-    if (!audioConfig.enabled) return;
-    console.log(`🎵 Playing music: ${musicId}, loop: ${loop}`);
-    // Simplified - no actual audio for now
+  const playMusic = (musicId: string) => {
+    if (audioConfig.enabled) {
+      audioService.playMusic(musicId);
+    }
   };
 
   const stopMusic = () => {
-    console.log('🛑 Music stopped');
-    // Simplified - no actual audio for now
+    audioService.stopMusic();
+  };
+
+  const setMusicVolume = (volume: number) => {
+    const newConfig = { ...audioConfig, musicVolume: volume };
+    setAudioConfig(newConfig);
+    audioService.setMusicVolume(volume);
+  };
+
+  const setSoundVolume = (volume: number) => {
+    const newConfig = { ...audioConfig, sfxVolume: volume };
+    setAudioConfig(newConfig);
+    audioService.setSoundVolume(volume);
+  };
+
+  const updateAudioConfig = (config: Partial<AudioConfig>) => {
+    const newConfig = { ...audioConfig, ...config };
+    setAudioConfig(newConfig);
+
+    // Atualizar volumes no audioService
+    if (config.musicVolume !== undefined) {
+      audioService.setMusicVolume(config.musicVolume);
+    }
+    if (config.sfxVolume !== undefined) {
+      audioService.setSoundVolume(config.sfxVolume);
+    }
+
+    // Se desabilitou o áudio, para a música
+    if (config.enabled === false) {
+      audioService.stopMusic();
+    }
   };
 
   // =============================================================================
-  // THEME UTILITIES
+  // THEME UTILITIES (que o Layout.tsx precisa)
   // =============================================================================
   const getPhaseColors = (): PhaseColors => {
-    switch (currentPhase) {
-      case GamePhase.NIGHT:
-        return {
-          background: 'from-night-dark to-night-light',
-          text: 'text-white',
-          accent: 'text-blue-300',
-          border: 'border-night-light',
-        };
-      case GamePhase.DAY:
-        return {
-          background: 'from-day-light to-day-dark',
-          text: 'text-medieval-900',
-          accent: 'text-yellow-600',
-          border: 'border-day-dark',
-        };
-      case GamePhase.VOTING:
-        return {
-          background: 'from-voting-dark to-voting-light',
-          text: 'text-white',
-          accent: 'text-red-300',
-          border: 'border-voting-light',
-        };
-      default:
-        return {
-          background: 'from-medieval-900 to-medieval-800',
-          text: 'text-white',
-          accent: 'text-salem-300',
-          border: 'border-medieval-600',
-        };
-    }
+    // Por enquanto retorna cores padrão do tema medieval
+    // Quando implementar fases do jogo, adicionar lógica aqui
+    return {
+      background: 'from-medieval-900 to-medieval-800',
+      text: 'text-white',
+      accent: 'text-salem-300',
+      border: 'border-medieval-600',
+    };
   };
 
   const getThemeClass = (): string => {
-    const phaseClass = `phase-${currentPhase.toLowerCase()}`;
-    const themeClass = isDark ? 'dark' : 'light';
-    return `${themeClass} ${phaseClass}`;
+    return `theme-${theme}`;
   };
 
   // =============================================================================
-  // INITIALIZATION
+  // THEME EFFECT
   // =============================================================================
   useEffect(() => {
-    // Load theme from localStorage
-    const savedTheme = localStorage.getItem('werewolf-theme');
-    if (savedTheme) {
-      const isDarkTheme = savedTheme === 'dark';
-      setIsDark(isDarkTheme);
-      document.documentElement.classList.toggle('dark', isDarkTheme);
-    }
+    // Aplicar classes do tema
+    document.documentElement.setAttribute('data-theme', theme);
 
-    // Load audio config from localStorage
-    const savedAudio = localStorage.getItem('werewolf-audio');
-    if (savedAudio) {
-      try {
-        const parsedAudio = JSON.parse(savedAudio);
-        setAudioConfig(parsedAudio);
-      } catch (error) {
-        console.error('Error parsing saved audio config:', error);
-      }
+    // Aplicar classes específicas
+    if (theme === 'werewolf') {
+      document.documentElement.classList.add('werewolf-theme');
+      document.documentElement.classList.remove('medieval-theme', 'modern-theme');
+    } else if (theme === 'medieval') {
+      document.documentElement.classList.add('medieval-theme');
+      document.documentElement.classList.remove('werewolf-theme', 'modern-theme');
+    } else {
+      document.documentElement.classList.add('modern-theme');
+      document.documentElement.classList.remove('werewolf-theme', 'medieval-theme');
     }
-
-    console.log('🎮 ThemeProvider initialized for Werewolf');
-  }, []);
-
-  // Update document class when theme or phase changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      document.body.className = getThemeClass();
-    }
-  }, [isDark, currentPhase]);
+  }, [theme]);
 
   // =============================================================================
   // CONTEXT VALUE
   // =============================================================================
-  const contextValue: ThemeContextType = {
-    // Theme state
-    isDark,
-    currentPhase,
-
-    // Audio state
-    audioConfig,
-
-    // Actions
-    toggleDarkMode,
-    setGamePhase,
-    updateAudioConfig,
+  const value: ThemeContextType = {
+    theme,
+    setTheme,
     playSound,
     playMusic,
     stopMusic,
-
-    // Utils
+    setMusicVolume,
+    setSoundVolume,
+    musicVolume: audioConfig.musicVolume,
+    soundVolume: audioConfig.sfxVolume,
+    isMusicPlaying: audioService.isMusicPlaying,
+    isAudioUnblocked: audioService.isAudioUnblocked,
     getPhaseColors,
     getThemeClass,
+    audioConfig,
+    updateAudioConfig,
   };
 
   return (
-    <ThemeContext.Provider value={contextValue}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
 // =============================================================================
-// HOOK
+// USE THEME HOOK
 // =============================================================================
-export function useTheme(): ThemeContextType {
+export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {
     throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
-}
-
-// =============================================================================
-// HIGHER-ORDER COMPONENT
-// =============================================================================
-export function withTheme<P extends object>(Component: React.ComponentType<P>) {
-  return function ThemedComponent(props: P) {
-    const { getThemeClass } = useTheme();
-
-    return (
-      <div className={getThemeClass()}>
-        <Component {...props} />
-      </div>
-    );
-  };
 }

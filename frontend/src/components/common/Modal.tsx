@@ -37,15 +37,9 @@ export default function Modal({
   }, []);
 
   // =============================================================================
-  // SOUND EFFECTS
+  // SOUND EFFECTS - SEM SONS DE MODAL (arquivos não existem)
   // =============================================================================
-  useEffect(() => {
-    if (isOpen) {
-      playSound('modal_open');
-    } else {
-      playSound('modal_close');
-    }
-  }, [isOpen, playSound]);
+  // Removido: useEffect para sons de modal que não existem
 
   // =============================================================================
   // KEYBOARD HANDLING
@@ -156,6 +150,14 @@ export default function Modal({
   };
 
   // =============================================================================
+  // CLOSE HANDLER SEM SOM
+  // =============================================================================
+  const handleClose = () => {
+    // Removido som de modal que não existe
+    onClose();
+  };
+
+  // =============================================================================
   // RENDER
   // =============================================================================
   if (!mounted) return null;
@@ -171,7 +173,7 @@ export default function Modal({
             initial="hidden"
             animate="visible"
             exit="hidden"
-            onClick={closeOnOverlayClick ? onClose : undefined}
+            onClick={closeOnOverlayClick ? handleClose : undefined}
           />
 
           {/* Modal */}
@@ -203,7 +205,7 @@ export default function Modal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="!p-1 hover:bg-white/10 text-white/70 hover:text-white"
                   aria-label="Fechar modal"
                 >
@@ -223,7 +225,7 @@ export default function Modal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="absolute top-4 right-4 !p-1 hover:bg-white/10 text-white/70 hover:text-white z-10"
                   aria-label="Fechar modal"
                 >
@@ -282,8 +284,16 @@ export function ConfirmModal({
   cancelText = 'Cancelar',
   variant = 'info',
 }: ConfirmModalProps) {
+  const { playSound } = useTheme();
+
   const handleConfirm = () => {
+    playSound('button_click'); // Este som existe
     onConfirm();
+    onClose();
+  };
+
+  const handleCancel = () => {
+    playSound('button_secondary'); // Este som existe
     onClose();
   };
 
@@ -325,7 +335,7 @@ export function ConfirmModal({
         <div className="flex gap-3 justify-end">
           <Button
             variant="ghost"
-            onClick={onClose}
+            onClick={handleCancel}
           >
             {cancelText}
           </Button>
@@ -360,6 +370,13 @@ export function AlertModal({
   message,
   variant = 'info',
 }: AlertModalProps) {
+  const { playSound } = useTheme();
+
+  const handleClose = () => {
+    playSound('button_click'); // Este som existe
+    onClose();
+  };
+
   const getVariantProps = () => {
     switch (variant) {
       case 'success':
@@ -403,7 +420,7 @@ export function AlertModal({
         <div className="flex justify-end">
           <Button
             variant="primary"
-            onClick={onClose}
+            onClick={handleClose}
           >
             Entendi
           </Button>

@@ -123,7 +123,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     // =============================================================================
-    // SIZE STYLES - CORREÇÃO: ADICIONADO GAP PARA ALINHAMENTO
+    // SIZE STYLES
     // =============================================================================
     const sizeStyles = {
       sm: 'px-3 py-1.5 text-sm rounded-md gap-1.5',
@@ -167,20 +167,28 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     );
 
     // =============================================================================
-    // CLICK HANDLER
+    // CLICK HANDLER COM SOM
     // =============================================================================
     const handleClick = () => {
       if (disabled || loading) return;
 
-      // Play button click sound
-      playSound('button_click');
+      // Escolher som baseado no tipo de botão
+      let soundType = 'button_click'; // default (click3.wav)
+
+      if (variant === 'ghost' || variant === 'secondary') {
+        soundType = 'button_secondary'; // click1.wav (som leve)
+      } else if (variant === 'medieval' || variant === 'primary' || variant === 'danger') {
+        soundType = 'button_click'; // click3.wav (som firme)
+      }
+
+      playSound(soundType);
 
       // Call onClick if provided
       onClick?.();
     };
 
     // =============================================================================
-    // RENDER - CORREÇÃO: LAYOUT ALINHADO
+    // RENDER
     // =============================================================================
     return (
       <button
@@ -191,12 +199,12 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {/* Loading spinner - CORREÇÃO: SEM MARGIN MANUAL */}
+        {/* Loading spinner */}
         {loading && (
           <Spinner className="w-4 h-4" />
         )}
 
-        {/* Button content - CORREÇÃO: SEM WRAPPER DESNECESSÁRIO */}
+        {/* Button content */}
         {children}
 
         {/* Medieval button enhancement */}

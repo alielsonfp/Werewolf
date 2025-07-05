@@ -1,5 +1,4 @@
 // 🐺 LOBISOMEM ONLINE - Lobby Page
-// VERSÃO CORRIGIDA - Resolve todos os problemas de import/undefined
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -81,7 +80,7 @@ interface MockRoom {
 function LobbyPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { isConnected, status } = useSocket();
-  const { playSound } = useTheme();
+  const { playSound, playMusic } = useTheme();
 
   // State
   const [rooms, setRooms] = useState<MockRoom[]>([]);
@@ -90,6 +89,20 @@ function LobbyPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
+
+  // Estado para evitar múltiplas chamadas de música
+  const [musicStarted, setMusicStarted] = useState(false);
+
+  // Iniciar música quando a página carregar
+  useEffect(() => {
+    if (!isAuthLoading && !musicStarted) {
+      console.log('🎵 Iniciando música do lobby...');
+      const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
+      const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
+      playMusic(randomMusic);
+      setMusicStarted(true);
+    }
+  }, [isAuthLoading, musicStarted, playMusic]);
 
   useEffect(() => {
     if (isAuthLoading) return;
