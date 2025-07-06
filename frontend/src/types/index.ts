@@ -892,3 +892,33 @@ export const DEFAULT_ACCESSIBILITY_CONFIG: AccessibilityConfig = {
   keyboardNavigation: true,
   colorBlindFriendly: false,
 };
+
+export interface RoomSettings {
+  gameMode: 'CLASSIC' | 'RANKED' | 'CUSTOM';
+  timeDay: number; // segundos
+  timeNight: number; // segundos
+  timeVoting: number; // segundos
+  allowSpectators: boolean;
+  autoStart: boolean;
+  customRoles?: Role[];
+  bannedPlayers?: string[];
+}
+
+// Atualizar interface Room existente para incluir settings:
+export interface Room {
+  id: string;
+  name: string;
+  code?: string;
+  isPrivate: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  currentPlayers: number;
+  currentSpectators: number;
+  status: 'WAITING' | 'PLAYING' | 'FINISHED';
+  hostId: string;
+  hostUsername: string;
+  canJoin: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  settings: RoomSettings; // ✅ NOVO CAMPO
+}

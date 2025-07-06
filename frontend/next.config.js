@@ -3,12 +3,10 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
 
-  // ✅ ADICIONADO: Supressão de hydration warnings
+  // ✅ EXPERIMENTAL: Configurações experimentais do Next.js
   experimental: {
     // Enable SWC for better performance
     forceSwcTransforms: true,
-    // Supressão temporária de hydration warnings
-    suppressHydrationWarning: true,
   },
 
   // ✅ ADICIONADO: Configuração de locale para formatação consistente
@@ -17,7 +15,54 @@ const nextConfig = {
     defaultLocale: 'pt-BR',
   },
 
-  // Environment variables
+  // ✅ ADICIONADO: Configuração para desenvolvimento com WebSocket
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:3001/api/:path*',
+      },
+    ];
+  },
+
+  // ✅ MELHORADO: Headers para WebSocket e segurança
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          // Security headers
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+          // ✅ ADICIONADO: Permitir conexões WebSocket
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization',
+          },
+        ],
+      },
+    ];
+  },
+
+  // ✅ ATUALIZADO: Configuração de variáveis de ambiente
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001',
@@ -46,30 +91,7 @@ const nextConfig = {
     return config;
   },
 
-  // Security headers
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-        ],
-      },
-    ];
-  },
-
-  // Redirects
+  // ✅ ADICIONADO: Redirects úteis
   async redirects() {
     return [
       {

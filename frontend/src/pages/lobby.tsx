@@ -1,6 +1,6 @@
 // 🐺 LOBISOMEM ONLINE - Lobby Page
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
@@ -182,16 +182,24 @@ function LobbyPage() {
     return matchesSearch && matchesFilter && !room.isPrivate;
   });
 
-  // Handle room actions
-  const handleJoinRoom = (roomId: string) => {
+  // =============================================================================
+  // ✅ HANDLERS ATUALIZADOS PARA NAVEGAÇÃO PARA SALA
+  // =============================================================================
+  const handleJoinRoom = useCallback((roomId: string, asSpectator = false) => {
+    console.log('🚪 Joining room:', roomId, asSpectator ? 'as spectator' : 'as player');
     playSound('button_click');
-    console.log('Joining room:', roomId);
-  };
 
-  const handleSpectateRoom = (roomId: string) => {
+    // Navegar para a página da sala
+    router.push(`/room/${roomId}`);
+  }, [router, playSound]);
+
+  const handleSpectateRoom = useCallback((roomId: string) => {
+    console.log('👁️ Spectating room:', roomId);
     playSound('button_click');
-    console.log('Spectating room:', roomId);
-  };
+
+    // Navegar para a página da sala como espectador
+    router.push(`/room/${roomId}?spectate=true`);
+  }, [router, playSound]);
 
   // Loading state
   if (isAuthLoading) {

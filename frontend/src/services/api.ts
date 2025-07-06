@@ -537,4 +537,36 @@ export class ConnectionMonitor {
   }
 }
 
+
+export const roomAPI = {
+  // Buscar detalhes de uma sala específica
+  getRoomDetails: async (roomId: string): Promise<Room> => {
+    const response = await api.get(`/rooms/${roomId}`);
+    return response.data;
+  },
+
+  // Entrar em uma sala
+  joinRoom: async (roomId: string, asSpectator = false): Promise<{ room: Room; players: Player[] }> => {
+    const response = await api.post(`/rooms/${roomId}/join`, { asSpectator });
+    return response.data;
+  },
+
+  // Sair de uma sala
+  leaveRoom: async (roomId: string): Promise<void> => {
+    await api.post(`/rooms/${roomId}/leave`);
+  },
+
+  // Atualizar configurações da sala (apenas host)
+  updateRoomSettings: async (roomId: string, settings: Partial<RoomSettings>): Promise<Room> => {
+    const response = await api.patch(`/rooms/${roomId}/settings`, settings);
+    return response.data;
+  },
+
+  // Buscar jogadores da sala
+  getRoomPlayers: async (roomId: string): Promise<{ players: Player[]; spectators: Player[] }> => {
+    const response = await api.get(`/rooms/${roomId}/players`);
+    return response.data;
+  }
+};
+
 export default api;

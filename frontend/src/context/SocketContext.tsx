@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { WebSocketMessage, SocketEvent, GameState, ChatMessage } from '@/types';
 import { useAuth } from './AuthContext';
+import { useWebSocket } from '@/hooks/useWebSocket'; // ✅ Importar o hook
 import { toast } from 'react-hot-toast';
 
 // =============================================================================
@@ -15,6 +16,7 @@ interface SocketContextType {
   socket: WebSocket | null;
   status: SocketStatus;
   isConnected: boolean;
+  pingLatency: number;
 
   // Room state
   currentRoomId: string | null;
@@ -24,18 +26,18 @@ interface SocketContextType {
   gameState: GameState | null;
 
   // Actions
-  connect: (roomId?: string) => void;
+  connect: () => void;
   disconnect: () => void;
-  sendMessage: (type: string, data?: any) => void;
+  sendMessage: (type: string, data?: any) => boolean;
 
   // Game actions
   joinRoom: (roomId: string, asSpectator?: boolean) => void;
   leaveRoom: () => void;
-  setReady: (ready: boolean) => void;
-  startGame: () => void;
-  sendGameAction: (type: string, data?: any) => void;
-  sendVote: (targetId: string) => void;
-  sendChatMessage: (message: string, channel?: string) => void;
+  setReady: (ready: boolean) => boolean;
+  startGame: () => boolean;
+  sendGameAction: (type: string, data?: any) => boolean;
+  sendVote: (targetId: string) => boolean;
+  sendChatMessage: (message: string, channel?: string) => boolean;
 
   // Event listeners
   onRoomUpdate: (callback: (players: any[]) => void) => () => void;
@@ -59,12 +61,6 @@ interface SocketProviderProps {
 export function SocketProvider({ children }: SocketProviderProps) {
   const { getToken, isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Connection state
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [status, setStatus] = useState<SocketStatus>('disconnected');
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [reconnectTimeout, setReconnectTimeout] = useState<NodeJS.Timeout | null>(null);
-
   // Room state
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [roomPlayers, setRoomPlayers] = useState<any[]>([]);
@@ -78,192 +74,68 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const [chatMessageCallbacks] = useState<Set<(message: ChatMessage) => void>>(new Set());
   const [systemMessageCallbacks] = useState<Set<(message: string) => void>>(new Set());
 
-  const isConnected = status === 'connected';
-
-  // =============================================================================
-  // ✅ CONNECTION MANAGEMENT - CORRIGIDO PARA SÓ CONECTAR QUANDO AUTENTICADO
-  // =============================================================================
-  const connect = useCallback((roomId?: string) => {
-    // ✅ CRÍTICO: Só conectar se realmente autenticado e com token
-    if (!isAuthenticated || authLoading) {
-      console.warn('❌ Cannot connect WebSocket: User not authenticated or still loading');
-      return;
-    }
+  // ✅ Construir URL do WebSocket dinamicamente
+  const buildWebSocketUrl = useCallback(() => {
+    if (!isAuthenticated || authLoading) return '';
 
     const token = getToken();
-    if (!token) {
-      console.warn('❌ Cannot connect WebSocket: No token available');
-      return;
+    if (!token) return '';
+
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+    const url = new URL('/ws', wsUrl.replace('http', 'ws'));
+
+    if (currentRoomId) {
+      url.pathname += `/${currentRoomId}`;
     }
 
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      console.warn('⚠️ WebSocket already connected');
-      return;
-    }
+    url.searchParams.set('token', token);
+    return url.toString();
+  }, [isAuthenticated, authLoading, getToken, currentRoomId]);
 
-    console.log('🔌 Attempting WebSocket connection...');
-    setStatus('connecting');
-
-    try {
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
-
-      // Build WebSocket URL with authentication
-      const url = new URL('/ws', wsUrl.replace('http', 'ws'));
-      if (roomId) {
-        url.pathname += `/${roomId}`;
-      }
-
-      // ✅ CORRIGIDO: Adicionar token como query parameter para autenticação no handshake
-      url.searchParams.set('token', token);
-
-      // Create WebSocket connection
-      const newSocket = new WebSocket(url.toString());
-
-      // Connection opened
-      newSocket.onopen = () => {
-        console.log('✅ WebSocket connected successfully');
-        setStatus('connected');
-        setReconnectAttempts(0);
-
-        // ✅ REMOVIDO: Não enviar mensagem 'auth' adicional
-        // A autenticação já foi feita no handshake via query parameter
-        // newSocket.send(JSON.stringify({
-        //   type: 'auth',
-        //   data: { token },
-        //   timestamp: new Date().toISOString(),
-        // }));
-
-        toast.success('Conectado ao servidor! 🎮');
-      };
-
-      // Message received
-      newSocket.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          handleMessage(message);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      };
-
-      // Connection closed
-      newSocket.onclose = (event) => {
-        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
-        setStatus('disconnected');
-        setSocket(null);
-
-        // ✅ CORRIGIDO: Só tentar reconectar se ainda autenticado
-        if (event.code !== 1000 && isAuthenticated && !authLoading) {
-          scheduleReconnect();
-        }
-      };
-
-      // Connection error
-      newSocket.onerror = (error) => {
-        console.error('🔌 WebSocket error:', error);
-        setStatus('error');
-        toast.error('Erro de conexão com o servidor');
-      };
-
-      setSocket(newSocket);
-
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      setStatus('error');
-      toast.error('Falha ao conectar com o servidor');
-    }
-  }, [isAuthenticated, authLoading, getToken, socket]);
-
-  const disconnect = useCallback(() => {
-    console.log('🔌 Disconnecting WebSocket...');
-
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-      setReconnectTimeout(null);
-    }
-
-    if (socket) {
-      setStatus('disconnected');
-      socket.close(1000, 'User disconnected');
-      setSocket(null);
-    }
-
-    // Clear state
-    setCurrentRoomId(null);
-    setRoomPlayers([]);
-    setGameState(null);
-    setReconnectAttempts(0);
-  }, [socket, reconnectTimeout]);
-
-  const scheduleReconnect = useCallback(() => {
-    // ✅ CORRIGIDO: Verificar se ainda deve reconectar
-    if (reconnectAttempts >= 5 || !isAuthenticated || authLoading) {
-      if (reconnectAttempts >= 5) {
-        toast.error('Falha ao reconectar. Recarregue a página.');
-      }
-      return;
-    }
-
-    setStatus('reconnecting');
-    setReconnectAttempts(prev => prev + 1);
-
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff
-
-    console.log(`🔄 Scheduling reconnect attempt ${reconnectAttempts + 1}/5 in ${delay}ms...`);
-
-    const timeout = setTimeout(() => {
-      if (isAuthenticated && !authLoading) {
-        console.log(`🔄 Attempting reconnect (${reconnectAttempts + 1}/5)...`);
-        connect(currentRoomId || undefined);
-      }
-    }, delay);
-
-    setReconnectTimeout(timeout);
-  }, [reconnectAttempts, isAuthenticated, authLoading, connect, currentRoomId]);
+  // ✅ Usar o hook useWebSocket com configurações otimizadas
+  const {
+    socket,
+    status,
+    isConnected,
+    pingLatency,
+    sendMessage: wsendMessage,
+    connect: wsConnect,
+    disconnect: wsDisconnect
+  } = useWebSocket(buildWebSocketUrl(), {
+    autoConnect: isAuthenticated && !authLoading && buildWebSocketUrl() !== '',
+    heartbeatInterval: 30000, // 30 segundos
+    maxReconnectAttempts: 5,
+    reconnectBackoff: 'exponential'
+  });
 
   // =============================================================================
-  // MESSAGE HANDLING
+  // ✅ MELHORADA: MESSAGE HANDLING COM LISTENERS DE EVENTOS
   // =============================================================================
-  const sendMessage = useCallback((type: string, data?: any) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      console.warn('Cannot send message: WebSocket not connected');
-      return;
-    }
-
-    const message: WebSocketMessage = {
-      type,
-      data,
-      timestamp: new Date().toISOString(),
-      messageId: Math.random().toString(36).substr(2, 9),
-    };
-
-    socket.send(JSON.stringify(message));
-  }, [socket]);
-
-  const handleMessage = useCallback((message: WebSocketMessage) => {
+  const handleWebSocketMessage = useCallback((event: CustomEvent) => {
+    const message: WebSocketMessage = event.detail;
     console.log('📨 Received:', message.type, message.data);
 
     switch (message.type) {
       case SocketEvent.CONNECT:
       case 'connected':
-        toast.success('Conectado com sucesso!');
+        toast.success('Conectado com sucesso! 🎮');
         break;
 
       case SocketEvent.ERROR:
       case 'error':
         const errorMsg = message.data?.message || 'Erro no servidor';
 
-        // ✅ CORRIGIDO: Não mostrar toast para erros de tipo de mensagem desconhecida
+        // Não mostrar toast para erros de tipo de mensagem desconhecida
         if (message.data?.code !== 'UNKNOWN_MESSAGE_TYPE') {
           toast.error(errorMsg);
         } else {
           console.warn('Unknown message type:', message.data);
         }
 
-        // ✅ ADICIONADO: Se erro de autenticação, desconectar
+        // Se erro de autenticação, desconectar
         if (message.data?.code === 1008 || errorMsg.includes('Authentication')) {
           console.warn('🔒 Authentication error, disconnecting...');
-          disconnect();
+          wsDisconnect();
         }
         break;
 
@@ -271,12 +143,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
         setCurrentRoomId(message.data.room.id);
         setRoomPlayers(message.data.players || []);
         roomUpdateCallbacks.forEach(callback => callback(message.data.players || []));
+        toast.success(`Entrou na sala: ${message.data.room.name}`);
         break;
 
       case 'room-left':
         setCurrentRoomId(null);
         setRoomPlayers([]);
         setGameState(null);
+        toast.info('Saiu da sala');
         break;
 
       case 'player-joined':
@@ -322,38 +196,74 @@ export function SocketProvider({ children }: SocketProviderProps) {
       case 'game-ended':
         toast.success(`🏆 Fim de jogo! ${message.data?.winners?.faction} venceu!`);
         break;
+
+      default:
+        console.log('📨 Unhandled message type:', message.type);
     }
-  }, [roomUpdateCallbacks, gameUpdateCallbacks, chatMessageCallbacks, systemMessageCallbacks, disconnect]);
+  }, [roomUpdateCallbacks, gameUpdateCallbacks, chatMessageCallbacks, systemMessageCallbacks, wsDisconnect]);
+
+  // ✅ Registrar listener para mensagens WebSocket
+  useEffect(() => {
+    window.addEventListener('websocket-message', handleWebSocketMessage as EventListener);
+    return () => window.removeEventListener('websocket-message', handleWebSocketMessage as EventListener);
+  }, [handleWebSocketMessage]);
 
   // =============================================================================
-  // GAME ACTIONS
+  // ✅ SIMPLIFIED ACTIONS USING WEBSOCKET HOOK
+  // =============================================================================
+  const connect = useCallback(() => {
+    if (isAuthenticated && !authLoading) {
+      wsConnect();
+    }
+  }, [isAuthenticated, authLoading, wsConnect]);
+
+  const disconnect = useCallback(() => {
+    wsDisconnect();
+    // Clear state
+    setCurrentRoomId(null);
+    setRoomPlayers([]);
+    setGameState(null);
+  }, [wsDisconnect]);
+
+  const sendMessage = useCallback((type: string, data?: any): boolean => {
+    return wsendMessage(type, data);
+  }, [wsendMessage]);
+
+  // =============================================================================
+  // ✅ GAME ACTIONS WITH RETURN VALUES
   // =============================================================================
   const joinRoom = useCallback((roomId: string, asSpectator = false) => {
+    // Atualizar o currentRoomId vai fazer o hook reconectar automaticamente
+    setCurrentRoomId(roomId);
+    // Enviar mensagem de join
     sendMessage(SocketEvent.JOIN_ROOM, { roomId, asSpectator });
   }, [sendMessage]);
 
   const leaveRoom = useCallback(() => {
-    sendMessage(SocketEvent.LEAVE_ROOM);
+    if (currentRoomId) {
+      sendMessage(SocketEvent.LEAVE_ROOM, { roomId: currentRoomId });
+      setCurrentRoomId(null);
+    }
+  }, [currentRoomId, sendMessage]);
+
+  const setReady = useCallback((ready: boolean): boolean => {
+    return sendMessage(SocketEvent.PLAYER_READY, { ready });
   }, [sendMessage]);
 
-  const setReady = useCallback((ready: boolean) => {
-    sendMessage(SocketEvent.PLAYER_READY, { ready });
+  const startGame = useCallback((): boolean => {
+    return sendMessage(SocketEvent.START_GAME, {});
   }, [sendMessage]);
 
-  const startGame = useCallback(() => {
-    sendMessage(SocketEvent.START_GAME);
+  const sendGameAction = useCallback((type: string, data?: any): boolean => {
+    return sendMessage(SocketEvent.GAME_ACTION, { type, ...data });
   }, [sendMessage]);
 
-  const sendGameAction = useCallback((type: string, data?: any) => {
-    sendMessage(SocketEvent.GAME_ACTION, { type, ...data });
+  const sendVote = useCallback((targetId: string): boolean => {
+    return sendMessage(SocketEvent.VOTE, { targetId });
   }, [sendMessage]);
 
-  const sendVote = useCallback((targetId: string) => {
-    sendMessage(SocketEvent.VOTE, { targetId });
-  }, [sendMessage]);
-
-  const sendChatMessage = useCallback((message: string, channel = 'public') => {
-    sendMessage(SocketEvent.CHAT_MESSAGE, { message, channel });
+  const sendChatMessage = useCallback((message: string, channel = 'public'): boolean => {
+    return sendMessage(SocketEvent.CHAT_MESSAGE, { message, channel });
   }, [sendMessage]);
 
   // =============================================================================
@@ -380,28 +290,21 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, [systemMessageCallbacks]);
 
   // =============================================================================
-  // ✅ LIFECYCLE - CORRIGIDO PARA SINCRONIZAR COM AUTH
+  // ✅ LIFECYCLE MANAGEMENT
   // =============================================================================
   useEffect(() => {
-    // ✅ CRÍTICO: Só conectar quando realmente autenticado e não carregando
+    // Reconectar quando estado de auth mudar
     if (isAuthenticated && !authLoading && status === 'disconnected') {
       console.log('🔐 User authenticated, connecting WebSocket...');
       connect();
     }
 
-    // ✅ CRÍTICO: Desconectar quando não autenticado
-    if (!isAuthenticated && !authLoading && socket) {
+    // Desconectar quando não autenticado
+    if (!isAuthenticated && !authLoading && isConnected) {
       console.log('🔐 User not authenticated, disconnecting WebSocket...');
       disconnect();
     }
-  }, [isAuthenticated, authLoading, status, connect, disconnect, socket]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
+  }, [isAuthenticated, authLoading, status, isConnected, connect, disconnect]);
 
   // =============================================================================
   // CONTEXT VALUE
@@ -411,6 +314,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     socket,
     status,
     isConnected,
+    pingLatency,
 
     // Room state
     currentRoomId,
@@ -453,7 +357,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 export function useSocket(): SocketContextType {
   const context = useContext(SocketContext);
   if (context === undefined) {
-    throw new error('useSocket must be used within a SocketProvider');
+    throw new Error('useSocket must be used within a SocketProvider');
   }
   return context;
 }
