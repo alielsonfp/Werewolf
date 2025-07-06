@@ -1,132 +1,192 @@
-# 🐺 LOBISOMEM ONLINE - Repomix Ignore
-# Arquivo para usar repomix mostrando só código relevante
+# 🐺 LOBISOMEM ONLINE - Repomix Ignore (PROJETO COMPLETO)
+# Arquivo para focar a análise de IA APENAS no código-fonte essencial do frontend e backend.
+# Baseado na análise completa de 613k caracteres de código já implementado.
 
 # =============================================================================
-# DEPENDENCIES & PACKAGES
+# DEPENDÊNCIAS E PACOTES (FRONTEND + BACKEND)
 # =============================================================================
-node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+**/node_modules/
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+# Manter package.json apenas da raiz para workspaces
+frontend/package.json
+backend/package.json
 
 # =============================================================================
-# BUILD & DIST
+# ARQUIVOS DE BUILD E CACHE
 # =============================================================================
-dist/
-build/
-out/
-.next/
-.vercel/
+# Next.js (Frontend)
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+
+# Node.js (Backend)
+backend/dist/
+backend/build/
+backend/.cache/
+
+# TypeScript
+**/*.tsbuildinfo
+**/next-env.d.ts
 
 # =============================================================================
-# ENVIRONMENT & SECRETS
+# AMBIENTE E SEGREDOS
 # =============================================================================
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.local
+**/.env.*.local
+backend/.env
+frontend/.env
+# Manter exemplos para referência
+!**/.env.example
 
 # =============================================================================
-# GENERATED FILES
+# DOCKER E INFRAESTRUTURA (JÁ FUNCIONANDO)
 # =============================================================================
-# Prisma generated client
-.prisma/
-
-# TypeScript build info
-*.tsbuildinfo
-
-# =============================================================================
-# LOGS
-# =============================================================================
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+docker-compose.dev.yml
+docker-compose.prod.yml
+backend/Dockerfile
+frontend/Dockerfile
+backend/.dockerignore
+frontend/.dockerignore
+quick-fix.bat
+start.bat
+start.sh
+docker-start.bat
+docker-start.sh
 
 # =============================================================================
-# CACHE & TEMPORARY
+# CONFIGURAÇÕES DE FERRAMENTAS (IRRELEVANTE PARA LÓGICA)
 # =============================================================================
-.cache/
-.temp/
-tmp/
-.tmp/
+# ESLint, Prettier, etc.
+**/.eslintrc*
+**/.prettierrc*
+**/postcss.config.js
+frontend/tailwind.config.js
+frontend/next.config.js
+backend/tsconfig.json
+frontend/tsconfig.json
+
+# Husky e Git hooks
+.husky/
+**/.husky/
 
 # =============================================================================
-# TESTING
+# LOGS E ARQUIVOS TEMPORÁRIOS
 # =============================================================================
-coverage/
-.nyc_output
-*.lcov
+**/logs/
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.cache/
+**/tmp/
+**/temp/
 
 # =============================================================================
-# DOCKER & CONTAINERS
+# BANCO DE DADOS E MIGRATIONS (JÁ ANALISADO)
 # =============================================================================
-# Não incluir arquivos que já temos o código
-Dockerfile
-docker-compose*.yml
+# Migrations já estão implementadas e funcionando
+backend/prisma/migrations/
+# Schema é essencial, manter
+# backend/prisma/schema.prisma - MANTER
 
 # =============================================================================
-# DATABASE
+# ASSETS E ARQUIVOS PÚBLICOS (IRRELEVANTE PARA LÓGICA)
 # =============================================================================
-# Scripts que já mostramos
-database/
+# Imagens, sons, fontes não ajudam a entender bugs de código
+frontend/public/icons/
+frontend/public/images/
+frontend/public/sounds/
+frontend/public/fonts/
+frontend/public/*.ico
+frontend/public/*.png
+frontend/public/*.jpg
+frontend/public/*.svg
+frontend/public/*.webp
 
 # =============================================================================
-# IDE & EDITORS
+# ESTILOS CSS (JÁ IMPLEMENTADO)
 # =============================================================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# CSS global já está funcionando, não precisa para debugging
+frontend/src/styles/globals.css
 
 # =============================================================================
-# OS GENERATED
-# =============================================================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# =============================================================================
-# DOCUMENTATION & META
+# DOCUMENTAÇÃO E ARQUIVOS META
 # =============================================================================
 README.md
 LICENSE
-.gitignore
+**/README.md
+docs/
+**/.gitignore
 .repomixignore
+**/.repomixignore
 
 # =============================================================================
-# SCRIPTS & SETUP
+# ARQUIVOS DE SAÍDA ANTERIORES
+# =============================================================================
+repomix-output.xml
+**/*.xml
+
+# =============================================================================
+# TESTES (AINDA NÃO IMPLEMENTADOS)
+# =============================================================================
+**/coverage/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/jest.config.js
+**/vitest.config.js
+
+# =============================================================================
+# ARQUIVOS DE EDITOR E SISTEMA OPERACIONAL
+# =============================================================================
+.vscode/
+.idea/
+**/.vscode/
+**/.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# SCRIPTS E AUTOMAÇÃO (JÁ FUNCIONANDO)
 # =============================================================================
 scripts/
-package.json
-backend/package.json
-frontend/package.json
+debug-health.js
 
 # =============================================================================
-# SPECIFIC PROJECT FILES
+# COLLECTIONS E DOCUMENTAÇÃO DE API (JÁ ANALISADO)
 # =============================================================================
-# Prisma schema (já vemos o código)
-backend/prisma/
-
-# Arquivos de saída
-backend/repomix-output.xml
-*.xml
+docs/Room_API_Tests.postman_collection.json
+**/*.postman_collection.json
 
 # =============================================================================
-# FRONTEND (quando criado)
+# APENAS MANTER CÓDIGO-FONTE ESSENCIAL:
 # =============================================================================
-frontend/public/
-frontend/.next/
-frontend/node_modules/
+# ✅ MANTER: backend/src/ - Todo código TypeScript do backend
+# ✅ MANTER: frontend/src/ - Todo código React/TypeScript do frontend  
+# ✅ MANTER: backend/prisma/schema.prisma - Schema do banco
+# ✅ MANTER: package.json (raiz) - Workspaces
+# ✅ MANTER: .env.example - Referência de configuração
 
 # =============================================================================
-# SERVICES (Fase 2)
+# SERVICES E MICROSERVIÇOS (FUTURO - FASE 2)
 # =============================================================================
-services/*/node_modules/
-services/*/dist/
+services/
+nginx/
+
+# =============================================================================
+# CONFIGURAÇÕES DE DEPLOY (IRRELEVANTE PARA DESENVOLVIMENTO)
+# =============================================================================
+.vercel/
+.netlify/
+.railway/
+.heroku/
+Procfile
+vercel.json
+netlify.toml

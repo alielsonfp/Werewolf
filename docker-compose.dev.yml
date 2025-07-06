@@ -1,32 +1,31 @@
-# 🐺 LOBISOMEM ONLINE - Docker Compose Development (SOLUÇÃO ELEGANTE)
+version: '3.8'
 
 services:
-  # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
-    container_name: werewolf-postgres
+    image: postgres:15-bullseye
+    container_name: werewolf-postgres-dev
     environment:
       POSTGRES_DB: werewolf_dev
       POSTGRES_USER: werewolf
       POSTGRES_PASSWORD: werewolf123
-      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # ✅ CORRIGIDO: Caminho correto para o init.sql na raiz
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     networks:
       - werewolf-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U werewolf -d werewolf_dev"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
-  # Redis Cache
   redis:
-    image: redis:7-alpine
-    container_name: werewolf-redis
+    image: redis:7-bullseye
+    container_name: werewolf-redis-dev
     ports:
       - "6379:6379"
     volumes:
@@ -34,38 +33,32 @@ services:
     networks:
       - werewolf-network
     healthcheck:
+      # ✅ CORRIGIDO: redis-cli ping não precisa de -h ou -p dentro da rede Docker
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
     command: redis-server --appendonly yes
+    restart: unless-stopped
 
-  # Backend Development
   backend:
     build:
-      context: .           # 🎯 SOLUÇÃO: Contexto expandido para acessar package-lock.json
-      dockerfile: backend/Dockerfile
-      target: development
-    container_name: werewolf-backend
+      context: .
+      dockerfile: Dockerfile
+    container_name: werewolf-backend-dev
     environment:
       - NODE_ENV=development
       - PORT=3001
       - DATABASE_URL=postgresql://werewolf:werewolf123@postgres:5432/werewolf_dev
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=dev-super-secret-jwt-key-for-development-only
-      - JWT_EXPIRES_IN=7d
-      - DISTRIBUTED_MODE=false
-      - STORAGE_TYPE=memory
-      - SERVICE_ID=local-server
-      - SERVICE_TYPE=monolith
-      - WS_BASE_PATH=/ws
-      - WS_PORT=3001
     ports:
       - "3001:3001"
+      - "9229:9229" # Para debug, se necessário
     volumes:
-      # 🚀 SOLUÇÃO: Volume limpo sem conflitos
-      - ./backend/src:/app/backend/src
-      - ./backend/prisma:/app/backend/prisma
+      # ✅ CORRIGIDO: Mapeia apenas a pasta 'src' do backend para hot-reloading
+      # O WORKDIR no Dockerfile já nos coloca em /usr/src/app/backend
+      - ./backend/src:/usr/src/app/backend/src
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,9 +72,7 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
 
 networks:
   werewolf-network:

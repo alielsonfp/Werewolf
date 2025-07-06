@@ -57,7 +57,7 @@ interface SocketProviderProps {
 }
 
 export function SocketProvider({ children }: SocketProviderProps) {
-  const { getToken, isAuthenticated } = useAuth();
+  const { getToken, isAuthenticated, isLoading: authLoading } = useAuth();
 
   // Connection state
   const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -81,23 +81,30 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const isConnected = status === 'connected';
 
   // =============================================================================
-  // CONNECTION MANAGEMENT
+  // ✅ CONNECTION MANAGEMENT - CORRIGIDO PARA SÓ CONECTAR QUANDO AUTENTICADO
   // =============================================================================
   const connect = useCallback((roomId?: string) => {
-    if (!isAuthenticated) {
-      console.warn('Cannot connect WebSocket: User not authenticated');
+    // ✅ CRÍTICO: Só conectar se realmente autenticado e com token
+    if (!isAuthenticated || authLoading) {
+      console.warn('❌ Cannot connect WebSocket: User not authenticated or still loading');
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      console.warn('❌ Cannot connect WebSocket: No token available');
       return;
     }
 
     if (socket && socket.readyState === WebSocket.OPEN) {
-      console.warn('WebSocket already connected');
+      console.warn('⚠️ WebSocket already connected');
       return;
     }
 
+    console.log('🔌 Attempting WebSocket connection...');
     setStatus('connecting');
 
     try {
-      const token = getToken();
       const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 
       // Build WebSocket URL with authentication
@@ -106,26 +113,25 @@ export function SocketProvider({ children }: SocketProviderProps) {
         url.pathname += `/${roomId}`;
       }
 
+      // ✅ CORRIGIDO: Adicionar token como query parameter para autenticação no handshake
+      url.searchParams.set('token', token);
+
       // Create WebSocket connection
       const newSocket = new WebSocket(url.toString());
 
-      // Store token for authentication after connection
-      (newSocket as any)._authToken = token;
-
       // Connection opened
       newSocket.onopen = () => {
-        console.log('🔌 WebSocket connected');
+        console.log('✅ WebSocket connected successfully');
         setStatus('connected');
         setReconnectAttempts(0);
 
-        // Send authentication
-        if (token) {
-          newSocket.send(JSON.stringify({
-            type: 'auth',
-            data: { token },
-            timestamp: new Date().toISOString(),
-          }));
-        }
+        // ✅ REMOVIDO: Não enviar mensagem 'auth' adicional
+        // A autenticação já foi feita no handshake via query parameter
+        // newSocket.send(JSON.stringify({
+        //   type: 'auth',
+        //   data: { token },
+        //   timestamp: new Date().toISOString(),
+        // }));
 
         toast.success('Conectado ao servidor! 🎮');
       };
@@ -146,8 +152,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
         setStatus('disconnected');
         setSocket(null);
 
-        // Auto-reconnect if not a clean close
-        if (event.code !== 1000 && isAuthenticated) {
+        // ✅ CORRIGIDO: Só tentar reconectar se ainda autenticado
+        if (event.code !== 1000 && isAuthenticated && !authLoading) {
           scheduleReconnect();
         }
       };
@@ -166,9 +172,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setStatus('error');
       toast.error('Falha ao conectar com o servidor');
     }
-  }, [isAuthenticated, getToken]);
+  }, [isAuthenticated, authLoading, getToken, socket]);
 
   const disconnect = useCallback(() => {
+    console.log('🔌 Disconnecting WebSocket...');
+
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       setReconnectTimeout(null);
@@ -188,8 +196,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, [socket, reconnectTimeout]);
 
   const scheduleReconnect = useCallback(() => {
-    if (reconnectAttempts >= 5) {
-      toast.error('Falha ao reconectar. Recarregue a página.');
+    // ✅ CORRIGIDO: Verificar se ainda deve reconectar
+    if (reconnectAttempts >= 5 || !isAuthenticated || authLoading) {
+      if (reconnectAttempts >= 5) {
+        toast.error('Falha ao reconectar. Recarregue a página.');
+      }
       return;
     }
 
@@ -198,13 +209,17 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff
 
+    console.log(`🔄 Scheduling reconnect attempt ${reconnectAttempts + 1}/5 in ${delay}ms...`);
+
     const timeout = setTimeout(() => {
-      console.log(`🔄 Attempting reconnect (${reconnectAttempts + 1}/5)...`);
-      connect(currentRoomId || undefined);
+      if (isAuthenticated && !authLoading) {
+        console.log(`🔄 Attempting reconnect (${reconnectAttempts + 1}/5)...`);
+        connect(currentRoomId || undefined);
+      }
     }, delay);
 
     setReconnectTimeout(timeout);
-  }, [reconnectAttempts, connect, currentRoomId]);
+  }, [reconnectAttempts, isAuthenticated, authLoading, connect, currentRoomId]);
 
   // =============================================================================
   // MESSAGE HANDLING
@@ -230,11 +245,26 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     switch (message.type) {
       case SocketEvent.CONNECT:
+      case 'connected':
         toast.success('Conectado com sucesso!');
         break;
 
       case SocketEvent.ERROR:
-        toast.error(message.data?.message || 'Erro no servidor');
+      case 'error':
+        const errorMsg = message.data?.message || 'Erro no servidor';
+
+        // ✅ CORRIGIDO: Não mostrar toast para erros de tipo de mensagem desconhecida
+        if (message.data?.code !== 'UNKNOWN_MESSAGE_TYPE') {
+          toast.error(errorMsg);
+        } else {
+          console.warn('Unknown message type:', message.data);
+        }
+
+        // ✅ ADICIONADO: Se erro de autenticação, desconectar
+        if (message.data?.code === 1008 || errorMsg.includes('Authentication')) {
+          console.warn('🔒 Authentication error, disconnecting...');
+          disconnect();
+        }
         break;
 
       case 'room-joined':
@@ -293,7 +323,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         toast.success(`🏆 Fim de jogo! ${message.data?.winners?.faction} venceu!`);
         break;
     }
-  }, [roomUpdateCallbacks, gameUpdateCallbacks, chatMessageCallbacks, systemMessageCallbacks]);
+  }, [roomUpdateCallbacks, gameUpdateCallbacks, chatMessageCallbacks, systemMessageCallbacks, disconnect]);
 
   // =============================================================================
   // GAME ACTIONS
@@ -350,19 +380,21 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, [systemMessageCallbacks]);
 
   // =============================================================================
-  // LIFECYCLE
+  // ✅ LIFECYCLE - CORRIGIDO PARA SINCRONIZAR COM AUTH
   // =============================================================================
   useEffect(() => {
-    // Auto-connect when authenticated
-    if (isAuthenticated && status === 'disconnected') {
+    // ✅ CRÍTICO: Só conectar quando realmente autenticado e não carregando
+    if (isAuthenticated && !authLoading && status === 'disconnected') {
+      console.log('🔐 User authenticated, connecting WebSocket...');
       connect();
     }
 
-    // Auto-disconnect when not authenticated
-    if (!isAuthenticated && socket) {
+    // ✅ CRÍTICO: Desconectar quando não autenticado
+    if (!isAuthenticated && !authLoading && socket) {
+      console.log('🔐 User not authenticated, disconnecting WebSocket...');
       disconnect();
     }
-  }, [isAuthenticated, status, connect, disconnect, socket]);
+  }, [isAuthenticated, authLoading, status, connect, disconnect, socket]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -421,7 +453,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 export function useSocket(): SocketContextType {
   const context = useContext(SocketContext);
   if (context === undefined) {
-    throw new Error('useSocket must be used within a SocketProvider');
+    throw new error('useSocket must be used within a SocketProvider');
   }
   return context;
 }

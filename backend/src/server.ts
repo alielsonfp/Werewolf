@@ -11,12 +11,29 @@ import { logger } from '@/utils/logger';
 let server: http.Server;
 let wsManager: WebSocketManager;
 
+// Função de retry para conexão com o banco
+const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await connectFn();
+      logger.info('Database connected successfully.');
+      return;
+    } catch (error) {
+      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, { error });
+      if (i === retries) {
+        throw new Error(`Could not connect to the database after ${retries} attempts.`);
+      }
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+};
+
 async function startServer(): Promise<void> {
   try {
     validateConfig();
 
-    // Conectar banco (obrigatório)
-    await connectDatabase();
+    // Conectar banco (obrigatório) com retry
+    await connectWithRetry(connectDatabase);
 
     // Conectar Redis (opcional - não falha se der erro)
     if (config.SHOULD_USE_REDIS) {

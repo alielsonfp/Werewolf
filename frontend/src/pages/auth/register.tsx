@@ -28,13 +28,13 @@ export default function RegisterPage() {
   const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form management
   const {
     values,
     errors,
     touched,
-    isSubmitting,
     handleChange,
     handleSubmit,
     setError,
@@ -47,17 +47,11 @@ export default function RegisterPage() {
       confirmPassword: '',
     },
     async (formData) => {
-      // Validate form
       if (!validateForm(formData)) return;
 
-      try {
-        const success = await register(formData);
-        if (success) {
-          router.push('/lobby');
-        }
-      } catch (error) {
-        console.error('Register error:', error);
-      }
+      setIsSubmitting(true);
+      await register(formData);
+      setIsSubmitting(false);
     }
   );
 

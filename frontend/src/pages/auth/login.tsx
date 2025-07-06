@@ -6,7 +6,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 import { useAuth } from '@/context/AuthContext';
@@ -25,16 +25,17 @@ export default function LoginPage() {
   const { login, isAuthenticated, isLoading } = useAuth();
   const { playSound } = useTheme();
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form management
   const {
     values,
     errors,
     touched,
-    isSubmitting,
     handleChange,
     handleSubmit,
-    setError,
+    setError: setFieldError,
     setTouched,
   } = useForm<LoginRequest>(
     {
@@ -42,47 +43,44 @@ export default function LoginPage() {
       password: '',
     },
     async (formData) => {
-      // Validate form
       if (!validateForm(formData)) return;
 
-      try {
-        const success = await login(formData);
-        if (success) {
-          const redirectTo = router.query.redirect as string || '/lobby';
-          router.push(redirectTo);
-        }
-      } catch (error) {
-        console.error('Login error:', error);
-      }
+      setIsSubmitting(true);
+      setError('');
+
+      await login(formData);
+      setIsSubmitting(false);
     }
   );
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      router.push('/lobby');
+      const redirectTo = router.query.redirect as string || '/lobby';
+      router.push(redirectTo);
     }
   }, [isAuthenticated, isLoading, router]);
 
   // Form validation
   const validateForm = (data: LoginRequest): boolean => {
     let isValid = true;
+    setError('');
 
     // Email validation
     if (!data.email) {
-      setError('email', 'Email é obrigatório');
+      setFieldError('email', 'Email é obrigatório');
       isValid = false;
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-      setError('email', 'Email inválido');
+      setFieldError('email', 'Email inválido');
       isValid = false;
     }
 
     // Password validation
     if (!data.password) {
-      setError('password', 'Senha é obrigatória');
+      setFieldError('password', 'Senha é obrigatória');
       isValid = false;
     } else if (data.password.length < 6) {
-      setError('password', 'Senha deve ter pelo menos 6 caracteres');
+      setFieldError('password', 'Senha deve ter pelo menos 6 caracteres');
       isValid = false;
     }
 
@@ -124,6 +122,18 @@ export default function LoginPage() {
               Faça login para começar a jogar
             </p>
           </div>
+
+          {/* Display de erro geral */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg flex items-center gap-3"
+            >
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+              <p className="text-red-300 text-sm">{error}</p>
+            </motion.div>
+          )}
 
           {/* Google Login Button */}
           <Button
@@ -328,6 +338,7 @@ export default function LoginPage() {
                   handleChange('email')({ target: { value: 'demo@werewolf.com' } } as any);
                   handleChange('password')({ target: { value: 'demo123' } } as any);
                 }}
+                disabled={isSubmitting}
               >
                 Preencher Automaticamente
               </Button>

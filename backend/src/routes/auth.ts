@@ -2,27 +2,24 @@
 // Route definitions for authentication endpoints
 
 import { Router } from 'express';
-import { register, login, forgotPassword, resetPassword, getProfile } from '@/controllers/authController';
+import { register, login, forgotPassword, resetPassword, getProfile, checkUsername, checkEmail } from '@/controllers/authController';
 import { requireAuth } from '@/middleware/auth';
 
 const router = Router();
 
 //======================================================================
-
 // SIMPLE RATE LIMITING (INLINE)
 //======================================================================
 
 const authRateLimit = (req: any, res: any, next: any) => {
-    // TODO: Implement proper rate limiting later
-    // For now, just pass through
-    next();
+  // TODO: Implement proper rate limiting later
+  // For now, just pass through
+  next();
 };
 
 //======================================================================
-
 // PUBLIC ROUTES
 //======================================================================
-
 
 /**
  * @route POST /api/auth/register
@@ -56,11 +53,23 @@ router.post('/forgot-password', authRateLimit, forgotPassword);
  */
 router.post('/reset-password', authRateLimit, resetPassword);
 
-//======================================================================
+/**
+ * @route GET /api/auth/check-username/:username
+ * @desc Check if username is available
+ * @access Public
+ */
+router.get('/check-username/:username', authRateLimit, checkUsername);
 
+/**
+ * @route GET /api/auth/check-email/:email
+ * @desc Check if email is available
+ * @access Public
+ */
+router.get('/check-email/:email', authRateLimit, checkEmail);
+
+//======================================================================
 // PROTECTED ROUTES
 //======================================================================
-
 
 /**
  * @route GET /api/auth/profile
@@ -75,12 +84,12 @@ router.get('/profile', requireAuth, getProfile);
  * @access Private (refresh token)
  */
 router.post('/refresh', (req, res) => {
-    // TODO: Implement refresh token logic
-    res.json({
-        success: true,
-        message: 'Refresh token endpoint - TODO',
-        timestamp: new Date().toISOString(),
-    });
+  // TODO: Implement refresh token logic
+  res.json({
+    success: true,
+    message: 'Refresh token endpoint - TODO',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 /**
@@ -89,12 +98,12 @@ router.post('/refresh', (req, res) => {
  * @access Private
  */
 router.post('/logout', requireAuth, (req, res) => {
-    // TODO: Add token to blacklist in Redis
-    res.json({
-        success: true,
-        message: 'Logout realizado com sucesso',
-        timestamp: new Date().toISOString(),
-    });
+  // TODO: Add token to blacklist in Redis
+  res.json({
+    success: true,
+    message: 'Logout realizado com sucesso',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;

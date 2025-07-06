@@ -4,19 +4,24 @@
   "description": "🐺 Lobisomem Online - Plataforma de Jogos Multiplayer em Tempo Real",
   "private": true,
   "workspaces": [
-    "backend"
+    "backend",
+    "frontend"
   ],
   "scripts": {
-    "dev": "docker-compose -f docker-compose.dev.yml up --build",
+    "//": "--- DOCKER COMMANDS (for complete environment) ---",
+    "dev:docker": "docker-compose -f docker-compose.dev.yml up --build",
     "dev:down": "docker-compose -f docker-compose.dev.yml down",
+    "dev:clean": "docker-compose -f docker-compose.dev.yml down --volumes --remove-orphans",
     "dev:logs": "docker-compose -f docker-compose.dev.yml logs -f",
+    "dev:logs:backend": "docker-compose -f docker-compose.dev.yml logs -f backend",
+    "// ": "--- LOCAL DEVELOPMENT (run services individually without Docker) ---",
     "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "// ": "--- MONOREPO UTILITIES ---",
     "install:all": "npm install",
-    "build": "npm run build --workspace=backend",
-    "test": "npm run test --workspace=backend",
-    "lint": "npm run lint --workspace=backend",
-    "clean": "docker-compose -f docker-compose.dev.yml down -v && docker system prune -f",
-    "test:logic": "tsx --tsconfig backend/tsconfig.json scripts/test-game-logic.ts"
+    "build:all": "npm run build --workspaces",
+    "lint:all": "npm run lint --workspaces --if-present",
+    "test:all": "npm run test --workspaces --if-present"
   },
   "keywords": [
     "werewolf",
@@ -35,8 +40,5 @@
   },
   "devDependencies": {
     "@types/node": "^20.9.0"
-  },
-  "dependencies": {
-    "ws": "^8.18.3"
   }
 }

@@ -1,5 +1,3 @@
-// 🐺 LOBISOMEM ONLINE - Express Application Setup
-// ⚠ CRÍTICO: Preparado para separação REST/WebSocket na Fase 2
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -9,18 +7,11 @@ import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
 import { ServiceFactory } from '@/websocket/ServiceFactory';
-// Import routes
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
 
-//=====================================================================
-// EXPRESS APPLICATION
-//=====================================================================
 const app = express();
 
-//=====================================================================
-// SECURITY MIDDLEWARE
-//=====================================================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -34,12 +25,8 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-//=====================================================================
-// CORS CONFIGURATION
-//=====================================================================
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, postman, etc.)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
@@ -50,7 +37,6 @@ app.use(cors({
     ];
 
     if (config.IS_PRODUCTION) {
-      // Add production origins here
       allowedOrigins.push('https://your-domain.com');
     }
 
@@ -62,32 +48,29 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-Request-Time',
+    'X-Request-ID'
+  ],
 }));
 
-//=====================================================================
-// GENERAL MIDDLEWARE
-//=====================================================================
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
 if (config.IS_DEVELOPMENT) {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined'));
 }
 
-//=====================================================================
-// HEALTH CHECK ENDPOINTS
-//=====================================================================
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
     const redisHealth = await checkRedisHealth();
-
-    // Check WebSocket services health
     const servicesHealth = await ServiceFactory.getServicesHealth();
     const servicesStats = ServiceFactory.getServicesStats();
 
@@ -107,16 +90,13 @@ app.get('/health', async (req, res) => {
       memory: process.memoryUsage(),
     };
 
-    // CORREÇÃO: Health check inteligente baseado na fase
     let hasUnhealthyService = false;
 
     if (config.DISTRIBUTED_MODE) {
-      // Fase 2: Todos os serviços devem estar healthy
       hasUnhealthyService = Object.values(servicesHealth).some(
         (service: any) => service.status === 'unhealthy'
       );
     } else {
-      // Fase 1: Só verificar serviços críticos (gameState)
       const criticalServices = ['gameState'];
       hasUnhealthyService = criticalServices.some(serviceName => {
         const service = servicesHealth[serviceName];
@@ -124,7 +104,6 @@ app.get('/health', async (req, res) => {
       });
     }
 
-    // Determinar status final
     const isSystemHealthy =
       dbHealth.status === 'healthy' &&
       (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy') &&
@@ -161,7 +140,6 @@ app.get('/health/live', (req, res) => {
   });
 });
 
-// WebSocket-specific health endpoint
 app.get('/health/websocket', async (req, res) => {
   try {
     const servicesHealth = await ServiceFactory.getServicesHealth();
@@ -182,20 +160,9 @@ app.get('/health/websocket', async (req, res) => {
   }
 });
 
-//=====================================================================
-// API ROUTES
-//=====================================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 
-// TODO: Add more routes as they are implemented
-// app.use('/api/users', userRoutes);
-// app.use('/api/games', gameRoutes);
-// app.use('/api/leaderboard', leaderboardRoutes);
-
-//=====================================================================
-// ROOT ENDPOINT
-//=====================================================================
 app.get('/', (req, res) => {
   res.json({
     message: '🐺 Werewolf Online API',
@@ -240,9 +207,6 @@ app.get('/', (req, res) => {
   });
 });
 
-//=====================================================================
-// ERROR HANDLING MIDDLEWARE
-//=====================================================================
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
@@ -254,7 +218,6 @@ app.use((req, res, next) => {
 app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ Express Error:', error);
 
-  // Don't leak error details in production
   const isDev = config.IS_DEVELOPMENT;
   res.status(500).json({
     error: 'Internal Server Error',

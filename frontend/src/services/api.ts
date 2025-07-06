@@ -14,18 +14,18 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 // Create axios instance
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000, // ✅ AUMENTADO: timeout de 10s para 15s
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 // =============================================================================
-// REQUEST INTERCEPTOR
+// ✅ MELHORADO: REQUEST INTERCEPTOR
 // =============================================================================
 api.interceptors.request.use(
   (config) => {
-    // Add auth token if available
+    // ✅ CORRIGIDO: Usar Cookies em vez de localStorage para consistência
     const token = Cookies.get('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -34,9 +34,15 @@ api.interceptors.request.use(
     // Add request timestamp
     config.headers['X-Request-Time'] = new Date().toISOString();
 
+    // ✅ ADICIONADO: Request ID para debugging
+    config.headers['X-Request-ID'] = Math.random().toString(36).substr(2, 9);
+
     // Log request in development
     if (process.env.NODE_ENV === 'development') {
-      console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+        headers: config.headers,
+        data: config.data
+      });
     }
 
     return config;
@@ -48,13 +54,16 @@ api.interceptors.request.use(
 );
 
 // =============================================================================
-// RESPONSE INTERCEPTOR
+// ✅ MELHORADO: RESPONSE INTERCEPTOR COM REFRESH TOKEN
 // =============================================================================
 api.interceptors.response.use(
   (response: AxiosResponse) => {
     // Log response in development
     if (process.env.NODE_ENV === 'development') {
-      console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+      console.log(`✅ API Response: ${response.status} ${response.config.url}`, {
+        data: response.data,
+        headers: response.headers
+      });
     }
 
     return response;
@@ -62,7 +71,7 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Handle specific error codes
+    // ✅ MELHORADO: Handle specific error codes with better UX
     if (error.response) {
       const { status, data } = error.response;
 
@@ -75,29 +84,51 @@ api.interceptors.response.use(
             try {
               const refreshToken = Cookies.get('refresh_token');
               if (refreshToken) {
+                console.log('🔄 Attempting token refresh...');
+
+                // ✅ CORRIGIDO: Usar a própria instância do axios para refresh
                 const refreshResponse = await api.post('/auth/refresh', {
                   refreshToken,
-                });
+                }, {
+                  // ✅ IMPORTANTE: Não usar interceptors no refresh para evitar loop
+                  headers: {
+                    'Authorization': `Bearer ${refreshToken}`,
+                  },
+                  // Bypass interceptors
+                  _retry: true
+                } as any);
 
                 if (refreshResponse.data.success) {
                   const { accessToken } = refreshResponse.data.data;
-                  Cookies.set('access_token', accessToken, { expires: 7 });
 
-                  // Retry original request
+                  // ✅ CORRIGIDO: Usar Cookies consistentemente
+                  Cookies.set('access_token', accessToken, {
+                    expires: 7,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'strict'
+                  });
+
+                  // Retry original request with new token
                   originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+                  console.log('✅ Token refreshed successfully, retrying request...');
                   return api(originalRequest);
                 }
               }
             } catch (refreshError) {
-              console.error('Token refresh failed:', refreshError);
+              console.error('❌ Token refresh failed:', refreshError);
             }
 
             // If refresh fails, redirect to login
+            console.log('🔒 Authentication failed, redirecting to login...');
             Cookies.remove('access_token');
             Cookies.remove('refresh_token');
 
-            if (typeof window !== 'undefined') {
-              window.location.href = '/auth/login';
+            // ✅ MELHORADO: Evitar múltiplos redirects
+            if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/')) {
+              toast.error('Sessão expirada. Faça login novamente.');
+              setTimeout(() => {
+                window.location.href = '/auth/login';
+              }, 1500);
             }
           }
           break;
@@ -107,7 +138,22 @@ api.interceptors.response.use(
           break;
 
         case 404:
-          toast.error('Recurso não encontrado');
+          // ✅ MELHORADO: Não mostrar toast para todos os 404s
+          if (!originalRequest.url?.includes('/api/')) {
+            toast.error('Recurso não encontrado');
+          }
+          break;
+
+        case 409:
+          // Conflict - usually validation errors
+          const conflictMessage = data?.error || data?.message || 'Conflito de dados';
+          toast.error(conflictMessage);
+          break;
+
+        case 422:
+          // Validation errors
+          const validationMessage = data?.error || data?.message || 'Dados inválidos';
+          toast.error(validationMessage);
           break;
 
         case 429:
@@ -115,22 +161,40 @@ api.interceptors.response.use(
           break;
 
         case 500:
-          toast.error('Erro interno do servidor');
+          toast.error('Erro interno do servidor. Tente novamente.');
+          break;
+
+        case 502:
+        case 503:
+        case 504:
+          toast.error('Servidor temporariamente indisponível. Tente novamente.');
           break;
 
         default:
-          // Show error message from API if available
-          const errorMessage = data?.error || data?.message || 'Erro inesperado';
-          toast.error(errorMessage);
+          // ✅ MELHORADO: Mostrar mensagem do servidor se disponível
+          const errorMessage = data?.error || data?.message || `Erro ${status}`;
+          if (status >= 400 && status < 500) {
+            toast.error(errorMessage);
+          } else {
+            toast.error('Erro inesperado. Tente novamente.');
+          }
       }
     } else if (error.request) {
       // Network error
-      toast.error('Erro de conexão. Verifique sua internet.');
       console.error('❌ Network error:', error.request);
+
+      // ✅ MELHORADO: Detectar tipo de erro de rede
+      if (error.code === 'ECONNABORTED') {
+        toast.error('Tempo limite da requisição. Verifique sua conexão.');
+      } else if (error.code === 'ERR_NETWORK') {
+        toast.error('Erro de rede. Verifique sua conexão com a internet.');
+      } else {
+        toast.error('Erro de conexão. Verifique sua internet.');
+      }
     } else {
       // Something else happened
-      toast.error('Erro inesperado');
       console.error('❌ API error:', error.message);
+      toast.error('Erro inesperado');
     }
 
     return Promise.reject(error);
@@ -138,7 +202,7 @@ api.interceptors.response.use(
 );
 
 // =============================================================================
-// API METHODS
+// ✅ MELHORADO: API METHODS CLASS
 // =============================================================================
 class ApiService {
   // GET request
@@ -209,15 +273,23 @@ class ApiService {
     }
   }
 
-  // File upload
+  // ✅ MELHORADO: File upload with progress
   async uploadFile<T = any>(
     url: string,
     file: File,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    additionalData?: Record<string, any>
   ): Promise<ApiResponse<T>> {
     try {
       const formData = new FormData();
       formData.append('file', file);
+
+      // Add additional data if provided
+      if (additionalData) {
+        Object.entries(additionalData).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+      }
 
       const response = await api.post(url, formData, {
         headers: {
@@ -229,6 +301,7 @@ class ApiService {
             onProgress(progress);
           }
         },
+        timeout: 60000, // 60 seconds for file uploads
       });
 
       return response.data;
@@ -237,20 +310,34 @@ class ApiService {
     }
   }
 
-  // Error handler
+  // ✅ MELHORADO: Error handler with more context
   private handleError(error: any): ApiResponse {
     if (error.response?.data) {
-      return error.response.data;
+      return {
+        success: false,
+        error: error.response.data.error || error.response.data.message || 'Erro da API',
+        timestamp: new Date().toISOString(),
+        statusCode: error.response.status,
+      };
+    }
+
+    let errorMessage = 'Erro desconhecido';
+    if (error.code === 'ECONNABORTED') {
+      errorMessage = 'Tempo limite da requisição';
+    } else if (error.code === 'ERR_NETWORK') {
+      errorMessage = 'Erro de rede';
+    } else if (error.message) {
+      errorMessage = error.message;
     }
 
     return {
       success: false,
-      error: error.message || 'Erro desconhecido',
+      error: errorMessage,
       timestamp: new Date().toISOString(),
     };
   }
 
-  // Health check
+  // ✅ MELHORADO: Health check with retry
   async healthCheck(): Promise<boolean> {
     try {
       const response = await this.get('/health');
@@ -264,6 +351,17 @@ class ApiService {
   async getServerInfo() {
     return this.get('/');
   }
+
+  // ✅ ADICIONADO: Ping method for connection testing
+  async ping(): Promise<number> {
+    const start = Date.now();
+    try {
+      await this.get('/ping');
+      return Date.now() - start;
+    } catch {
+      return -1;
+    }
+  }
 }
 
 // =============================================================================
@@ -272,7 +370,7 @@ class ApiService {
 export const apiService = new ApiService();
 
 // =============================================================================
-// UTILITY FUNCTIONS
+// ✅ MELHORADO: UTILITY FUNCTIONS
 // =============================================================================
 
 // Build query string from object
@@ -281,7 +379,12 @@ export function buildQueryString(params: Record<string, any>): string {
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
-      searchParams.append(key, String(value));
+      // Handle arrays
+      if (Array.isArray(value)) {
+        value.forEach(item => searchParams.append(key, String(item)));
+      } else {
+        searchParams.append(key, String(value));
+      }
     }
   });
 
@@ -311,11 +414,12 @@ export function isClientError(error: any): boolean {
   return error.response && error.response.status >= 400 && error.response.status < 500;
 }
 
-// Retry mechanism for failed requests
+// ✅ MELHORADO: Retry mechanism with exponential backoff
 export async function retryRequest<T>(
   requestFn: () => Promise<T>,
   maxRetries = 3,
-  delay = 1000
+  initialDelay = 1000,
+  backoffMultiplier = 2
 ): Promise<T> {
   let lastError: any;
 
@@ -325,26 +429,42 @@ export async function retryRequest<T>(
     } catch (error) {
       lastError = error;
 
-      // Don't retry client errors (4xx)
-      if (isClientError(error)) {
+      // Don't retry client errors (4xx) except 408, 429
+      if (isClientError(error) && ![408, 429].includes(error.response?.status)) {
         throw error;
       }
 
-      // Wait before retrying (exponential backoff)
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, delay * attempt));
+      // Don't retry on last attempt
+      if (attempt === maxRetries) {
+        break;
       }
+
+      // Calculate delay with exponential backoff
+      const delay = initialDelay * Math.pow(backoffMultiplier, attempt - 1);
+      console.log(`⏱️ Retrying request in ${delay}ms (attempt ${attempt}/${maxRetries})`);
+
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 
   throw lastError;
 }
 
-// Download file from URL
-export async function downloadFile(url: string, filename?: string): Promise<void> {
+// ✅ MELHORADO: Download file with progress
+export async function downloadFile(
+  url: string,
+  filename?: string,
+  onProgress?: (progress: number) => void
+): Promise<void> {
   try {
     const response = await api.get(url, {
       responseType: 'blob',
+      onDownloadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
+      },
     });
 
     const blob = new Blob([response.data]);
@@ -361,6 +481,59 @@ export async function downloadFile(url: string, filename?: string): Promise<void
   } catch (error) {
     console.error('Download failed:', error);
     toast.error('Falha no download do arquivo');
+  }
+}
+
+// ✅ ADICIONADO: Request cancellation utility
+export function createCancelToken() {
+  const source = axios.CancelToken.source();
+  return {
+    token: source.token,
+    cancel: source.cancel,
+  };
+}
+
+// ✅ ADICIONADO: Connection monitor
+export class ConnectionMonitor {
+  private static instance: ConnectionMonitor;
+  private isOnline = navigator.onLine;
+  private listeners: ((online: boolean) => void)[] = [];
+
+  private constructor() {
+    window.addEventListener('online', () => this.updateStatus(true));
+    window.addEventListener('offline', () => this.updateStatus(false));
+  }
+
+  static getInstance(): ConnectionMonitor {
+    if (!ConnectionMonitor.instance) {
+      ConnectionMonitor.instance = new ConnectionMonitor();
+    }
+    return ConnectionMonitor.instance;
+  }
+
+  private updateStatus(online: boolean) {
+    this.isOnline = online;
+    this.listeners.forEach(listener => listener(online));
+
+    if (online) {
+      toast.success('Conexão restaurada! 🌐');
+    } else {
+      toast.error('Conexão perdida. Verificando...', { duration: 6000 });
+    }
+  }
+
+  onStatusChange(listener: (online: boolean) => void) {
+    this.listeners.push(listener);
+    return () => {
+      const index = this.listeners.indexOf(listener);
+      if (index > -1) {
+        this.listeners.splice(index, 1);
+      }
+    };
+  }
+
+  get status() {
+    return this.isOnline;
   }
 }
 

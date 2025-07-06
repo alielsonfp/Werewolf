@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
 import { User, AuthTokens, LoginRequest, RegisterRequest } from '@/types';
 import { authService } from '@/services/auth';
 import { toast } from 'react-hot-toast';
@@ -44,17 +44,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   // =============================================================================
-  // COMPUTED VALUES
-  // =============================================================================
-  const isAuthenticated = !!user;
-
-  // =============================================================================
-  // TOKEN MANAGEMENT
+  // ✅ COMPUTED VALUES - MELHORADO COM VERIFICAÇÃO COMPLETA
   // =============================================================================
   const getToken = (): string | null => {
     return Cookies.get('access_token') || null;
   };
 
+  // ✅ CORRIGIDO: isAuthenticated com verificação completa
+  const isAuthenticated = useMemo(() => {
+    const token = getToken();
+    return !!user && !!token && !isLoading;
+  }, [user, isLoading]);
+
+  // =============================================================================
+  // TOKEN MANAGEMENT
+  // =============================================================================
   const setTokens = (tokens: AuthTokens) => {
     // Set access token with 7-day expiry
     Cookies.set('access_token', tokens.accessToken, {
@@ -91,51 +95,51 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   // =============================================================================
-  // AUTHENTICATION ACTIONS
+  // ✅ AUTHENTICATION ACTIONS - CORRIGIDO CONFORME O GUIA
   // =============================================================================
   const login = async (credentials: LoginRequest): Promise<boolean> => {
-    try {
-      setIsLoading(true);
-      const response = await authService.login(credentials);
+    setIsLoading(true);
 
-      if (response.success && response.data) {
-        setUser(response.data.user);
-        setTokens(response.data.tokens);
-        toast.success(`Bem-vindo de volta, ${response.data.user.username}! 🐺`);
-        return true;
-      }
+    // ✅ CORRIGIDO: A chamada de serviço agora NUNCA vai dar "throw" por um erro 401
+    const response = await authService.login(credentials);
 
-      toast.error(response.error || 'Erro ao fazer login');
+    setIsLoading(false);
+
+    if (response.success && response.data) {
+      // Lógica de sucesso...
+      setUser(response.data.user);
+      setTokens(response.data.tokens);
+      toast.success(`Bem-vindo de volta, ${response.data.user.username}! 🐺`);
+      return true;
+    } else {
+      // Lógica de falha...
+      // A mensagem de erro vem direto do backend!
+      const errorMessage = response.message || response.error || 'Ocorreu uma falha.';
+      toast.error(errorMessage); // Isso vai mostrar "Email ou senha incorretos"
       return false;
-    } catch (error) {
-      console.error('Login error:', error);
-      toast.error('Erro de conexão. Tente novamente.');
-      return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const register = async (data: RegisterRequest): Promise<boolean> => {
-    try {
-      setIsLoading(true);
-      const response = await authService.register(data);
+    setIsLoading(true);
 
-      if (response.success && response.data) {
-        setUser(response.data.user);
-        setTokens(response.data.tokens);
-        toast.success(`Conta criada com sucesso! Bem-vindo, ${data.username}! 🎮`);
-        return true;
-      }
+    // ✅ CORRIGIDO: A chamada de serviço agora NUNCA vai dar "throw" por um erro 409
+    const response = await authService.register(data);
 
-      toast.error(response.error || 'Erro ao criar conta');
+    setIsLoading(false);
+
+    if (response.success && response.data) {
+      // Lógica de sucesso...
+      setUser(response.data.user);
+      setTokens(response.data.tokens);
+      toast.success(`Conta criada com sucesso! Bem-vindo, ${data.username}! 🎮`);
+      return true;
+    } else {
+      // Lógica de falha...
+      // A mensagem de erro vem direto do backend!
+      const errorMessage = response.message || response.error || 'Erro ao criar conta';
+      toast.error(errorMessage); // Isso vai mostrar "Email já está em uso"
       return false;
-    } catch (error) {
-      console.error('Register error:', error);
-      toast.error('Erro de conexão. Tente novamente.');
-      return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -176,11 +180,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   // =============================================================================
-  // INITIALIZATION
+  // ✅ INITIALIZATION - MELHORADO COM MELHOR CONTROLE DE LOADING
   // =============================================================================
   useEffect(() => {
     const initializeAuth = async () => {
       try {
+        setIsLoading(true);
         const token = getToken();
 
         if (!token || isTokenExpired()) {
@@ -231,9 +236,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [isAuthenticated]);
 
   // =============================================================================
-  // CONTEXT VALUE
+  // ✅ CONTEXT VALUE - MEMOIZADO PARA EVITAR RE-RENDERS DESNECESSÁRIOS
   // =============================================================================
-  const contextValue: AuthContextType = {
+  const contextValue = useMemo<AuthContextType>(() => ({
     // State
     user,
     isAuthenticated,
@@ -249,7 +254,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Utils
     getToken,
     isTokenExpired,
-  };
+  }), [user, isAuthenticated, isLoading]);
 
   return (
     <AuthContext.Provider value={contextValue}>

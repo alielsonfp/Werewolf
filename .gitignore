@@ -1,23 +1,43 @@
-# 🐺 LOBISOMEM ONLINE - Git Ignore
-
-# =============================================================================
-# ENVIRONMENT & SECRETS
-# =============================================================================
-.env
-.env.local
-.env.production
-.env.staging
-*.env
-
-# =============================================================================
-# NODE.JS
-# =============================================================================
-node_modules/
+# Dependencies
+node_modules
+backend/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
+
+# Build outputs
+backend/dist
+backend/build
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Logs
+*.log
+logs
 
 # Runtime data
 pids
@@ -25,67 +45,18 @@ pids
 *.seed
 *.pid.lock
 
-# =============================================================================
-# TYPESCRIPT
-# =============================================================================
-*.tsbuildinfo
-dist/
-build/
+# Coverage directory used by tools like istanbul
+coverage
 
-# =============================================================================
-# NEXT.JS
-# =============================================================================
-.next/
-out/
-build
+# Test files
+*.test.js
+*.test.ts
+__tests__
 
-# =============================================================================
-# DATABASES
-# =============================================================================
-*.sqlite
-*.sqlite3
-*.db
+# Temporary folders
+tmp
+temp
 
-# =============================================================================
-# LOGS
-# =============================================================================
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# =============================================================================
-# DOCKER
-# =============================================================================
-.dockerignore
-
-# =============================================================================
-# IDE & EDITORS
-# =============================================================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# =============================================================================
-# OS GENERATED
-# =============================================================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# =============================================================================
-# MISC
-# =============================================================================
-.nyc_output
-coverage/
-.coverage
-*.cover
-.cache
-.eslintcache
+# Documentation
+README.md
+docs

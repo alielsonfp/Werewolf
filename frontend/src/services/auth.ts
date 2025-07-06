@@ -17,35 +17,93 @@ import {
 class AuthService {
 
   // =============================================================================
-  // AUTHENTICATION METHODS
+  // ✅ AUTHENTICATION METHODS - CORRIGIDO COM TRATAMENTO DE ERRO ADEQUADO
   // =============================================================================
 
   /**
-   * Login user with email and password
+   * ✅ CORRIGIDO: Login user with email and password
+   * Agora usa axios direto para evitar interceptors que redirecionam em erros 401
    */
   async login(credentials: LoginRequest): Promise<ApiResponse<AuthResponse>> {
-    return apiService.post<AuthResponse>('/auth/login', credentials);
+    try {
+      // ✅ MUDANÇA: Usar axios direto em vez de apiService para evitar interceptors
+      const axios = (await import('axios')).default;
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+      const response = await axios.post<ApiResponse<AuthResponse>>(
+        `${API_BASE_URL}/api/auth/login`,
+        credentials,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000
+        }
+      );
+      return response.data; // Retorna os dados em caso de sucesso (status 2xx)
+    } catch (error: any) {
+      // Se o status for 4xx ou 5xx, o axios joga um erro. Nós o capturamos.
+      if (error.response?.data) {
+        // Se o erro tem uma resposta do backend, retornamos os dados dessa resposta
+        // Ex: { success: false, message: 'Email ou senha incorretos', ... }
+        return error.response.data;
+      }
+      // Se não houver resposta, é um erro de rede real (servidor offline, etc.)
+      return {
+        success: false,
+        error: 'NETWORK_ERROR',
+        message: 'Erro de conexão. Tente novamente.',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**
-   * Register new user
+   * ✅ CORRIGIDO: Register new user
+   * Agora usa axios direto para evitar interceptors que redirecionam em erros 409
    */
   async register(userData: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
-    return apiService.post<AuthResponse>('/auth/register', userData);
+    try {
+      // ✅ MUDANÇA: Usar axios direto em vez de apiService para evitar interceptors
+      const axios = (await import('axios')).default;
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+      const response = await axios.post<ApiResponse<AuthResponse>>(
+        `${API_BASE_URL}/api/auth/register`,
+        userData,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000
+        }
+      );
+      return response.data; // Retorna os dados em caso de sucesso (status 2xx)
+    } catch (error: any) {
+      // Se o status for 4xx ou 5xx, o axios joga um erro. Nós o capturamos.
+      if (error.response?.data) {
+        // Se o erro tem uma resposta do backend, retornamos os dados dessa resposta
+        // Ex: { success: false, message: 'Email já está em uso', ... }
+        return error.response.data;
+      }
+      // Se não houver resposta, é um erro de rede real (servidor offline, etc.)
+      return {
+        success: false,
+        error: 'NETWORK_ERROR',
+        message: 'Erro de conexão. Tente novamente.',
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   /**
    * Logout user (server-side cleanup)
    */
   async logout(): Promise<ApiResponse> {
-    return apiService.post('/auth/logout');
+    return apiService.post('/api/auth/logout');
   }
 
   /**
    * Refresh access token using refresh token
    */
   async refreshToken(refreshToken: string): Promise<ApiResponse<{ tokens: AuthTokens }>> {
-    return apiService.post<{ tokens: AuthTokens }>('/auth/refresh', {
+    return apiService.post<{ tokens: AuthTokens }>('/api/auth/refresh', {
       refreshToken,
     });
   }
@@ -54,14 +112,14 @@ class AuthService {
    * Get current user profile
    */
   async getProfile(): Promise<ApiResponse<User>> {
-    return apiService.get<User>('/auth/profile');
+    return apiService.get<User>('/api/auth/profile');
   }
 
   /**
    * Update user profile
    */
   async updateProfile(updates: Partial<User>): Promise<ApiResponse<User>> {
-    return apiService.patch<User>('/auth/profile', updates);
+    return apiService.patch<User>('/api/auth/profile', updates);
   }
 
   // =============================================================================
@@ -72,14 +130,14 @@ class AuthService {
    * Request password reset email
    */
   async forgotPassword(email: string): Promise<ApiResponse> {
-    return apiService.post('/auth/forgot-password', { email });
+    return apiService.post('/api/auth/forgot-password', { email });
   }
 
   /**
    * Reset password with token
    */
   async resetPassword(token: string, password: string): Promise<ApiResponse> {
-    return apiService.post('/auth/reset-password', {
+    return apiService.post('/api/auth/reset-password', {
       token,
       password,
     });
@@ -92,7 +150,7 @@ class AuthService {
     currentPassword: string,
     newPassword: string
   ): Promise<ApiResponse> {
-    return apiService.post('/auth/change-password', {
+    return apiService.post('/api/auth/change-password', {
       currentPassword,
       newPassword,
     });
@@ -106,14 +164,14 @@ class AuthService {
    * Send email verification
    */
   async sendVerificationEmail(): Promise<ApiResponse> {
-    return apiService.post('/auth/send-verification');
+    return apiService.post('/api/auth/send-verification');
   }
 
   /**
    * Verify email with token
    */
   async verifyEmail(token: string): Promise<ApiResponse> {
-    return apiService.post('/auth/verify-email', { token });
+    return apiService.post('/api/auth/verify-email', { token });
   }
 
   // =============================================================================
@@ -124,7 +182,7 @@ class AuthService {
    * Delete user account
    */
   async deleteAccount(password: string): Promise<ApiResponse> {
-    return apiService.delete('/auth/account', {
+    return apiService.delete('/api/auth/account', {
       data: { password },
     });
   }
@@ -133,14 +191,14 @@ class AuthService {
    * Check if username is available
    */
   async checkUsernameAvailability(username: string): Promise<ApiResponse<{ available: boolean }>> {
-    return apiService.get<{ available: boolean }>(`/auth/check-username/${encodeURIComponent(username)}`);
+    return apiService.get<{ available: boolean }>(`/api/auth/check-username/${encodeURIComponent(username)}`);
   }
 
   /**
    * Check if email is available
    */
   async checkEmailAvailability(email: string): Promise<ApiResponse<{ available: boolean }>> {
-    return apiService.get<{ available: boolean }>(`/auth/check-email/${encodeURIComponent(email)}`);
+    return apiService.get<{ available: boolean }>(`/api/auth/check-email/${encodeURIComponent(email)}`);
   }
 
   // =============================================================================
@@ -154,14 +212,14 @@ class AuthService {
     file: File,
     onProgress?: (progress: number) => void
   ): Promise<ApiResponse<{ avatarUrl: string }>> {
-    return apiService.uploadFile<{ avatarUrl: string }>('/auth/avatar', file, onProgress);
+    return apiService.uploadFile<{ avatarUrl: string }>('/api/auth/avatar', file, onProgress);
   }
 
   /**
    * Remove user avatar
    */
   async removeAvatar(): Promise<ApiResponse> {
-    return apiService.delete('/auth/avatar');
+    return apiService.delete('/api/auth/avatar');
   }
 
   // =============================================================================
@@ -172,21 +230,21 @@ class AuthService {
    * Get user statistics
    */
   async getStatistics(): Promise<ApiResponse<any>> {
-    return apiService.get('/auth/statistics');
+    return apiService.get('/api/auth/statistics');
   }
 
   /**
    * Get user game history
    */
   async getGameHistory(page = 1, limit = 20): Promise<ApiResponse<any>> {
-    return apiService.get(`/auth/history?page=${page}&limit=${limit}`);
+    return apiService.get(`/api/auth/history?page=${page}&limit=${limit}`);
   }
 
   /**
    * Get user achievements
    */
   async getAchievements(): Promise<ApiResponse<any>> {
-    return apiService.get('/auth/achievements');
+    return apiService.get('/api/auth/achievements');
   }
 
   // =============================================================================
@@ -197,35 +255,35 @@ class AuthService {
    * Get friends list
    */
   async getFriends(): Promise<ApiResponse<any[]>> {
-    return apiService.get('/auth/friends');
+    return apiService.get('/api/auth/friends');
   }
 
   /**
    * Send friend request
    */
   async sendFriendRequest(userId: string): Promise<ApiResponse> {
-    return apiService.post('/auth/friends/request', { userId });
+    return apiService.post('/api/auth/friends/request', { userId });
   }
 
   /**
    * Accept friend request
    */
   async acceptFriendRequest(requestId: string): Promise<ApiResponse> {
-    return apiService.post(`/auth/friends/accept/${requestId}`);
+    return apiService.post(`/api/auth/friends/accept/${requestId}`);
   }
 
   /**
    * Reject friend request
    */
   async rejectFriendRequest(requestId: string): Promise<ApiResponse> {
-    return apiService.post(`/auth/friends/reject/${requestId}`);
+    return apiService.post(`/api/auth/friends/reject/${requestId}`);
   }
 
   /**
    * Remove friend
    */
   async removeFriend(userId: string): Promise<ApiResponse> {
-    return apiService.delete(`/auth/friends/${userId}`);
+    return apiService.delete(`/api/auth/friends/${userId}`);
   }
 
   // =============================================================================
@@ -236,14 +294,14 @@ class AuthService {
    * Update privacy settings
    */
   async updatePrivacySettings(settings: Record<string, boolean>): Promise<ApiResponse> {
-    return apiService.patch('/auth/privacy', settings);
+    return apiService.patch('/api/auth/privacy', settings);
   }
 
   /**
    * Get privacy settings
    */
   async getPrivacySettings(): Promise<ApiResponse<Record<string, boolean>>> {
-    return apiService.get('/auth/privacy');
+    return apiService.get('/api/auth/privacy');
   }
 
   // =============================================================================
@@ -254,14 +312,14 @@ class AuthService {
    * Update notification settings
    */
   async updateNotificationSettings(settings: Record<string, boolean>): Promise<ApiResponse> {
-    return apiService.patch('/auth/notifications', settings);
+    return apiService.patch('/api/auth/notifications', settings);
   }
 
   /**
    * Get notification settings
    */
   async getNotificationSettings(): Promise<ApiResponse<Record<string, boolean>>> {
-    return apiService.get('/auth/notifications');
+    return apiService.get('/api/auth/notifications');
   }
 
   // =============================================================================
@@ -272,21 +330,21 @@ class AuthService {
    * Get active sessions
    */
   async getActiveSessions(): Promise<ApiResponse<any[]>> {
-    return apiService.get('/auth/sessions');
+    return apiService.get('/api/auth/sessions');
   }
 
   /**
    * Revoke session
    */
   async revokeSession(sessionId: string): Promise<ApiResponse> {
-    return apiService.delete(`/auth/sessions/${sessionId}`);
+    return apiService.delete(`/api/auth/sessions/${sessionId}`);
   }
 
   /**
    * Revoke all sessions except current
    */
   async revokeAllOtherSessions(): Promise<ApiResponse> {
-    return apiService.post('/auth/sessions/revoke-all');
+    return apiService.post('/api/auth/sessions/revoke-all');
   }
 
   // =============================================================================

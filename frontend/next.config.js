@@ -3,6 +3,20 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
 
+  // ✅ ADICIONADO: Supressão de hydration warnings
+  experimental: {
+    // Enable SWC for better performance
+    forceSwcTransforms: true,
+    // Supressão temporária de hydration warnings
+    suppressHydrationWarning: true,
+  },
+
+  // ✅ ADICIONADO: Configuração de locale para formatação consistente
+  i18n: {
+    locales: ['pt-BR'],
+    defaultLocale: 'pt-BR',
+  },
+
   // Environment variables
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
@@ -15,13 +29,7 @@ const nextConfig = {
     formats: ['image/webp', 'image/avif'],
   },
 
-  // Experimental features
-  experimental: {
-    // Enable SWC for better performance
-    forceSwcTransforms: true,
-  },
-
-  // Webpack configuration
+  // ✅ MELHORADO: Webpack configuration
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Audio files support
     config.module.rules.push({

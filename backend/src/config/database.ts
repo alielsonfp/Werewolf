@@ -1,65 +1,54 @@
-// 🐺 LOBISOMEM ONLINE - Database Configuration
-// PostgreSQL connection and Prisma setup
-
-import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
 import { config } from './environment';
 
-// =============================================================================
-// PRISMA CLIENT SINGLETON
-// =============================================================================
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+const logger = {
+  info: (message: string, data?: any) => console.log(`[INFO] ${message}`, data || ''),
+  error: (message: string, error?: any) => console.error(`[ERROR] ${message}`, error || ''),
 };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: config.IS_DEVELOPMENT ? ['query', 'info', 'warn', 'error'] : ['error'],
-    datasources: {
-      db: {
-        url: config.DATABASE_URL,
-      },
-    },
-  });
+export const pool = new Pool({
+  connectionString: config.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
-if (!config.IS_PRODUCTION) globalForPrisma.prisma = prisma;
+pool.on('error', (err) => {
+  logger.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
 
-// =============================================================================
-// DATABASE CONNECTION HELPERS
-// =============================================================================
 export async function connectDatabase(): Promise<void> {
   try {
-    await prisma.$connect();
-    console.log('✅ PostgreSQL connected successfully');
+    const client = await pool.connect();
+    logger.info('PostgreSQL connected successfully');
 
-    // Test connection with a simple query
-    const result = await prisma.$queryRaw`SELECT 1 as connected`;
-    console.log('🔍 Database health check:', result);
+    const result = await client.query('SELECT NOW() as connected_at');
+    logger.info('Database health check:', result.rows[0]);
+
+    client.release();
   } catch (error) {
-    console.error('❌ Failed to connect to PostgreSQL:', error);
+    logger.error('Failed to connect to PostgreSQL', error);
     throw error;
   }
 }
 
 export async function disconnectDatabase(): Promise<void> {
   try {
-    await prisma.$disconnect();
-    console.log('👋 PostgreSQL disconnected');
+    await pool.end();
+    logger.info('PostgreSQL connections closed');
   } catch (error) {
-    console.error('❌ Error disconnecting from PostgreSQL:', error);
+    logger.error('Error disconnecting from PostgreSQL', error);
   }
 }
 
-// =============================================================================
-// DATABASE HEALTH CHECK
-// =============================================================================
 export async function checkDatabaseHealth(): Promise<{
   status: 'healthy' | 'unhealthy';
   message: string;
   timestamp: string;
 }> {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await pool.query('SELECT 1');
     return {
       status: 'healthy',
       message: 'PostgreSQL is responding',
@@ -74,10 +63,7 @@ export async function checkDatabaseHealth(): Promise<{
   }
 }
 
-// =============================================================================
-// GRACEFUL SHUTDOWN
-// =============================================================================
 export async function gracefulShutdown(): Promise<void> {
-  console.log('🛑 Shutting down database connections...');
+  logger.info('Shutting down database connections...');
   await disconnectDatabase();
 }

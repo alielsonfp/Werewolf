@@ -7,6 +7,7 @@ import { Inter, Cinzel, Pirata_One } from 'next/font/google';
 import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/router';
+import { useEffect } from 'react';
 
 // Context Providers
 import { AuthProvider } from '@/context/AuthContext';
@@ -72,6 +73,18 @@ const pageTransition = {
 export default function App({ Component, pageProps, router }: AppProps) {
   const { pathname } = useRouter();
 
+  // ✅ ADICIONADO: Suprimir warnings de hydration em desenvolvimento
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const originalError = console.error;
+      console.error = (...args) => {
+        if (args[0]?.includes?.('Hydration')) return;
+        if (args[0]?.includes?.('Text content does not match')) return;
+        originalError(...args);
+      };
+    }
+  }, []);
+
   return (
     <>
       {/* HEAD com viewport no lugar correto */}
@@ -83,10 +96,10 @@ export default function App({ Component, pageProps, router }: AppProps) {
         {/* Font variables */}
         <div className={`${inter.variable} ${cinzel.variable} ${pirataOne.variable}`}>
 
-          {/* Context Providers */}
+          {/* ✅ CORRIGIDO: Ordem correta de Context Providers */}
           <ThemeProvider>
             <AuthProvider>
-              <SocketProvider>
+              <SocketProvider> {/* SocketProvider DEVE vir APÓS AuthProvider */}
 
                 {/* Page Transitions */}
                 <AnimatePresence mode="wait" initial={false}>
@@ -157,6 +170,10 @@ export default function App({ Component, pageProps, router }: AppProps) {
 if (typeof window !== 'undefined') {
   // Handle global errors
   window.addEventListener('error', (event) => {
+    // ✅ MELHORADO: Filtrar erros de hydration
+    if (event.error?.message?.includes?.('Hydration')) return;
+    if (event.error?.message?.includes?.('Text content does not match')) return;
+
     console.error('Global error:', event.error);
     // You could send this to an error reporting service
   });

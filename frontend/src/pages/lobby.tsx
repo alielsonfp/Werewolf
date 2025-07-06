@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
 
 import { useAuth } from '@/context/AuthContext';
@@ -11,6 +12,34 @@ import Layout from '@/components/common/Layout';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
+
+// =============================================================================
+// ✅ COMPONENTE SEGURO PARA NÚMEROS (RESOLVE HYDRATION ERROR)
+// =============================================================================
+interface SafeNumberDisplayProps {
+  value: number;
+  className?: string;
+}
+
+function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Renderização consistente no servidor
+  if (!mounted) {
+    return <span className={className}>{value}</span>;
+  }
+
+  // Formatação no cliente após hidratação
+  return (
+    <span className={className}>
+      {value.toLocaleString('pt-BR')}
+    </span>
+  );
+}
 
 // =============================================================================
 // ÍCONES INLINE (para evitar problemas de import)
@@ -78,7 +107,8 @@ interface MockRoom {
 // LOBBY PAGE COMPONENT
 // =============================================================================
 function LobbyPage() {
-  const { user, isLoading: isAuthLoading } = useAuth();
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const { isConnected, status } = useSocket();
   const { playSound, playMusic } = useTheme();
 
@@ -93,19 +123,27 @@ function LobbyPage() {
   // Estado para evitar múltiplas chamadas de música
   const [musicStarted, setMusicStarted] = useState(false);
 
+  // ✅ PROTEÇÃO DE ROTA: Verificar autenticação
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      router.push('/auth/login');
+      return;
+    }
+  }, [isAuthLoading, isAuthenticated, router]);
+
   // Iniciar música quando a página carregar
   useEffect(() => {
-    if (!isAuthLoading && !musicStarted) {
+    if (!isAuthLoading && isAuthenticated && !musicStarted) {
       console.log('🎵 Iniciando música do lobby...');
       const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
       const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
       playMusic(randomMusic);
       setMusicStarted(true);
     }
-  }, [isAuthLoading, musicStarted, playMusic]);
+  }, [isAuthLoading, isAuthenticated, musicStarted, playMusic]);
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || !isAuthenticated) return;
 
     const generateMockRooms = (): MockRoom[] => {
       const mockNames = [
@@ -132,7 +170,7 @@ function LobbyPage() {
       setRooms(generateMockRooms());
       setLoading(false);
     }, 1000);
-  }, [isAuthLoading]);
+  }, [isAuthLoading, isAuthenticated]);
 
   // Filter rooms
   const filteredRooms = rooms.filter(room => {
@@ -155,6 +193,7 @@ function LobbyPage() {
     console.log('Spectating room:', roomId);
   };
 
+  // Loading state
   if (isAuthLoading) {
     return (
       <>
@@ -172,6 +211,11 @@ function LobbyPage() {
         </Layout>
       </>
     );
+  }
+
+  // Redirect if not authenticated
+  if (!isAuthenticated) {
+    return null;
   }
 
   return (
@@ -389,16 +433,24 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
             </div>
           </div>
 
-          {/* Room Details */}
+          {/* Room Details - ✅ USANDO SafeNumberDisplay PARA EVITAR HYDRATION ERROR */}
           <div className="flex items-center gap-4 text-sm text-white/70">
             <div className="flex items-center gap-1">
               <UsersIcon />
-              <span>{room.currentPlayers}/{room.maxPlayers}</span>
+              <span>
+                <SafeNumberDisplay value={room.currentPlayers} />
+                /
+                <SafeNumberDisplay value={room.maxPlayers} />
+              </span>
             </div>
 
             <div className="flex items-center gap-1">
               <EyeIcon />
-              <span>{room.currentSpectators}/{room.maxSpectators}</span>
+              <span>
+                <SafeNumberDisplay value={room.currentSpectators} />
+                /
+                <SafeNumberDisplay value={room.maxSpectators} />
+              </span>
             </div>
 
             <div className="flex items-center gap-1">
