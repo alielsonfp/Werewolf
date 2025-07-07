@@ -3,15 +3,18 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import http from 'http'; // ✅ NOVO: Importar http
 import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
 import { ServiceFactory } from '@/websocket/ServiceFactory';
+import { WebSocketManager } from '@/websocket/WebSocketManager'; // ✅ NOVO: Importar WebSocketManager
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
 
 const app = express();
 
+// ✅ CONFIGURAÇÃO DE MIDDLEWARES (mantida igual)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -67,6 +70,40 @@ if (config.IS_DEVELOPMENT) {
   app.use(morgan('combined'));
 }
 
+// ✅✅✅ LÓGICA CRÍTICA MOVIDA PARA AQUI ✅✅✅
+// Criar servidor HTTP e WebSocket ANTES das rotas
+const httpServer = http.createServer(app);
+let wsManager: WebSocketManager;
+
+if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
+  try {
+    const gameStateService = ServiceFactory.getGameStateService();
+    const eventBus = ServiceFactory.getEventBus();
+
+    wsManager = new WebSocketManager(gameStateService, eventBus, config);
+    wsManager.setupWebSocketServer(httpServer);
+
+    // ✅ CORREÇÃO CRÍTICA: Injeção acontece ANTES das rotas
+    app.locals.channelManager = wsManager.channelManager;
+    console.log('✅ ChannelManager successfully injected into app.locals');
+
+    // ✅ NOVO: Exportar wsManager para shutdown
+    (httpServer as any).wsManager = wsManager;
+
+  } catch (error) {
+    console.error('❌ Failed to initialize WebSocket:', error);
+    throw error;
+  }
+} else {
+  console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
+}
+// ✅✅✅ FIM DA LÓGICA MOVIDA ✅✅✅
+
+// ✅ ROTAS SÃO CARREGADAS DEPOIS (channelManager já existe)
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+
+// ✅ HEALTH CHECKS (mantidos iguais)
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
@@ -88,6 +125,11 @@ app.get('/health', async (req, res) => {
       stats: servicesStats,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
+      // ✅ NOVO: Adicionar status do WebSocket
+      websocket: {
+        initialized: !!wsManager,
+        channelManagerInjected: !!app.locals.channelManager,
+      },
     };
 
     let hasUnhealthyService = false;
@@ -129,6 +171,7 @@ app.get('/health/ready', (req, res) => {
     status: 'ready',
     timestamp: new Date().toISOString(),
     service: config.SERVICE_ID,
+    websocket: !!wsManager,
   });
 });
 
@@ -150,6 +193,8 @@ app.get('/health/websocket', async (req, res) => {
       timestamp: new Date().toISOString(),
       services: servicesHealth,
       stats: servicesStats,
+      wsManager: !!wsManager,
+      channelManager: !!app.locals.channelManager,
     });
   } catch (error) {
     res.status(503).json({
@@ -160,9 +205,7 @@ app.get('/health/websocket', async (req, res) => {
   }
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-
+// ✅ ROOT ENDPOINT (mantido igual)
 app.get('/', (req, res) => {
   res.json({
     message: '🐺 Werewolf Online API',
@@ -172,6 +215,7 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     websocket: {
       enabled: config.IS_MONOLITH || config.IS_GAME_SERVICE,
+      initialized: !!wsManager,
       path: config.WS_BASE_PATH,
       url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
     },
@@ -207,6 +251,7 @@ app.get('/', (req, res) => {
   });
 });
 
+// ✅ ERROR HANDLERS (mantidos iguais)
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
@@ -227,4 +272,5 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-export default app;
+// ✅ EXPORTAR O HTTP SERVER (não mais o app)
+export default httpServer;

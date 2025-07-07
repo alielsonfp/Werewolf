@@ -1,5 +1,3 @@
-// 🐺 LOBISOMEM ONLINE - Lobby Page (VERSÃO FINAL CORRITA)
-
 import { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -12,13 +10,11 @@ import Layout from '@/components/common/Layout';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
-// ✅ IMPORTAR APENAS OS MODAIS REAIS
 import CreateRoomModal from '@/components/lobby/CreateRoomModal';
 import JoinRoomModal from '@/components/lobby/JoinRoomModal';
 
-// =============================================================================
-// ✅ COMPONENTE SEGURO PARA NÚMEROS (RESOLVE HYDRATION ERROR)
-// =============================================================================
+import { roomService, RoomListItem } from '@/services/roomService';
+
 interface SafeNumberDisplayProps {
   value: number;
   className?: string;
@@ -42,9 +38,6 @@ function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
   );
 }
 
-// =============================================================================
-// ÍCONES INLINE
-// =============================================================================
 const PlusIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -94,43 +87,20 @@ const HashIcon = () => (
   </svg>
 );
 
-// =============================================================================
-// TYPES
-// =============================================================================
-interface MockRoom {
-  id: string;
-  name: string;
-  currentPlayers: number;
-  maxPlayers: number;
-  currentSpectators: number;
-  maxSpectators: number;
-  status: 'WAITING' | 'PLAYING' | 'FINISHED';
-  isPrivate: boolean;
-  hostUsername: string;
-  createdAt: string;
-}
-
-// =============================================================================
-// LOBBY PAGE COMPONENT
-// =============================================================================
 function LobbyPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const { isConnected } = useSocket();
   const { playSound, playMusic, stopMusic } = useTheme();
 
-  // State
-  const [rooms, setRooms] = useState<MockRoom[]>([]);
+  const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
-
-  // ✅ CORREÇÃO: Estado para evitar múltiplas chamadas de música
   const [musicStarted, setMusicStarted] = useState(false);
 
-  // ✅ PROTEÇÃO DE ROTA
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
       router.push('/auth/login');
@@ -138,7 +108,6 @@ function LobbyPage() {
     }
   }, [isAuthLoading, isAuthenticated, router]);
 
-  // ✅ CORREÇÃO: Iniciar música com prevenção de múltiplas execuções
   useEffect(() => {
     if (!isAuthLoading && isAuthenticated && !musicStarted) {
       console.log('🎵 Iniciando música do lobby...');
@@ -147,9 +116,8 @@ function LobbyPage() {
       playMusic(randomMusic);
       setMusicStarted(true);
     }
-  }, [isAuthLoading, isAuthenticated, musicStarted]); // ✅ REMOVIDO: playMusic das dependências
+  }, [isAuthLoading, isAuthenticated, musicStarted]);
 
-  // ✅ ADICIONADO: Cleanup quando sair da página
   useEffect(() => {
     return () => {
       if (musicStarted) {
@@ -159,38 +127,33 @@ function LobbyPage() {
     };
   }, [musicStarted]);
 
-  // Gerar salas mock
+  const fetchRooms = useCallback(async () => {
+    try {
+      setLoading(true);
+      const roomsList = await roomService.listPublicRooms();
+      setRooms(roomsList);
+    } catch (error) {
+      console.error('Failed to fetch rooms:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    fetchRooms();
+  }, [isAuthLoading, isAuthenticated, fetchRooms]);
+
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
 
-    const generateMockRooms = (): MockRoom[] => {
-      const mockNames = [
-        'Vila Misteriosa', 'Lobos da Madrugada', 'Cidade Sombria',
-        'Noite Eterna', 'Caçadores de Lobos', 'Vila Assombrada',
-        'Lua Cheia', 'Território Selvagem', 'Refúgio Seguro'
-      ];
+    const interval = setInterval(() => {
+      fetchRooms();
+    }, 5000);
 
-      return Array.from({ length: 12 }, (_, i) => ({
-        id: `room-${i + 1}`,
-        name: mockNames[i] || `Sala ${i + 1}`,
-        currentPlayers: Math.floor(Math.random() * 12) + 3,
-        maxPlayers: 15,
-        currentSpectators: Math.floor(Math.random() * 3),
-        maxSpectators: 5,
-        status: (['WAITING', 'PLAYING', 'WAITING'] as const)[Math.floor(Math.random() * 3)],
-        isPrivate: Math.random() > 0.7,
-        hostUsername: `Player${Math.floor(Math.random() * 1000)}`,
-        createdAt: new Date(Date.now() - Math.random() * 3600000).toISOString(),
-      }));
-    };
+    return () => clearInterval(interval);
+  }, [isAuthLoading, isAuthenticated, fetchRooms]);
 
-    setTimeout(() => {
-      setRooms(generateMockRooms());
-      setLoading(false);
-    }, 1000);
-  }, [isAuthLoading, isAuthenticated]);
-
-  // Filter rooms
   const filteredRooms = rooms.filter(room => {
     const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.hostUsername.toLowerCase().includes(searchTerm.toLowerCase());
@@ -198,7 +161,6 @@ function LobbyPage() {
     return matchesSearch && matchesFilter && !room.isPrivate;
   });
 
-  // Handlers
   const handleJoinRoom = useCallback((roomId: string) => {
     console.log('🚪 Joining room:', roomId);
     playSound('button_click');
@@ -226,13 +188,9 @@ function LobbyPage() {
   const handleRefresh = useCallback(() => {
     console.log('🔄 Refreshing room list');
     playSound('button_click');
-    setLoading(true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
-  }, [playSound]);
+    fetchRooms();
+  }, [playSound, fetchRooms]);
 
-  // Loading state
   if (isAuthLoading) {
     return (
       <>
@@ -265,7 +223,6 @@ function LobbyPage() {
 
       <Layout>
         <div className="space-y-6">
-          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -280,7 +237,6 @@ function LobbyPage() {
               </p>
             </div>
 
-            {/* Connection Status */}
             <div className="flex items-center gap-3">
               <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${isConnected
                 ? 'bg-green-900/30 text-green-300 border border-green-500/30'
@@ -292,7 +248,6 @@ function LobbyPage() {
             </div>
           </motion.div>
 
-          {/* Action Buttons */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -329,14 +284,12 @@ function LobbyPage() {
             </Button>
           </motion.div>
 
-          {/* Search and Filters */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="flex flex-col sm:flex-row gap-4"
           >
-            {/* Search */}
             <div className="flex-1 relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
                 <SearchIcon />
@@ -350,7 +303,6 @@ function LobbyPage() {
               />
             </div>
 
-            {/* Filter */}
             <div className="flex gap-2">
               {(['ALL', 'WAITING', 'PLAYING'] as const).map((filter) => (
                 <Button
@@ -365,7 +317,6 @@ function LobbyPage() {
             </div>
           </motion.div>
 
-          {/* Rooms List */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -403,7 +354,6 @@ function LobbyPage() {
           </motion.div>
         </div>
 
-        {/* ✅ APENAS OS MODAIS REAIS - SEM Modal GENÉRICO */}
         <CreateRoomModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
@@ -418,11 +368,8 @@ function LobbyPage() {
   );
 }
 
-// =============================================================================
-// ROOM CARD COMPONENT
-// =============================================================================
 interface RoomCardProps {
-  room: MockRoom;
+  room: RoomListItem;
   onJoin: () => void;
   onSpectate: () => void;
   delay?: number;
@@ -458,7 +405,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
     >
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          {/* Room Info */}
           <div className="flex items-center gap-3 mb-2">
             <h3 className="font-semibold text-white truncate">{room.name}</h3>
 
@@ -471,7 +417,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
             </div>
           </div>
 
-          {/* Room Details */}
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-white/70">
             <div className="flex items-center gap-1">
               <UsersIcon />
@@ -502,7 +447,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex gap-2 ml-4">
           {canSpectate && (
             <Button

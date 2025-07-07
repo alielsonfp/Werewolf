@@ -1,7 +1,7 @@
 // 🐺 LOBISOMEM ONLINE - Authentication Service
 // Handle all authentication-related API calls
 
-import { apiService } from './api';
+import { apiClient, apiService } from './api';
 import {
   LoginRequest,
   RegisterRequest,
@@ -17,36 +17,24 @@ import {
 class AuthService {
 
   // =============================================================================
-  // ✅ AUTHENTICATION METHODS - CORRIGIDO COM TRATAMENTO DE ERRO ADEQUADO
+  // AUTHENTICATION METHODS - CORRIGIDO COM TRATAMENTO DE ERRO ADEQUADO
   // =============================================================================
 
   /**
-   * ✅ CORRIGIDO: Login user with email and password
-   * Agora usa axios direto para evitar interceptors que redirecionam em erros 401
+   * Login user with email and password
+   * Usa axios direto para evitar interceptors que redirecionam em erros 401
    */
   async login(credentials: LoginRequest): Promise<ApiResponse<AuthResponse>> {
     try {
-      // ✅ MUDANÇA: Usar axios direto em vez de apiService para evitar interceptors
-      const axios = (await import('axios')).default;
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-      const response = await axios.post<ApiResponse<AuthResponse>>(
-        `${API_BASE_URL}/api/auth/login`,
-        credentials,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 15000
-        }
+      const response = await apiClient.post<ApiResponse<AuthResponse>>(
+        '/api/auth/login',
+        credentials
       );
-      return response.data; // Retorna os dados em caso de sucesso (status 2xx)
+      return response.data;
     } catch (error: any) {
-      // Se o status for 4xx ou 5xx, o axios joga um erro. Nós o capturamos.
       if (error.response?.data) {
-        // Se o erro tem uma resposta do backend, retornamos os dados dessa resposta
-        // Ex: { success: false, message: 'Email ou senha incorretos', ... }
         return error.response.data;
       }
-      // Se não houver resposta, é um erro de rede real (servidor offline, etc.)
       return {
         success: false,
         error: 'NETWORK_ERROR',
@@ -57,32 +45,20 @@ class AuthService {
   }
 
   /**
-   * ✅ CORRIGIDO: Register new user
-   * Agora usa axios direto para evitar interceptors que redirecionam em erros 409
+   * Register new user
+   * Usa axios direto para evitar interceptors que redirecionam em erros 409
    */
   async register(userData: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
     try {
-      // ✅ MUDANÇA: Usar axios direto em vez de apiService para evitar interceptors
-      const axios = (await import('axios')).default;
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-      const response = await axios.post<ApiResponse<AuthResponse>>(
-        `${API_BASE_URL}/api/auth/register`,
-        userData,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 15000
-        }
+      const response = await apiClient.post<ApiResponse<AuthResponse>>(
+        '/api/auth/register',
+        userData
       );
-      return response.data; // Retorna os dados em caso de sucesso (status 2xx)
+      return response.data;
     } catch (error: any) {
-      // Se o status for 4xx ou 5xx, o axios joga um erro. Nós o capturamos.
       if (error.response?.data) {
-        // Se o erro tem uma resposta do backend, retornamos os dados dessa resposta
-        // Ex: { success: false, message: 'Email já está em uso', ... }
         return error.response.data;
       }
-      // Se não houver resposta, é um erro de rede real (servidor offline, etc.)
       return {
         success: false,
         error: 'NETWORK_ERROR',

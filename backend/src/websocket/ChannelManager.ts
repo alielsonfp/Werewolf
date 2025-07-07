@@ -1,313 +1,302 @@
-// 🐺 LOBISOMEM ONLINE - Channel Manager (Corrigido)
-// ✅ PREPARADO PARA MIGRAÇÃO AUTOMÁTICA → game-service
 import { wsLogger } from '@/utils/logger';
 import type { ConnectionManager } from './ConnectionManager';
 
-//====================================================================
-// CHANNEL MANAGER CLASS (Simplified for Task 4)
-//====================================================================
+interface RoomChannel {
+  players: Set<string>;
+  spectators: Set<string>;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
 export class ChannelManager {
-    private roomPlayers = new Map<string, Set<string>>(); // roomId -> Set<connectionId>
-    private roomSpectators = new Map<string, Set<string>>(); // roomId -> Set<connectionId>
-    private connectionRooms = new Map<string, string>(); // connectionId -> roomId
+  private rooms = new Map<string, RoomChannel>();
+  private connectionRooms = new Map<string, string>();
 
-    constructor(private connectionManager: ConnectionManager) {
-        wsLogger.debug('ChannelManager initialized');
+  constructor(private connectionManager: ConnectionManager) { }
+
+  createRoom(roomId: string): boolean {
+    if (this.rooms.has(roomId)) {
+      wsLogger.warn('Attempted to create existing room channel', { roomId });
+      return false;
     }
 
-    //====================================================================
-    // ROOM MANAGEMENT (Main Use Case for Task 4)
-    //====================================================================
-    joinRoom(roomId: string, connectionId: string, asSpectator: boolean = false): boolean {
-        const connection = this.connectionManager.getConnection(connectionId);
-        if (!connection) {
-            wsLogger.warn('Cannot join room - connection not found', { connectionId, roomId });
-            return false;
-        }
+    this.rooms.set(roomId, {
+      players: new Set(),
+      spectators: new Set(),
+      createdAt: new Date(),
+      lastActivity: new Date(),
+    });
 
-        // Remove from previous room if any
-        const currentRoom = this.connectionRooms.get(connectionId);
-        if (currentRoom) {
-            this.leaveRoom(currentRoom, connectionId);
-        }
+    wsLogger.info('Room channel created', { roomId });
+    return true;
+  }
 
-        // Add to appropriate set
-        if (asSpectator) {
-            if (!this.roomSpectators.has(roomId)) {
-                this.roomSpectators.set(roomId, new Set());
-            }
-            this.roomSpectators.get(roomId)!.add(connectionId);
-        } else {
-            if (!this.roomPlayers.has(roomId)) {
-                this.roomPlayers.set(roomId, new Set());
-            }
-            this.roomPlayers.get(roomId)!.add(connectionId);
-        }
+  joinRoom(roomId: string, connectionId: string, asSpectator: boolean = false): boolean {
+    let room = this.rooms.get(roomId);
 
-        // Track connection's room
-        this.connectionRooms.set(connectionId, roomId);
+    if (!room) {
+      this.createRoom(roomId);
+      room = this.rooms.get(roomId)!;
+    }
 
-        wsLogger.debug('Connection joined room', {
-            connectionId,
-            userId: connection.context.userId,
-            roomId,
-            asSpectator,
-            playersCount: this.roomPlayers.get(roomId)?.size || 0,
-            spectatorsCount: this.roomSpectators.get(roomId)?.size || 0,
+    const currentRoom = this.connectionRooms.get(connectionId);
+    if (currentRoom) {
+      this.leaveRoom(currentRoom, connectionId);
+    }
+
+    if (asSpectator) {
+      room.spectators.add(connectionId);
+    } else {
+      room.players.add(connectionId);
+    }
+
+    this.connectionRooms.set(connectionId, roomId);
+    room.lastActivity = new Date();
+
+    wsLogger.debug('Connection joined room', {
+      connectionId,
+      roomId,
+      asSpectator,
+      totalPlayers: room.players.size,
+      totalSpectators: room.spectators.size,
+    });
+
+    return true;
+  }
+
+  leaveRoom(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      wsLogger.warn('Attempted to leave non-existent room', { roomId, connectionId });
+      return false;
+    }
+
+    const wasPlayer = room.players.delete(connectionId);
+    const wasSpectator = room.spectators.delete(connectionId);
+
+    if (!wasPlayer && !wasSpectator) {
+      wsLogger.warn('Connection was not in room', { roomId, connectionId });
+      return false;
+    }
+
+    this.connectionRooms.delete(connectionId);
+    room.lastActivity = new Date();
+
+    if (room.players.size === 0 && room.spectators.size === 0) {
+      this.rooms.delete(roomId);
+      wsLogger.info('Room channel removed (empty)', { roomId });
+    }
+
+    wsLogger.debug('Connection left room', {
+      connectionId,
+      roomId,
+      wasPlayer,
+      wasSpectator,
+      remainingPlayers: room.players.size,
+      remainingSpectators: room.spectators.size,
+    });
+
+    return true;
+  }
+
+  removeConnectionFromAllRooms(connectionId: string): void {
+    const roomId = this.connectionRooms.get(connectionId);
+    if (roomId) {
+      this.leaveRoom(roomId, connectionId);
+    }
+  }
+
+  getRoomConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    if (!room) return new Set();
+
+    return new Set([...room.players, ...room.spectators]);
+  }
+
+  getRoomPlayerConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    return room ? new Set(room.players) : new Set();
+  }
+
+  getRoomSpectatorConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    return room ? new Set(room.spectators) : new Set();
+  }
+
+  getConnectionRoom(connectionId: string): string | undefined {
+    return this.connectionRooms.get(connectionId);
+  }
+
+  getRoomCount(roomId: string): { players: number; spectators: number } {
+    const room = this.rooms.get(roomId);
+    if (!room) return { players: 0, spectators: 0 };
+
+    return {
+      players: room.players.size,
+      spectators: room.spectators.size,
+    };
+  }
+
+  getRoomStats(roomId: string): { playersCount: number; spectatorsCount: number } | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    return {
+      playersCount: room.players.size,
+      spectatorsCount: room.spectators.size
+    };
+  }
+
+  broadcastToRoom(
+    roomId: string,
+    type: string,
+    data?: any,
+    excludeConnectionId?: string
+  ): number {
+    const connections = this.getRoomConnections(roomId);
+    let sent = 0;
+
+    for (const connectionId of connections) {
+      if (connectionId === excludeConnectionId) continue;
+
+      const connection = this.connectionManager.getConnection(connectionId);
+      if (!connection || connection.ws.readyState !== connection.ws.OPEN) continue;
+
+      try {
+        connection.ws.send(JSON.stringify({
+          type,
+          data,
+          timestamp: new Date().toISOString(),
+        }));
+        sent++;
+      } catch (error) {
+        wsLogger.error('Failed to broadcast to connection', error instanceof Error ? error : new Error('Unknown broadcast error'), {
+          connectionId,
+          roomId,
+          type,
         });
-
-        return true;
+      }
     }
 
-    leaveRoom(roomId: string, connectionId: string): boolean {
-        const connection = this.connectionManager.getConnection(connectionId);
-        let wasInRoom = false;
+    wsLogger.debug('Broadcast to room completed', {
+      roomId,
+      type,
+      totalConnections: connections.size,
+      sentCount: sent,
+      excluded: !!excludeConnectionId,
+    });
 
-        // Remove from players
-        const players = this.roomPlayers.get(roomId);
-        if (players && players.has(connectionId)) {
-            players.delete(connectionId);
-            wasInRoom = true;
+    return sent;
+  }
 
-            // Cleanup empty room
-            if (players.size === 0) {
-                this.roomPlayers.delete(roomId);
-            }
-        }
+  isPlayerInRoom(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.players.has(connectionId) : false;
+  }
 
-        // Remove from spectators
-        const spectators = this.roomSpectators.get(roomId);
-        if (spectators && spectators.has(connectionId)) {
-            spectators.delete(connectionId);
-            wasInRoom = true;
+  isSpectatorInRoom(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.spectators.has(connectionId) : false;
+  }
 
-            // Cleanup empty room
-            if (spectators.size === 0) {
-                this.roomSpectators.delete(roomId);
-            }
-        }
+  getActiveRoomsCount(): number {
+    return this.rooms.size;
+  }
 
-        // Remove room tracking
-        if (wasInRoom) {
-            this.connectionRooms.delete(connectionId);
-        }
+  getActiveRooms(): string[] {
+    return Array.from(this.rooms.keys());
+  }
 
-        if (wasInRoom) {
-            wsLogger.debug('Connection left room', {
-                connectionId,
-                userId: connection?.context.userId,
-                roomId,
-                playersCount: this.roomPlayers.get(roomId)?.size || 0,
-                spectatorsCount: this.roomSpectators.get(roomId)?.size || 0,
-            });
-        }
-
-        return wasInRoom;
+  getRoomInfo(roomId: string): {
+    exists: boolean;
+    playersCount: number;
+    spectatorsCount: number;
+    createdAt?: Date;
+    lastActivity?: Date;
+  } {
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      return { exists: false, playersCount: 0, spectatorsCount: 0 };
     }
 
-    //====================================================================
-    // CONNECTION QUERIES
-    //====================================================================
-    getRoomConnections(roomId: string): Set<string> {
-        const players = this.roomPlayers.get(roomId) || new Set();
-        const spectators = this.roomSpectators.get(roomId) || new Set();
+    return {
+      exists: true,
+      playersCount: room.players.size,
+      spectatorsCount: room.spectators.size,
+      createdAt: room.createdAt,
+      lastActivity: room.lastActivity,
+    };
+  }
 
-        const allConnections = new Set<string>();
-        players.forEach(id => allConnections.add(id));
-        spectators.forEach(id => allConnections.add(id));
+  cleanup(maxIdleTime: number = 3600000): number {
+    const now = Date.now();
+    let cleaned = 0;
 
-        return allConnections;
+    for (const [roomId, room] of this.rooms.entries()) {
+      const idleTime = now - room.lastActivity.getTime();
+
+      if (room.players.size === 0 && room.spectators.size === 0 && idleTime > maxIdleTime) {
+        this.rooms.delete(roomId);
+        cleaned++;
+
+        wsLogger.info('Cleaned up idle room channel', {
+          roomId,
+          idleTime: Math.floor(idleTime / 1000),
+          maxIdleTime: Math.floor(maxIdleTime / 1000),
+        });
+      }
     }
 
-    getRoomPlayerConnections(roomId: string): Set<string> {
-        return new Set(this.roomPlayers.get(roomId) || []);
+    return cleaned;
+  }
+
+  clear(): void {
+    this.rooms.clear();
+    this.connectionRooms.clear();
+    wsLogger.info('All room channels cleared');
+  }
+
+  getStats(): {
+    totalRooms: number;
+    totalConnections: number;
+    totalPlayers: number;
+    totalSpectators: number;
+    roomsInfo: Array<{
+      roomId: string;
+      players: number;
+      spectators: number;
+      idleTime: number;
+    }>;
+  } {
+    let totalPlayers = 0;
+    let totalSpectators = 0;
+    const roomsInfo: Array<{
+      roomId: string;
+      players: number;
+      spectators: number;
+      idleTime: number;
+    }> = [];
+
+    const now = Date.now();
+
+    for (const [roomId, room] of this.rooms.entries()) {
+      totalPlayers += room.players.size;
+      totalSpectators += room.spectators.size;
+
+      roomsInfo.push({
+        roomId,
+        players: room.players.size,
+        spectators: room.spectators.size,
+        idleTime: Math.floor((now - room.lastActivity.getTime()) / 1000),
+      });
     }
 
-    getRoomSpectatorConnections(roomId: string): Set<string> {
-        return new Set(this.roomSpectators.get(roomId) || []);
-    }
-
-    getConnectionRoom(connectionId: string): string | undefined {
-        return this.connectionRooms.get(connectionId);
-    }
-
-    //====================================================================
-    // BROADCASTING
-    //====================================================================
-    broadcastToRoom(
-        roomId: string,
-        type: string,
-        data?: any,
-        excludeConnectionId?: string
-    ): number {
-        const connections = this.getRoomConnections(roomId);
-        let sentCount = 0;
-
-        const message = {
-            type,
-            data,
-            timestamp: new Date().toISOString(),
-        };
-
-        for (const connectionId of connections) {
-            if (excludeConnectionId && connectionId === excludeConnectionId) {
-                continue;
-            }
-
-            const connection = this.connectionManager.getConnection(connectionId);
-            if (connection && connection.ws.readyState === connection.ws.OPEN) {
-                try {
-                    connection.ws.send(JSON.stringify(message));
-                    sentCount++;
-                } catch (error) {
-                    wsLogger.error('Failed to send message to connection in room', error instanceof Error ? error : new Error('Unknown send error'), {
-                        roomId,
-                        connectionId,
-                        type,
-                    });
-                }
-            }
-        }
-
-        return sentCount;
-    }
-
-    broadcastToPlayers(roomId: string, type: string, data?: any, excludeConnectionId?: string): number {
-        const players = this.roomPlayers.get(roomId);
-        if (!players) return 0;
-
-        let sentCount = 0;
-        const message = {
-            type,
-            data,
-            timestamp: new Date().toISOString(),
-        };
-
-        for (const connectionId of players) {
-            if (excludeConnectionId && connectionId === excludeConnectionId) {
-                continue;
-            }
-
-            const connection = this.connectionManager.getConnection(connectionId);
-            if (connection && connection.ws.readyState === connection.ws.OPEN) {
-                try {
-                    connection.ws.send(JSON.stringify(message));
-                    sentCount++;
-                } catch (error) {
-                    wsLogger.error('Failed to send message to player', error instanceof Error ? error : new Error('Unknown player send error'), {
-                        roomId,
-                        connectionId,
-                        type,
-                    });
-                }
-            }
-        }
-
-        return sentCount;
-    }
-
-    broadcastToSpectators(roomId: string, type: string, data?: any, excludeConnectionId?: string): number {
-        const spectators = this.roomSpectators.get(roomId);
-        if (!spectators) return 0;
-
-        let sentCount = 0;
-        const message = {
-            type,
-            data,
-            timestamp: new Date().toISOString(),
-        };
-
-        for (const connectionId of spectators) {
-            if (excludeConnectionId && connectionId === excludeConnectionId) {
-                continue;
-            }
-
-            const connection = this.connectionManager.getConnection(connectionId);
-            if (connection && connection.ws.readyState === connection.ws.OPEN) {
-                try {
-                    connection.ws.send(JSON.stringify(message));
-                    sentCount++;
-                } catch (error) {
-                    wsLogger.error('Failed to send message to spectator', error instanceof Error ? error : new Error('Unknown spectator send error'), {
-                        roomId,
-                        connectionId,
-                        type,
-                    });
-                }
-            }
-        }
-
-        return sentCount;
-    }
-
-    //====================================================================
-    // STATISTICS AND MONITORING
-    //====================================================================
-    getActiveRoomsCount(): number {
-        const activeRooms = new Set<string>();
-
-        for (const roomId of this.roomPlayers.keys()) {
-            activeRooms.add(roomId);
-        }
-
-        for (const roomId of this.roomSpectators.keys()) {
-            activeRooms.add(roomId);
-        }
-
-        return activeRooms.size;
-    }
-
-    getRoomStats(roomId: string) {
-        const playersCount = this.roomPlayers.get(roomId)?.size || 0;
-        const spectatorsCount = this.roomSpectators.get(roomId)?.size || 0;
-
-        return {
-            roomId,
-            playersCount,
-            spectatorsCount,
-            totalConnections: playersCount + spectatorsCount,
-        };
-    }
-
-    getAllStats() {
-        const allRooms = new Set<string>();
-
-        for (const roomId of this.roomPlayers.keys()) {
-            allRooms.add(roomId);
-        }
-
-        for (const roomId of this.roomSpectators.keys()) {
-            allRooms.add(roomId);
-        }
-
-        let totalConnections = 0;
-        for (const roomId of allRooms) {
-            const stats = this.getRoomStats(roomId);
-            totalConnections += stats.totalConnections;
-        }
-
-        return {
-            totalRooms: allRooms.size,
-            totalConnections,
-            averageRoomSize: allRooms.size > 0 ? totalConnections / allRooms.size : 0,
-        };
-    }
-
-    //====================================================================
-    // CLEANUP
-    //====================================================================
-    removeConnectionFromAllRooms(connectionId: string): void {
-        const roomId = this.connectionRooms.get(connectionId);
-        if (roomId) {
-            this.leaveRoom(roomId, connectionId);
-        }
-    }
-
-    clear(): void {
-        this.roomPlayers.clear();
-        this.roomSpectators.clear();
-        this.connectionRooms.clear();
-
-        wsLogger.info('ChannelManager cleared');
-    }
+    return {
+      totalRooms: this.rooms.size,
+      totalConnections: this.connectionRooms.size,
+      totalPlayers,
+      totalSpectators,
+      roomsInfo,
+    };
+  }
 }

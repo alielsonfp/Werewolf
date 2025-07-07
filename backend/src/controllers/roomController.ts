@@ -23,20 +23,26 @@ export const listRooms = async (req: Request, res: Response): Promise<void> => {
         `;
     const roomsResult = await pool.query(roomsQuery);
 
-    const roomsMetadata = roomsResult.rows.map((room: any) => ({
-      id: room.id,
-      name: room.name,
-      isPrivate: room.isPrivate,
-      currentPlayers: 0,
-      maxPlayers: room.maxPlayers,
-      currentSpectators: 0,
-      maxSpectators: room.maxSpectators,
-      status: room.status as RoomStatus,
-      hostUsername: room.hostUsername,
-      createdAt: room.createdAt,
-      canJoin: room.status === 'WAITING',
-      isFull: false
-    }));
+    const channelManager = req.app.locals.channelManager;
+
+    const roomsMetadata = roomsResult.rows.map((room: any) => {
+      const stats = channelManager ? channelManager.getRoomStats(room.id) : null;
+
+      return {
+        id: room.id,
+        name: room.name,
+        isPrivate: room.isPrivate,
+        currentPlayers: stats?.playersCount || 0,
+        maxPlayers: room.maxPlayers,
+        currentSpectators: stats?.spectatorsCount || 0,
+        maxSpectators: room.maxSpectators,
+        status: room.status as RoomStatus,
+        hostUsername: room.hostUsername,
+        createdAt: room.createdAt,
+        canJoin: room.status === 'WAITING' && (stats?.playersCount || 0) < room.maxPlayers,
+        isFull: (stats?.playersCount || 0) >= room.maxPlayers
+      };
+    });
 
     res.json({
       success: true,
@@ -76,27 +82,6 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
 
     const { name, isPrivate, maxPlayers, maxSpectators } = validation.data!;
 
-    // ✅ CORRIGIDO: Comentado a verificação que impedia criar nova sala
-    // Isso resolverá o problema de "salas órfãs"
-    /*
-    const existingRoomQuery = `
-            SELECT id FROM rooms 
-            WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')
-        `;
-    const existingRoomResult = await pool.query(existingRoomQuery, [req.userId]);
-
-    if (existingRoomResult.rows.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: 'ROOM_ALREADY_EXISTS',
-        message: 'Você já possui uma sala ativa',
-        timestamp: new Date().toISOString(),
-      } as ApiResponse);
-      return;
-    }
-    */
-
-    // ✅ NOVO: Log para debug - verificar se usuário tinha sala anterior
     const existingRoomQuery = `
             SELECT id, name, status FROM rooms 
             WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')
@@ -111,7 +96,6 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
         action: 'creating_new_room_anyway'
       });
 
-      // ✅ OPCIONAL: Auto-cleanup de salas antigas órfãs
       try {
         await pool.query(`DELETE FROM rooms WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')`, [req.userId]);
         logger.info('Cleaned up orphaned rooms for user', {

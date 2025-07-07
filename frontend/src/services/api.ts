@@ -11,33 +11,28 @@ import { ApiResponse } from '@/types';
 // =============================================================================
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-// Create axios instance
-const api: AxiosInstance = axios.create({
+// Create axios instance with STANDARDIZED NAME
+const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000, // ✅ AUMENTADO: timeout de 10s para 15s
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 // =============================================================================
-// ✅ MELHORADO: REQUEST INTERCEPTOR
+// REQUEST INTERCEPTOR
 // =============================================================================
-api.interceptors.request.use(
+apiClient.interceptors.request.use(
   (config) => {
-    // ✅ CORRIGIDO: Usar Cookies em vez de localStorage para consistência
     const token = Cookies.get('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Add request timestamp
     config.headers['X-Request-Time'] = new Date().toISOString();
-
-    // ✅ ADICIONADO: Request ID para debugging
     config.headers['X-Request-ID'] = Math.random().toString(36).substr(2, 9);
 
-    // Log request in development
     if (process.env.NODE_ENV === 'development') {
       console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.url}`, {
         headers: config.headers,
@@ -54,11 +49,10 @@ api.interceptors.request.use(
 );
 
 // =============================================================================
-// ✅ MELHORADO: RESPONSE INTERCEPTOR COM REFRESH TOKEN
+// RESPONSE INTERCEPTOR
 // =============================================================================
-api.interceptors.response.use(
+apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
-    // Log response in development
     if (process.env.NODE_ENV === 'development') {
       console.log(`✅ API Response: ${response.status} ${response.config.url}`, {
         data: response.data,
@@ -71,13 +65,11 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // ✅ MELHORADO: Handle specific error codes with better UX
     if (error.response) {
       const { status, data } = error.response;
 
       switch (status) {
         case 401:
-          // Unauthorized - try to refresh token
           if (!originalRequest._retry) {
             originalRequest._retry = true;
 
@@ -86,48 +78,40 @@ api.interceptors.response.use(
               if (refreshToken) {
                 console.log('🔄 Attempting token refresh...');
 
-                // ✅ CORRIGIDO: Usar a própria instância do axios para refresh
-                const refreshResponse = await api.post('/auth/refresh', {
+                const refreshResponse = await apiClient.post('/auth/refresh', {
                   refreshToken,
                 }, {
-                  // ✅ IMPORTANTE: Não usar interceptors no refresh para evitar loop
                   headers: {
                     'Authorization': `Bearer ${refreshToken}`,
                   },
-                  // Bypass interceptors
                   _retry: true
                 } as any);
 
                 if (refreshResponse.data.success) {
                   const { accessToken } = refreshResponse.data.data;
 
-                  // ✅ CORRIGIDO: Usar Cookies consistentemente
                   Cookies.set('access_token', accessToken, {
                     expires: 7,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'strict'
                   });
 
-                  // Retry original request with new token
                   originalRequest.headers.Authorization = `Bearer ${accessToken}`;
                   console.log('✅ Token refreshed successfully, retrying request...');
-                  return api(originalRequest);
+                  return apiClient(originalRequest);
                 }
               }
             } catch (refreshError) {
               console.error('❌ Token refresh failed:', refreshError);
             }
 
-            // If refresh fails, redirect to login
             console.log('🔒 Authentication failed, redirecting to login...');
             Cookies.remove('access_token');
             Cookies.remove('refresh_token');
 
-            // ✅ CORREÇÃO: Usar Next.js router em vez de window.location.href
             if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/')) {
               toast.error('Sessão expirada. Faça login novamente.');
 
-              // ✅ CORREÇÃO: Importar o router do Next.js dinamicamente
               const { default: Router } = await import('next/router');
               setTimeout(() => {
                 Router.push('/auth/login');
@@ -141,20 +125,17 @@ api.interceptors.response.use(
           break;
 
         case 404:
-          // ✅ MELHORADO: Não mostrar toast para todos os 404s
           if (!originalRequest.url?.includes('/api/')) {
             toast.error('Recurso não encontrado');
           }
           break;
 
         case 409:
-          // Conflict - usually validation errors
           const conflictMessage = data?.error || data?.message || 'Conflito de dados';
           toast.error(conflictMessage);
           break;
 
         case 422:
-          // Validation errors
           const validationMessage = data?.error || data?.message || 'Dados inválidos';
           toast.error(validationMessage);
           break;
@@ -174,7 +155,6 @@ api.interceptors.response.use(
           break;
 
         default:
-          // ✅ MELHORADO: Mostrar mensagem do servidor se disponível
           const errorMessage = data?.error || data?.message || `Erro ${status}`;
           if (status >= 400 && status < 500) {
             toast.error(errorMessage);
@@ -183,10 +163,8 @@ api.interceptors.response.use(
           }
       }
     } else if (error.request) {
-      // Network error
       console.error('❌ Network error:', error.request);
 
-      // ✅ MELHORADO: Detectar tipo de erro de rede
       if (error.code === 'ECONNABORTED') {
         toast.error('Tempo limite da requisição. Verifique sua conexão.');
       } else if (error.code === 'ERR_NETWORK') {
@@ -195,7 +173,6 @@ api.interceptors.response.use(
         toast.error('Erro de conexão. Verifique sua internet.');
       }
     } else {
-      // Something else happened
       console.error('❌ API error:', error.message);
       toast.error('Erro inesperado');
     }
@@ -205,78 +182,72 @@ api.interceptors.response.use(
 );
 
 // =============================================================================
-// ✅ MELHORADO: API METHODS CLASS
+// API METHODS CLASS
 // =============================================================================
 class ApiService {
-  // GET request
   async get<T = any>(
     url: string,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await api.get(url, config);
+      const response = await apiClient.get(url, config);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  // POST request
   async post<T = any>(
     url: string,
     data?: any,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await api.post(url, data, config);
+      const response = await apiClient.post(url, data, config);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  // PUT request
   async put<T = any>(
     url: string,
     data?: any,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await api.put(url, data, config);
+      const response = await apiClient.put(url, data, config);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  // PATCH request
   async patch<T = any>(
     url: string,
     data?: any,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await api.patch(url, data, config);
+      const response = await apiClient.patch(url, data, config);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  // DELETE request
   async delete<T = any>(
     url: string,
     config?: AxiosRequestConfig
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await api.delete(url, config);
+      const response = await apiClient.delete(url, config);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  // ✅ MELHORADO: File upload with progress
   async uploadFile<T = any>(
     url: string,
     file: File,
@@ -287,14 +258,13 @@ class ApiService {
       const formData = new FormData();
       formData.append('file', file);
 
-      // Add additional data if provided
       if (additionalData) {
         Object.entries(additionalData).forEach(([key, value]) => {
           formData.append(key, value);
         });
       }
 
-      const response = await api.post(url, formData, {
+      const response = await apiClient.post(url, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -304,7 +274,7 @@ class ApiService {
             onProgress(progress);
           }
         },
-        timeout: 60000, // 60 seconds for file uploads
+        timeout: 60000,
       });
 
       return response.data;
@@ -313,7 +283,6 @@ class ApiService {
     }
   }
 
-  // ✅ MELHORADO: Error handler with more context
   private handleError(error: any): ApiResponse {
     if (error.response?.data) {
       return {
@@ -340,7 +309,6 @@ class ApiService {
     };
   }
 
-  // ✅ MELHORADO: Health check with retry
   async healthCheck(): Promise<boolean> {
     try {
       const response = await this.get('/health');
@@ -350,12 +318,10 @@ class ApiService {
     }
   }
 
-  // Get server info
   async getServerInfo() {
     return this.get('/');
   }
 
-  // ✅ ADICIONADO: Ping method for connection testing
   async ping(): Promise<number> {
     const start = Date.now();
     try {
@@ -373,16 +339,14 @@ class ApiService {
 export const apiService = new ApiService();
 
 // =============================================================================
-// ✅ MELHORADO: UTILITY FUNCTIONS
+// UTILITY FUNCTIONS
 // =============================================================================
 
-// Build query string from object
 export function buildQueryString(params: Record<string, any>): string {
   const searchParams = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
-      // Handle arrays
       if (Array.isArray(value)) {
         value.forEach(item => searchParams.append(key, String(item)));
       } else {
@@ -394,7 +358,6 @@ export function buildQueryString(params: Record<string, any>): string {
   return searchParams.toString();
 }
 
-// Create URL with query parameters
 export function createUrl(path: string, params?: Record<string, any>): string {
   if (!params) return path;
 
@@ -402,22 +365,18 @@ export function createUrl(path: string, params?: Record<string, any>): string {
   return queryString ? `${path}?${queryString}` : path;
 }
 
-// Check if error is network error
 export function isNetworkError(error: any): boolean {
   return !error.response && error.request;
 }
 
-// Check if error is server error (5xx)
 export function isServerError(error: any): boolean {
   return error.response && error.response.status >= 500;
 }
 
-// Check if error is client error (4xx)
 export function isClientError(error: any): boolean {
   return error.response && error.response.status >= 400 && error.response.status < 500;
 }
 
-// ✅ MELHORADO: Retry mechanism with exponential backoff
 export async function retryRequest<T>(
   requestFn: () => Promise<T>,
   maxRetries = 3,
@@ -432,17 +391,14 @@ export async function retryRequest<T>(
     } catch (error) {
       lastError = error;
 
-      // Don't retry client errors (4xx) except 408, 429
       if (isClientError(error) && ![408, 429].includes(error.response?.status)) {
         throw error;
       }
 
-      // Don't retry on last attempt
       if (attempt === maxRetries) {
         break;
       }
 
-      // Calculate delay with exponential backoff
       const delay = initialDelay * Math.pow(backoffMultiplier, attempt - 1);
       console.log(`⏱️ Retrying request in ${delay}ms (attempt ${attempt}/${maxRetries})`);
 
@@ -453,14 +409,13 @@ export async function retryRequest<T>(
   throw lastError;
 }
 
-// ✅ MELHORADO: Download file with progress
 export async function downloadFile(
   url: string,
   filename?: string,
   onProgress?: (progress: number) => void
 ): Promise<void> {
   try {
-    const response = await api.get(url, {
+    const response = await apiClient.get(url, {
       responseType: 'blob',
       onDownloadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
@@ -487,7 +442,6 @@ export async function downloadFile(
   }
 }
 
-// ✅ ADICIONADO: Request cancellation utility
 export function createCancelToken() {
   const source = axios.CancelToken.source();
   return {
@@ -496,7 +450,6 @@ export function createCancelToken() {
   };
 }
 
-// ✅ ADICIONADO: Connection monitor
 export class ConnectionMonitor {
   private static instance: ConnectionMonitor;
   private isOnline = navigator.onLine;
@@ -540,4 +493,8 @@ export class ConnectionMonitor {
   }
 }
 
-export default api;
+// =============================================================================
+// EXPORTS - PADRONIZADOS
+// =============================================================================
+export default apiClient;
+export { apiClient };
