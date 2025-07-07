@@ -1,4 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Lobby Page
+// 🐺 LOBISOMEM ONLINE - Lobby Page (VERSÃO FINAL CORRITA)
 
 import { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
@@ -11,7 +11,10 @@ import { useTheme } from '@/context/ThemeContext';
 import Layout from '@/components/common/Layout';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import Modal from '@/components/common/Modal';
+
+// ✅ IMPORTAR APENAS OS MODAIS REAIS
+import CreateRoomModal from '@/components/lobby/CreateRoomModal';
+import JoinRoomModal from '@/components/lobby/JoinRoomModal';
 
 // =============================================================================
 // ✅ COMPONENTE SEGURO PARA NÚMEROS (RESOLVE HYDRATION ERROR)
@@ -28,12 +31,10 @@ function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
     setMounted(true);
   }, []);
 
-  // Renderização consistente no servidor
   if (!mounted) {
     return <span className={className}>{value}</span>;
   }
 
-  // Formatação no cliente após hidratação
   return (
     <span className={className}>
       {value.toLocaleString('pt-BR')}
@@ -42,7 +43,7 @@ function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
 }
 
 // =============================================================================
-// ÍCONES INLINE (para evitar problemas de import)
+// ÍCONES INLINE
 // =============================================================================
 const PlusIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,6 +88,12 @@ const ClockIcon = () => (
   </svg>
 );
 
+const HashIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+  </svg>
+);
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -109,21 +116,21 @@ interface MockRoom {
 function LobbyPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const { isConnected, status } = useSocket();
-  const { playSound, playMusic } = useTheme();
+  const { isConnected } = useSocket();
+  const { playSound, playMusic, stopMusic } = useTheme();
 
   // State
   const [rooms, setRooms] = useState<MockRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
 
-  // Estado para evitar múltiplas chamadas de música
+  // ✅ CORREÇÃO: Estado para evitar múltiplas chamadas de música
   const [musicStarted, setMusicStarted] = useState(false);
 
-  // ✅ PROTEÇÃO DE ROTA: Verificar autenticação
+  // ✅ PROTEÇÃO DE ROTA
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
       router.push('/auth/login');
@@ -131,7 +138,7 @@ function LobbyPage() {
     }
   }, [isAuthLoading, isAuthenticated, router]);
 
-  // Iniciar música quando a página carregar
+  // ✅ CORREÇÃO: Iniciar música com prevenção de múltiplas execuções
   useEffect(() => {
     if (!isAuthLoading && isAuthenticated && !musicStarted) {
       console.log('🎵 Iniciando música do lobby...');
@@ -140,8 +147,19 @@ function LobbyPage() {
       playMusic(randomMusic);
       setMusicStarted(true);
     }
-  }, [isAuthLoading, isAuthenticated, musicStarted, playMusic]);
+  }, [isAuthLoading, isAuthenticated, musicStarted]); // ✅ REMOVIDO: playMusic das dependências
 
+  // ✅ ADICIONADO: Cleanup quando sair da página
+  useEffect(() => {
+    return () => {
+      if (musicStarted) {
+        console.log('🎵 Parando música do lobby...');
+        stopMusic();
+      }
+    };
+  }, [musicStarted]);
+
+  // Gerar salas mock
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
 
@@ -176,30 +194,43 @@ function LobbyPage() {
   const filteredRooms = rooms.filter(room => {
     const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.hostUsername.toLowerCase().includes(searchTerm.toLowerCase());
-
     const matchesFilter = filterStatus === 'ALL' || room.status === filterStatus;
-
     return matchesSearch && matchesFilter && !room.isPrivate;
   });
 
-  // =============================================================================
-  // ✅ HANDLERS ATUALIZADOS PARA NAVEGAÇÃO PARA SALA
-  // =============================================================================
-  const handleJoinRoom = useCallback((roomId: string, asSpectator = false) => {
-    console.log('🚪 Joining room:', roomId, asSpectator ? 'as spectator' : 'as player');
+  // Handlers
+  const handleJoinRoom = useCallback((roomId: string) => {
+    console.log('🚪 Joining room:', roomId);
     playSound('button_click');
-
-    // Navegar para a página da sala
     router.push(`/room/${roomId}`);
   }, [router, playSound]);
 
   const handleSpectateRoom = useCallback((roomId: string) => {
     console.log('👁️ Spectating room:', roomId);
     playSound('button_click');
-
-    // Navegar para a página da sala como espectador
     router.push(`/room/${roomId}?spectate=true`);
   }, [router, playSound]);
+
+  const handleCreateRoom = useCallback(() => {
+    console.log('🏗️ Opening create room modal');
+    playSound('button_click');
+    setShowCreateModal(true);
+  }, [playSound]);
+
+  const handleJoinByCode = useCallback(() => {
+    console.log('🔑 Opening join by code modal');
+    playSound('button_click');
+    setShowJoinCodeModal(true);
+  }, [playSound]);
+
+  const handleRefresh = useCallback(() => {
+    console.log('🔄 Refreshing room list');
+    playSound('button_click');
+    setLoading(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  }, [playSound]);
 
   // Loading state
   if (isAuthLoading) {
@@ -221,7 +252,6 @@ function LobbyPage() {
     );
   }
 
-  // Redirect if not authenticated
   if (!isAuthenticated) {
     return null;
   }
@@ -272,7 +302,7 @@ function LobbyPage() {
             <Button
               variant="medieval"
               size="lg"
-              onClick={() => setShowCreateModal(true)}
+              onClick={handleCreateRoom}
               className="flex-1 min-w-[200px]"
             >
               <PlusIcon />
@@ -282,17 +312,18 @@ function LobbyPage() {
             <Button
               variant="secondary"
               size="lg"
-              onClick={() => setShowJoinCodeModal(true)}
+              onClick={handleJoinByCode}
               className="flex-1 min-w-[200px]"
             >
-              <SearchIcon />
+              <HashIcon />
               <span>Entrar por Código</span>
             </Button>
 
             <Button
               variant="ghost"
               size="lg"
-              onClick={() => window.location.reload()}
+              onClick={handleRefresh}
+              disabled={loading}
             >
               <RefreshIcon />
             </Button>
@@ -372,14 +403,13 @@ function LobbyPage() {
           </motion.div>
         </div>
 
-        {/* Create Room Modal */}
+        {/* ✅ APENAS OS MODAIS REAIS - SEM Modal GENÉRICO */}
         <CreateRoomModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
         />
 
-        {/* Join by Code Modal */}
-        <JoinCodeModal
+        <JoinRoomModal
           isOpen={showJoinCodeModal}
           onClose={() => setShowJoinCodeModal(false)}
         />
@@ -441,8 +471,8 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
             </div>
           </div>
 
-          {/* Room Details - ✅ USANDO SafeNumberDisplay PARA EVITAR HYDRATION ERROR */}
-          <div className="flex items-center gap-4 text-sm text-white/70">
+          {/* Room Details */}
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-white/70">
             <div className="flex items-center gap-1">
               <UsersIcon />
               <span>
@@ -498,64 +528,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
         </div>
       </div>
     </motion.div>
-  );
-}
-
-// =============================================================================
-// CREATE ROOM MODAL
-// =============================================================================
-interface CreateRoomModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-function CreateRoomModal({ isOpen, onClose }: CreateRoomModalProps) {
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Criar Nova Sala" variant="medieval">
-      <div className="space-y-6">
-        <p className="text-white/70">
-          🚧 Esta funcionalidade será implementada na próxima fase do desenvolvimento.
-        </p>
-
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={onClose}>
-            Em Breve
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// =============================================================================
-// JOIN CODE MODAL
-// =============================================================================
-interface JoinCodeModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-function JoinCodeModal({ isOpen, onClose }: JoinCodeModalProps) {
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Entrar por Código" variant="medieval">
-      <div className="space-y-6">
-        <p className="text-white/70">
-          🚧 Esta funcionalidade será implementada na próxima fase do desenvolvimento.
-        </p>
-
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={onClose}>
-            Em Breve
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

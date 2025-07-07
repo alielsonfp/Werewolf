@@ -123,11 +123,14 @@ api.interceptors.response.use(
             Cookies.remove('access_token');
             Cookies.remove('refresh_token');
 
-            // ✅ MELHORADO: Evitar múltiplos redirects
+            // ✅ CORREÇÃO: Usar Next.js router em vez de window.location.href
             if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/')) {
               toast.error('Sessão expirada. Faça login novamente.');
+
+              // ✅ CORREÇÃO: Importar o router do Next.js dinamicamente
+              const { default: Router } = await import('next/router');
               setTimeout(() => {
-                window.location.href = '/auth/login';
+                Router.push('/auth/login');
               }, 1500);
             }
           }
@@ -536,37 +539,5 @@ export class ConnectionMonitor {
     return this.isOnline;
   }
 }
-
-
-export const roomAPI = {
-  // Buscar detalhes de uma sala específica
-  getRoomDetails: async (roomId: string): Promise<Room> => {
-    const response = await api.get(`/rooms/${roomId}`);
-    return response.data;
-  },
-
-  // Entrar em uma sala
-  joinRoom: async (roomId: string, asSpectator = false): Promise<{ room: Room; players: Player[] }> => {
-    const response = await api.post(`/rooms/${roomId}/join`, { asSpectator });
-    return response.data;
-  },
-
-  // Sair de uma sala
-  leaveRoom: async (roomId: string): Promise<void> => {
-    await api.post(`/rooms/${roomId}/leave`);
-  },
-
-  // Atualizar configurações da sala (apenas host)
-  updateRoomSettings: async (roomId: string, settings: Partial<RoomSettings>): Promise<Room> => {
-    const response = await api.patch(`/rooms/${roomId}/settings`, settings);
-    return response.data;
-  },
-
-  // Buscar jogadores da sala
-  getRoomPlayers: async (roomId: string): Promise<{ players: Player[]; spectators: Player[] }> => {
-    const response = await api.get(`/rooms/${roomId}/players`);
-    return response.data;
-  }
-};
 
 export default api;
