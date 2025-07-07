@@ -1,4 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Server Entry Point (CORREÇÃO DEFINITIVA)
+// 🐺 LOBISOMEM ONLINE - Server Entry Point (CORREÇÃO FINAL)
 import http from 'http';
 import app from './app';
 import { config, validateConfig } from '@/config/environment';
@@ -7,6 +7,7 @@ import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis'
 import { ServiceFactory } from './websocket/ServiceFactory';
 import { WebSocketManager } from '@/websocket/WebSocketManager';
 import { logger } from '@/utils/logger';
+import { GameEngine } from '@/game/GameEngine'; // Importar o GameEngine
 
 let server: http.Server;
 let wsManager: WebSocketManager;
@@ -19,7 +20,7 @@ const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, del
       logger.info('Database connected successfully.');
       return;
     } catch (error) {
-      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, { error });
+      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, error as Error);
       if (i === retries) {
         throw new Error(`Could not connect to the database after ${retries} attempts.`);
       }
@@ -31,18 +32,8 @@ const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, del
 async function startServer(): Promise<void> {
   try {
     validateConfig();
-
-    // Conectar banco (obrigatório) com retry
     await connectWithRetry(connectDatabase);
-
-    // Conectar Redis (opcional - não falha se der erro)
-    if (config.SHOULD_USE_REDIS) {
-      try {
-        await connectRedis();
-      } catch (error) {
-        logger.warn('Redis connection failed, continuing without Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
-      }
-    }
+    if (config.SHOULD_USE_REDIS) await connectRedis();
 
     const gameStateService = ServiceFactory.getGameStateService();
     const eventBus = ServiceFactory.getEventBus();
@@ -52,6 +43,15 @@ async function startServer(): Promise<void> {
     if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
       wsManager = new WebSocketManager(gameStateService, eventBus, config);
       wsManager.setupWebSocketServer(server);
+
+      // ✅ CORREÇÃO FINAL: Injetar a função de broadcast no GameEngine
+      if (gameStateService instanceof GameEngine) {
+        gameStateService.setBroadcaster(
+          (roomId, type, data) => {
+            wsManager.channelManager.broadcastToRoom(roomId, type, data);
+          }
+        );
+      }
     }
 
     server.listen(config.PORT, () => {
@@ -61,7 +61,7 @@ async function startServer(): Promise<void> {
     setupGracefulShutdown(server);
 
   } catch (error) {
-    logger.error('Failed to start server', error instanceof Error ? error : new Error('Unknown server start error'));
+    logger.error('Failed to start server', error as Error);
     process.exit(1);
   }
 }

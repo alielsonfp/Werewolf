@@ -1,13 +1,11 @@
-// 🐺 LOBISOMEM ONLINE - Game Core Classes (CORRIGIDO)
-// ✅ COMPATÍVEL com types/index.ts
-// CORREÇÃO 1: Importar os enums necessários
+// 🐺 LOBISOMEM ONLINE - Game Core Classes (CORRIGIDO E FINALIZADO)
+// ✅ COMPATÍVEL com types/index.ts e sistema de votação
 import { Role, Faction, GamePhase } from '@/utils/constants';
 import type { GameConfig, GameEvent, NightAction, GameStatus } from '@/types';
-// CORREÇÃO 2: Importar ROLE_CONFIGURATIONS no topo do arquivo
 import { RoleRevealManager, WinConditionCalculator, ROLE_CONFIGURATIONS } from './RoleSystem';
 
 //====================================================================
-// PLAYER CLASS - COMPATÍVEL COM INTERFACE
+// PLAYER CLASS - ATUALIZADA COM MELHORIAS DE VOTAÇÃO
 //====================================================================
 export class Player {
     public id: string;
@@ -40,6 +38,13 @@ export class Player {
     public killedBy?: string;
     public eliminationReason?: 'NIGHT_KILL' | 'EXECUTION' | 'VIGILANTE' | 'SERIAL_KILLER';
 
+    // ✅ A7.2 - Voting tracking enhancements
+    public votingHistory: Array<{
+        day: number;
+        targetId: string;
+        timestamp: Date;
+    }> = [];
+
     constructor(data: {
         id: string;
         userId: string;
@@ -55,7 +60,6 @@ export class Player {
         this.id = data.id;
         this.userId = data.userId;
         this.username = data.username;
-        // CORREÇÃO 3: Apenas atribuir a propriedade se o valor não for undefined
         if (data.avatar !== undefined) {
             this.avatar = data.avatar;
         }
@@ -71,7 +75,6 @@ export class Player {
     assignRole(role: Role, faction: Faction, maxActions?: number): void {
         this.role = role;
         this.faction = faction;
-        // CORREÇÃO 3: Apenas atribuir a propriedade se o valor não for undefined
         if (maxActions !== undefined) {
             this.maxActions = maxActions;
         }
@@ -84,7 +87,6 @@ export class Player {
         if (this.hasActed) return false;
         if (this.maxActions !== undefined && this.actionsUsed >= this.maxActions) return false;
 
-        // CORREÇÃO 2: Usar a importação do topo do arquivo em vez de 'require'
         const roleConfig = ROLE_CONFIGURATIONS[this.role];
         return roleConfig?.canAct || false;
     }
@@ -102,12 +104,10 @@ export class Player {
     kill(reason: 'NIGHT_KILL' | 'EXECUTION' | 'VIGILANTE' | 'SERIAL_KILLER', killedBy?: string): void {
         this.isAlive = false;
         this.eliminationReason = reason;
-        // CORREÇÃO 3: Apenas atribuir a propriedade se o valor não for undefined
         if (killedBy !== undefined) {
             this.killedBy = killedBy;
         }
         this.hasVoted = false;
-        // CORREÇÃO 4: Usar 'delete' para remover a propriedade opcional
         delete this.votedFor;
     }
 
@@ -121,8 +121,19 @@ export class Player {
         this.protectedByDoctor = false;
     }
 
-    vote(targetId: string): boolean {
+    // ✅ A7.2 - Enhanced voting methods
+    vote(targetId: string, day: number): boolean {
         if (!this.isAlive) return false;
+
+        // Store previous vote in history if changing vote
+        if (this.hasVoted && this.votedFor) {
+            this.votingHistory.push({
+                day,
+                targetId: this.votedFor,
+                timestamp: new Date(),
+            });
+        }
+
         this.hasVoted = true;
         this.votedFor = targetId;
         return true;
@@ -131,15 +142,44 @@ export class Player {
     unvote(): boolean {
         if (!this.isAlive) return false;
         this.hasVoted = false;
-        // CORREÇÃO 4: Usar 'delete' para remover a propriedade opcional
         delete this.votedFor;
         return true;
+    }
+
+    // ✅ Get voting statistics for this player
+    getVotingStats(): {
+        totalVotes: number;
+        votesPerDay: Record<number, string>;
+        mostVotedPlayer?: string;
+    } {
+        const votesPerDay: Record<number, string> = {};
+        const targetCounts: Record<string, number> = {};
+
+        this.votingHistory.forEach(vote => {
+            votesPerDay[vote.day] = vote.targetId;
+            targetCounts[vote.targetId] = (targetCounts[vote.targetId] || 0) + 1;
+        });
+
+        // Find most voted player
+        let mostVotedPlayer: string | undefined;
+        let maxVotes = 0;
+        Object.entries(targetCounts).forEach(([targetId, votes]) => {
+            if (votes > maxVotes) {
+                maxVotes = votes;
+                mostVotedPlayer = targetId;
+            }
+        });
+
+        return {
+            totalVotes: this.votingHistory.length,
+            votesPerDay,
+            ...(mostVotedPlayer && { mostVotedPlayer }),
+        };
     }
 
     resetForNewPhase(): void {
         this.hasActed = false;
         this.hasVoted = false;
-        // CORREÇÃO 4: Usar 'delete' para remover a propriedade opcional
         delete this.votedFor;
         this.removeProtection();
         this.canBeProtectedByDoctor = !this.protectedByDoctor;
@@ -171,6 +211,7 @@ export class Player {
             isProtected: this.isProtected,
             hasActed: this.hasActed,
             actionsUsed: this.actionsUsed,
+            votingStats: this.getVotingStats(),
         };
         if (this.role) info.role = this.role;
         if (this.faction) info.faction = this.faction;
@@ -183,7 +224,7 @@ export class Player {
 }
 
 //====================================================================
-// GAME STATE CLASS - REFATORADA PARA COMPATIBILIDADE
+// GAME STATE CLASS - ATUALIZADA COM MELHORIAS DE VOTAÇÃO
 //====================================================================
 export class GameState {
     public gameId: string;
@@ -199,6 +240,7 @@ export class GameState {
     private spectatorsSet: Set<string>;
     private eliminatedPlayersMap: Map<string, Player>;
     private votesMap: Map<string, string>; // voterId -> targetId
+    private playersByUserId: Map<string, Player>;
 
     public hostId: string;
     public config: GameConfig;
@@ -213,11 +255,19 @@ export class GameState {
     public winningFaction?: Faction;
     public winningPlayers: string[] = [];
 
+    // ✅ A7.2-A7.5 - Enhanced voting tracking
+    public votingHistory: Array<{
+        day: number;
+        voterId: string;
+        targetId: string;
+        timestamp: Date;
+        phase: GamePhase;
+    }> = [];
+
     constructor(gameId: string, config: GameConfig, hostId: string) {
         this.gameId = gameId;
         this.roomId = config.roomId;
         this.status = 'WAITING';
-        // CORREÇÃO 5: Usar o enum GamePhase
         this.phase = GamePhase.LOBBY;
         this.day = 0;
         this.phaseStartTime = new Date();
@@ -225,6 +275,7 @@ export class GameState {
         this.timeLeft = 0;
 
         this.playersMap = new Map();
+        this.playersByUserId = new Map();
         this.spectatorsSet = new Set();
         this.eliminatedPlayersMap = new Map();
         this.votesMap = new Map();
@@ -256,10 +307,12 @@ export class GameState {
     }
 
     addPlayer(player: Player): boolean {
-        if (this.playersMap.size >= this.config.maxPlayers) return false;
-        if (this.status !== 'WAITING') return false;
+        if (this.playersMap.has(player.id)) return false; // Evitar duplicatas
+        if (this.status !== 'WAITING' && this.status !== 'STARTING') return false;
 
         this.playersMap.set(player.id, player);
+        this.playersByUserId.set(player.userId, player);
+
         this.updatedAt = new Date();
 
         this.addEvent('PLAYER_JOINED', {
@@ -276,6 +329,7 @@ export class GameState {
         if (!player) return false;
 
         this.playersMap.delete(playerId);
+        this.playersByUserId.delete(player.userId);
 
         if (this.status === 'PLAYING') {
             this.eliminatedPlayersMap.set(playerId, player);
@@ -296,6 +350,10 @@ export class GameState {
         return this.playersMap.get(playerId);
     }
 
+    getPlayerByUserId(userId: string): Player | undefined {
+        return this.playersByUserId.get(userId);
+    }
+
     getAlivePlayers(): Player[] {
         return Array.from(this.playersMap.values()).filter(p => p.isAlive && !p.isSpectator);
     }
@@ -306,8 +364,11 @@ export class GameState {
 
     canStart(): boolean {
         const alivePlayers = this.getAlivePlayers();
-        return alivePlayers.length >= 6 && alivePlayers.length <= 15 &&
-            alivePlayers.every(p => p.isReady) && this.status === 'WAITING';
+        // A validação de "pronto" deve ser feita na camada da sala/roteador antes de chamar startGame.
+        // O GameEngine confia que, se foi chamado, é para começar.
+        return alivePlayers.length >= 6 &&
+            alivePlayers.length <= 15 &&
+            this.status === 'WAITING';
     }
 
     start(): boolean {
@@ -355,43 +416,57 @@ export class GameState {
         return Date.now() >= this.phaseEndTime.getTime();
     }
 
-    addVote(voterId: string, targetId: string): boolean {
-        const voter = this.playersMap.get(voterId);
-        const target = this.playersMap.get(targetId);
+    // ✅ A7.2 - Enhanced voting methods
+    addVote(voterUserId: string, targetUserId: string): boolean {
+        const voter = this.getPlayerByUserId(voterUserId);
+        const target = this.getPlayerByUserId(targetUserId);
 
         if (!voter || !target || !voter.isAlive || !target.isAlive) return false;
         if (this.phase !== GamePhase.VOTING) return false;
+        if (voter.id === target.id) return false; // Can't vote for yourself
 
-        this.votesMap.set(voterId, targetId);
-        voter.vote(targetId);
+        // O resto da lógica usa os objetos Player corretos
+        this.votingHistory.push({
+            day: this.day,
+            voterId: voter.id, // Armazena o playerId
+            targetId: target.id, // Armazena o playerId
+            timestamp: new Date(),
+            phase: this.phase,
+        });
+
+        this.votesMap.set(voter.id, target.id);
+        voter.vote(target.id, this.day);
 
         this.addEvent('VOTE_CAST', {
-            voterId,
-            targetId,
+            voterId: voter.id,
+            targetId: target.id,
             voterUsername: voter.username,
             targetUsername: target.username,
+            day: this.day,
         });
 
         return true;
     }
 
-    removeVote(voterId: string): boolean {
-        const voter = this.playersMap.get(voterId);
+    // ✅ CORREÇÃO: Lógica de remoção de voto usando userId
+    removeVote(voterUserId: string): boolean {
+        const voter = this.getPlayerByUserId(voterUserId);
         if (!voter || !voter.isAlive) return false;
 
-        const targetId = this.votesMap.get(voterId);
-        this.votesMap.delete(voterId);
+        const targetId = this.votesMap.get(voter.id);
+        if (!targetId) return false; // Não tinha voto para remover
+
+        this.votesMap.delete(voter.id);
         voter.unvote();
 
-        if (targetId) {
-            const target = this.playersMap.get(targetId);
-            this.addEvent('VOTE_REMOVED', {
-                voterId,
-                targetId,
-                voterUsername: voter.username,
-                targetUsername: target?.username,
-            });
-        }
+        const target = this.playersMap.get(targetId);
+        this.addEvent('VOTE_REMOVED', {
+            voterId: voter.id,
+            targetId,
+            voterUsername: voter.username,
+            targetUsername: target?.username,
+            day: this.day,
+        });
 
         return true;
     }
@@ -404,29 +479,70 @@ export class GameState {
         return counts;
     }
 
-    getMostVotedPlayer(): { playerId: string; votes: number } | null {
+    // ✅ A7.3 - Enhanced vote calculation with tie detection
+    getMostVotedPlayer(): { playerId: string; votes: number; isTie: boolean } | null {
         const counts = this.getVoteCounts();
         let maxVotes = 0;
         let mostVoted: string | null = null;
-        let tieCount = 0;
+        let playersWithMaxVotes: string[] = [];
 
         counts.forEach((votes, playerId) => {
             if (votes > maxVotes) {
                 maxVotes = votes;
                 mostVoted = playerId;
-                tieCount = 1;
-            } else if (votes === maxVotes) {
-                tieCount++;
+                playersWithMaxVotes = [playerId];
+            } else if (votes === maxVotes && votes > 0) {
+                playersWithMaxVotes.push(playerId);
             }
         });
 
-        if (tieCount > 1 || !mostVoted || maxVotes === 0) return null;
+        if (!mostVoted || maxVotes === 0) return null;
 
-        return { playerId: mostVoted, votes: maxVotes };
+        const isTie = playersWithMaxVotes.length > 1;
+
+        // In case of tie, return null (no execution)
+        if (isTie) return null;
+
+        return { playerId: mostVoted, votes: maxVotes, isTie: false };
+    }
+
+    // ✅ Get comprehensive voting statistics
+    getVotingStatistics(): {
+        currentVotes: Map<string, number>;
+        totalVotes: number;
+        participationRate: number;
+        // ✅ CORREÇÃO: Substituir 'typeof this.votingHistory' pelo tipo explícito.
+        votingHistory: Array<{
+            day: number;
+            voterId: string;
+            targetId: string;
+            timestamp: Date;
+            phase: GamePhase;
+        }>;
+        consensusLevel: number;
+    } {
+        const currentVotes = this.getVoteCounts();
+        const alivePlayers = this.getAlivePlayers();
+        const totalVotes = this.votesMap.size;
+        const participationRate = alivePlayers.length > 0 ? (totalVotes / alivePlayers.length) * 100 : 0;
+
+        // Calculate consensus level (how concentrated votes are)
+        let consensusLevel = 0;
+        if (totalVotes > 0) {
+            const maxVotes = Math.max(0, ...Array.from(currentVotes.values()));
+            consensusLevel = (maxVotes / totalVotes) * 100;
+        }
+
+        return {
+            currentVotes,
+            totalVotes,
+            participationRate,
+            votingHistory: this.votingHistory,
+            consensusLevel,
+        };
     }
 
     addEvent(type: string, data: any, visibleTo?: string[]): void {
-        // CORREÇÃO 6: Usar spread condicional para a propriedade opcional 'visibleTo'
         const event: GameEvent = {
             id: `${this.gameId}-${this.events.length}`,
             type,
@@ -447,7 +563,8 @@ export class GameState {
         );
     }
 
-    checkWinCondition(): { hasWinner: boolean; winningFaction?: Faction; winningPlayers?: string[] } {
+    // ✅ A7.5 - Enhanced win condition checking
+    checkWinCondition(): { hasWinner: boolean; winningFaction?: Faction; winningPlayers?: string[]; reason?: string } {
         const alivePlayers = this.getAlivePlayers();
         return WinConditionCalculator.calculateWinCondition(
             alivePlayers.map(p => ({ playerId: p.id, role: p.role! }))
@@ -458,11 +575,11 @@ export class GameState {
         this.status = 'FINISHED';
         this.finishedAt = new Date();
         this.updatedAt = new Date();
-        // Apenas define as propriedades se elas existirem
-        if (winningFaction) {
+
+        if (winningFaction !== undefined) {
             this.winningFaction = winningFaction;
         }
-        if (winningPlayers) {
+        if (winningPlayers !== undefined) {
             this.winningPlayers = winningPlayers;
         }
 
@@ -471,6 +588,7 @@ export class GameState {
             winningPlayers,
             totalDays: this.day,
             duration: this.finishedAt.getTime() - (this.startedAt?.getTime() || 0),
+            finalStats: this.getVotingStatistics(),
         });
     }
 
@@ -492,6 +610,7 @@ export class GameState {
             events: this.events,
             votes: this.votes,
             nightActions: this.nightActions,
+            votingHistory: this.votingHistory,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             startedAt: this.startedAt,
