@@ -1,7 +1,7 @@
 // 🐺 LOBISOMEM ONLINE - Database Seeds (com node-postgres)
 // Create initial test data for development
 
-import { pool } from '../database';
+import { pool } from '@/config/database';
 import bcrypt from 'bcryptjs';
 
 // Logger simples caso não tenha o logger configurado

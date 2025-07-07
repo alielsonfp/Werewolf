@@ -1,4 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Tipos Centralizados (REFATORADO)
+// 🐺 LOBISOMEM ONLINE - Tipos Centralizados (CORRIGIDO)
 import type WebSocket from 'ws';
 
 // =============================================================================
@@ -89,7 +89,10 @@ export type WebSocketErrorCode =
     | 'PLAYER_NOT_FOUND' | 'RATE_LIMITED' | 'INVALID_MESSAGE'
     | 'UNKNOWN_MESSAGE_TYPE' | 'HANDLER_ERROR' | 'MISSING_ROOM_ID'
     | 'JOIN_ROOM_FAILED' | 'LEAVE_ROOM_FAILED' | 'READY_UPDATE_FAILED'
-    | 'START_GAME_FAILED' | 'KICK_PLAYER_FAILED' | 'NOT_IMPLEMENTED';
+    | 'START_GAME_FAILED' | 'KICK_PLAYER_FAILED' | 'NOT_IMPLEMENTED'
+    // ✅ CORREÇÃO: Adicionando os códigos de erro que estavam faltando para o MessageRouter.
+    | 'GAME_NOT_FOUND' | 'INVALID_PHASE' | 'VOTE_FAILED' | 'UNVOTE_FAILED'
+    | 'ACTION_FAILED' | 'CHAT_FAILED' | 'FORCE_PHASE_FAILED' | 'GET_STATE_FAILED';
 
 // =============================================================================
 // GAME TYPES (COMPATÍVEIS COM CLASSES REAIS)
@@ -171,7 +174,7 @@ export interface GameState {
 
     // ✅ IMPORTANTE: Compatível com a classe real que usa Map
     players: Player[]; // Para serialização JSON
-    spectators: string[]; // IDs dos espectadores  
+    spectators: string[]; // IDs dos espectadores
     eliminatedPlayers: Player[];
 
     hostId: string;
@@ -185,6 +188,10 @@ export interface GameState {
     finishedAt?: Date;
     winningFaction?: Faction;
     winningPlayers?: string[];
+
+    // ✅ CORREÇÃO: Adicionando as assinaturas dos métodos que faltavam para o MessageRouter.
+    addVote(voterId: string, targetId: string): boolean;
+    removeVote(voterId: string): boolean;
 }
 
 export interface GameEvent {
@@ -203,45 +210,6 @@ export interface NightAction {
     targetId?: string;
     data?: any;
     priority: number;
-}
-
-// =============================================================================
-// GAME ENGINE INTERFACES
-// =============================================================================
-export interface IGameEngine {
-    // Game lifecycle
-    createGame(hostId: string, config: GameConfig): Promise<GameState>;
-    startGame(gameId: string): Promise<boolean>;
-    endGame(gameId: string, reason?: string): Promise<void>;
-
-    // Player management
-    addPlayer(gameId: string, player: Player): Promise<boolean>;
-    removePlayer(gameId: string, playerId: string): Promise<boolean>;
-
-    // Game state
-    getGameState(gameId: string): Promise<GameState | null>;
-    updateGameState(gameId: string, updates: Partial<GameState>): Promise<void>;
-
-    // Actions
-    performPlayerAction(gameId: string, playerId: string, action: any): Promise<boolean>;
-
-    // Phase management
-    nextPhase(gameId: string): Promise<void>;
-
-    // Events
-    onGameEvent(gameId: string, event: string, handler: (data: any) => void): void;
-
-    // Voting
-    castVote?(gameId: string, voterId: string, targetId: string): Promise<boolean>;
-    removeVote?(gameId: string, voterId: string): Promise<boolean>;
-
-    // Administrative
-    getActiveGamesCount?(): number;
-    getAllGames?(): GameState[];
-    getGamesByRoom?(roomId: string): Promise<GameState[]>;
-    forceEndGame?(gameId: string, reason: string): Promise<boolean>;
-    getGameStats?(gameId: string): any;
-    cleanup?(): Promise<void>;
 }
 
 // =============================================================================
@@ -335,20 +303,48 @@ export interface IServiceRegistry {
 
 // ✅ INTERFACE CORRIGIDA - Agora retorna GameState em vez de Game inexistente
 export interface IGameStateService {
+    // Métodos de ciclo de vida do jogo (da antiga IGameEngine)
     createGame(hostId: string, config: GameConfig): Promise<GameState>;
-    getGame(gameId: string): Promise<GameState | null>;
-    updateGameState(gameId: string, updates: Partial<GameState>): Promise<void>;
-    deleteGame(gameId: string): Promise<void>;
-    addPlayer(gameId: string, player: Player): Promise<void>;
-    removePlayer(gameId: string, playerId: string): Promise<void>;
+    startGame(gameId: string): Promise<boolean>;
+    endGame(gameId: string, reason?: string): Promise<void>;
+    forceEndGame?(gameId: string, reason: string): Promise<boolean>;
+
+    // Métodos de gerenciamento de jogador
+    addPlayer(gameId: string, player: Player): Promise<boolean>;
+    removePlayer(gameId: string, playerId: string): Promise<boolean>;
     updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void>;
+
+    // Métodos de acesso ao estado
     getGameState(gameId: string): Promise<GameState | null>;
+    getGame(gameId: string): Promise<GameState | null>; // Pode ser um alias para getGameState
     getPlayer(gameId: string, playerId: string): Promise<Player | null>;
     getAllPlayers(gameId: string): Promise<Player[]>;
+
+    // Métodos de ação do jogador
+    performPlayerAction(gameId: string, playerId: string, action: any): Promise<boolean>;
+
+    // Métodos de gerenciamento de fase
+    nextPhase(gameId: string): Promise<void>;
+
+    // Métodos de votação
+    castVote?(gameId: string, voterId: string, targetId: string): Promise<boolean>;
+    removeVote?(gameId: string, voterId: string): Promise<boolean>;
+
+    // Sistema de eventos
+    onGameEvent(gameId: string, event: string, handler: (data: any) => void): void;
+    emitGameEvent(gameId: string, event: string, data: any): void;
+    
+    // Métodos administrativos e de consulta
     getGamesByRoom(roomId: string): Promise<GameState[]>;
     getActiveGamesCount(): Promise<number>;
-    cleanup?(): number;
+    getAllGames?(): GameState[];
+    getGameStats?(gameId: string): any;
+    cleanup?(): Promise<void>;
     healthCheck?(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }>;
+
+    nextPhase(gameId: string): Promise<void>;
+    forcePhase(gameId: string): Promise<void>; // ✅ ADICIONE ESTA LINHA
+    castVote?(gameId: string, voterId: string, targetId: string): Promise<boolean>;
 }
 
 // =============================================================================
