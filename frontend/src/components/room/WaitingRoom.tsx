@@ -171,7 +171,8 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
 
         // ✅ NOVO: Evento de sala deletada
         case 'room-deleted':
-          toast.info('Sala foi encerrada pelo host');
+          toast.error(data.reason || 'A sala foi encerrada pelo host');
+          disconnect(); // ✅ Garantir desconexão
           router.push('/lobby');
           break;
 
@@ -239,7 +240,7 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
     sendMessage('delete-room', { roomId });
     // Não precisa chamar disconnect aqui - o backend vai kickar todos
     setShowLeaveModal(false);
-    toast.info('Encerrando sala...');
+    toast('Encerrando sala...', { icon: '🏠' });
     // O redirect vai acontecer quando recebermos 'room-deleted'
   };
 

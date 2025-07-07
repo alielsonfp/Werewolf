@@ -1,4 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Message Router (Correção Completa)
+// 🐺 LOBISOMEM ONLINE - Message Router (Correção Completa com Dados Reais)
 // ✅ PREPARADO PARA MIGRAÇÃO AUTOMÁTICA → game-service
 import { wsLogger } from '@/utils/logger';
 import { validateWebSocketMessage } from '@/config/websocket';
@@ -163,7 +163,7 @@ export class MessageRouter {
   }
 
   //====================================================================
-  // ✅ TASK 4 - ROOM HANDLERS (Required Implementation)
+  // ✅ CORRIGIDO: ROOM HANDLERS COM DADOS REAIS DO BANCO
   //====================================================================
   private async handleJoinRoom(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
@@ -177,6 +177,28 @@ export class MessageRouter {
     }
 
     try {
+      // ✅ CORRIGIDO: Buscar dados reais da sala no banco de dados
+      const roomQuery = `
+        SELECT r.*, u.username as "hostUsername"
+        FROM rooms r
+        JOIN users u ON r."hostId" = u.id
+        WHERE r.id = $1
+      `;
+      const roomResult = await pool.query(roomQuery, [roomId]);
+
+      if (roomResult.rows.length === 0) {
+        await this.sendError(connectionId, 'ROOM_NOT_FOUND', 'Room not found');
+        return;
+      }
+
+      const roomData = roomResult.rows[0];
+
+      // Verificar se a sala está disponível
+      if (roomData.status !== 'WAITING') {
+        await this.sendError(connectionId, 'ROOM_NOT_JOINABLE', 'Room is not accepting new players');
+        return;
+      }
+
       // Join the room channel
       const success = this.channelManager.joinRoom(roomId, connectionId, asSpectator);
       if (!success) {
@@ -197,7 +219,7 @@ export class MessageRouter {
       const players: any[] = [];
       const spectators: any[] = [];
 
-      // Build player list
+      // ✅ CORRIGIDO: Build player list com dados reais
       for (const connId of roomConnections) {
         const conn = this.connectionManager.getConnection(connId);
         if (conn) {
@@ -206,8 +228,8 @@ export class MessageRouter {
             userId: conn.context.userId,
             username: conn.context.username,
             avatar: null,
-            isHost: false,
-            isReady: false,
+            isHost: roomData.hostId === conn.context.userId, // ✅ Verificação real do host
+            isReady: false, // TODO: Implementar storage de ready status
             isSpectator: false,
             isConnected: true,
             joinedAt: new Date().toISOString(),
@@ -237,34 +259,35 @@ export class MessageRouter {
         userId: connection.context.userId,
         username: connection.context.username,
         avatar: null,
-        isHost: false,
+        isHost: roomData.hostId === connection.context.userId, // ✅ Verificação real do host
         isReady: false,
         isSpectator: asSpectator,
         isConnected: true,
         joinedAt: new Date().toISOString(),
       };
 
-      // Send room-joined event to the joining player
+      // ✅ CORRIGIDO: Send room-joined event com dados reais do banco
       await this.sendToConnection(connectionId, 'room-joined', {
         room: {
-          id: roomId,
-          name: `Room ${roomId}`,
-          code: null,
-          isPrivate: false,
-          maxPlayers: 15,
-          maxSpectators: 5,
-          status: 'WAITING',
-          hostId: '',
-          hostUsername: '',
+          id: roomData.id,
+          name: roomData.name,                    // ✅ Nome real
+          code: roomData.code,                    // ✅ Código real
+          isPrivate: roomData.isPrivate,          // ✅ Dados reais
+          maxPlayers: roomData.maxPlayers,        // ✅ Dados reais
+          maxSpectators: roomData.maxSpectators,  // ✅ Dados reais
+          status: roomData.status,
+          hostId: roomData.hostId,                // ✅ Host ID real
+          hostUsername: roomData.hostUsername,    // ✅ Host username real
           currentPlayers: players.length,
           currentSpectators: spectators.length,
-          players,
-          spectators,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          serverId: roomData.serverId,
+          createdAt: roomData.createdAt,
+          updatedAt: roomData.updatedAt,
         },
+        players,    // ✅ Lista real de jogadores conectados
+        spectators, // ✅ Lista real de espectadores conectados
         player,
-        yourRole: asSpectator ? 'SPECTATOR' : 'PLAYER',
+        yourRole: asSpectator ? 'SPECTATOR' : (player.isHost ? 'HOST' : 'PLAYER'), // ✅ Role correto
       });
 
       // Broadcast player-joined to other room members
@@ -281,11 +304,14 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       });
 
-      wsLogger.info('Player joined room', {
+      wsLogger.info('Player joined room with real data', {
         connectionId,
         userId: connection.context.userId,
         username: connection.context.username,
         roomId,
+        roomName: roomData.name,
+        hostId: roomData.hostId,
+        isHost: player.isHost,
         asSpectator,
       });
 
