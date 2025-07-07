@@ -1,249 +1,215 @@
-// 🐺 LOBISOMEM ONLINE - Frontend Types
-// Baseado no Town of Salem
+// 🐺 LOBISOMEM ONLINE - Tipos Centralizados (REFATORADO + NOVOS TIPOS)
+import type WebSocket from 'ws';
 
 // =============================================================================
-// ✅ USER & AUTHENTICATION - TIPOS COMPLETOS
+// IMPORT ENUMS FROM CONSTANTS (ÚNICA FONTE)
 // =============================================================================
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-  avatar?: string;
-  level: number;
-  totalGames: number;
-  totalWins: number;
-  totalLosses: number;
-  winRate: number;
-  createdAt: string;
-  updatedAt?: string;
-  lastLoginAt?: string;
+export { Role, Faction, GamePhase } from '@/utils/constants';
+import { Role, Faction, GamePhase } from '@/utils/constants';
 
-  // ✅ ADICIONADO: Campos extras para o perfil
-  bio?: string;
-  country?: string;
-  preferredLanguage?: string;
-  timezone?: string;
-  isVerified?: boolean;
-  isBanned?: boolean;
-  banReason?: string;
-  banExpiresAt?: string;
-}
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken?: string;
-  expiresIn?: number;
-  tokenType?: string;
-}
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-  rememberMe?: boolean;
-}
-
-export interface RegisterRequest {
-  email: string;
-  username: string;
-  password: string;
-  confirmPassword: string;
-  acceptTerms?: boolean;
-  newsletter?: boolean;
-}
-
-// ✅ CORRIGIDO: AuthResponse com estrutura consistente
-export interface AuthResponse {
+// =============================================================================
+// API & HTTP
+// =============================================================================
+export interface ApiResponse<T = any> {
   success: boolean;
-  data?: {
-    user: User;
-    tokens: AuthTokens;
-  };
-  error?: string;
+  data?: T;
   message?: string;
+  error?: string;
   timestamp: string;
 }
 
-// ✅ ADICIONADO: Tipos para verificação de disponibilidade
-export interface AvailabilityCheckResponse {
-  success: boolean;
-  data?: {
-    available: boolean;
-    suggestions?: string[];
-  };
+// =============================================================================
+// JWT & AUTENTICAÇÃO
+// =============================================================================
+export interface JWTPayload {
+  userId: string;
+  username: string;
+  email: string;
+  avatar?: string;
+  iat?: number;
+  exp?: number;
+}
+
+export interface TokenPair {
+  accessToken: string;
+  refreshToken?: string;
+}
+
+// =============================================================================
+// WEBSOCKET & CONEXÃO
+// =============================================================================
+export interface ConnectionContext {
+  userId: string;
+  username: string;
+  serverId: string;
+  isSpectator: boolean;
+  roomId?: string;
+}
+
+export interface ConnectionMetadata {
+  connectedAt: Date;
+  userAgent?: string;
+  ip?: string;
+  origin?: string;
+}
+
+export interface WebSocketConnection {
+  id: string;
+  ws: WebSocket;
+  context: ConnectionContext;
+  metadata: ConnectionMetadata;
+  isAlive: boolean;
+  lastPing: number;
+  reconnectAttempts: number;
+}
+
+export interface WebSocketMessage {
+  type: string;
+  timestamp: string;
+  data?: any;
+  messageId?: string;
+}
+
+export interface URLParseResult {
+  isValid: boolean;
+  path: string;
+  roomId?: string;
+  serverId?: string;
+}
+
+export interface MessageValidationResult {
+  isValid: boolean;
+  message?: WebSocketMessage;
   error?: string;
 }
 
-// ✅ ADICIONADO: Tipos para reset de senha
-export interface ForgotPasswordRequest {
-  email: string;
+// ✅ ATUALIZADO: Adicionados novos códigos de erro
+export type WebSocketErrorCode =
+  | 'INVALID_TOKEN' | 'ROOM_NOT_FOUND' | 'ROOM_FULL' | 'NOT_IN_ROOM'
+  | 'NOT_HOST' | 'GAME_ALREADY_STARTED' | 'INVALID_ACTION'
+  | 'PLAYER_NOT_FOUND' | 'RATE_LIMITED' | 'INVALID_MESSAGE'
+  | 'UNKNOWN_MESSAGE_TYPE' | 'HANDLER_ERROR' | 'MISSING_ROOM_ID'
+  | 'JOIN_ROOM_FAILED' | 'LEAVE_ROOM_FAILED' | 'READY_UPDATE_FAILED'
+  | 'START_GAME_FAILED' | 'KICK_PLAYER_FAILED' | 'NOT_IMPLEMENTED'
+  | 'DELETE_ROOM_FAILED' | 'CHAT_FAILED'; // ✅ NOVOS
+
+// =============================================================================
+// GAME TYPES (COMPATÍVEIS COM CLASSES REAIS)
+// =============================================================================
+export type RoomStatus = 'WAITING' | 'PLAYING' | 'FINISHED';
+export type GameStatus = 'WAITING' | 'STARTING' | 'PLAYING' | 'FINISHED' | 'CANCELLED';
+
+export interface Room {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  status: RoomStatus;
+  hostId: string;
+  hostUsername: string;
+  currentPlayers: number;
+  currentSpectators: number;
+  createdAt: Date;
+  updatedAt: Date;
+  code?: string;
+  serverId?: string;
 }
 
-export interface ResetPasswordRequest {
-  token: string;
-  password: string;
-  confirmPassword: string;
+export interface GameConfig {
+  roomId: string;
+  maxPlayers: number;
+  maxSpectators: number;
+  nightDuration: number; // milliseconds
+  dayDuration: number; // milliseconds
+  votingDuration: number; // milliseconds
+  allowReconnection: boolean;
+  reconnectionTimeout: number; // milliseconds
 }
 
 // =============================================================================
-// GAME TYPES
+// PLAYER INTERFACE (COMPATÍVEL COM CLASSE Player)
 // =============================================================================
-export enum GamePhase {
-  LOBBY = 'LOBBY',
-  NIGHT = 'NIGHT',
-  DAY = 'DAY',
-  VOTING = 'VOTING',
-  ENDED = 'ENDED',
-}
-
-export enum Role {
-  VILLAGER = 'VILLAGER',
-  SHERIFF = 'SHERIFF',
-  DOCTOR = 'DOCTOR',
-  VIGILANTE = 'VIGILANTE',
-  WEREWOLF = 'WEREWOLF',
-  WEREWOLF_KING = 'WEREWOLF_KING',
-  JESTER = 'JESTER',
-  SERIAL_KILLER = 'SERIAL_KILLER',
-}
-
-export enum Faction {
-  TOWN = 'TOWN',
-  WEREWOLF = 'WEREWOLF',
-  NEUTRAL = 'NEUTRAL',
-}
-
 export interface Player {
   id: string;
   userId: string;
   username: string;
-  nickname?: string;
-  avatar?: string;
-  role?: Role;
-  faction?: Faction;
-  isAlive: boolean;
   isHost: boolean;
   isReady: boolean;
   isSpectator: boolean;
   isConnected: boolean;
-  votedFor?: string;
-  votesReceived: number;
-  hasActed: boolean;
-  houseNumber?: number; // Para Town of Salem visual
+  joinedAt: Date;
+  lastSeen: Date;
+  avatar?: string;
 
-  // ✅ ADICIONADO: Campos extras para gameplay
+  // Game-specific properties
+  role?: Role;
+  faction?: Faction;
+  isAlive?: boolean;
   isProtected?: boolean;
-  isJailed?: boolean;
-  lastWill?: string;
-  deathNote?: string;
+  hasActed?: boolean;
+  hasVoted?: boolean;
+  votedFor?: string;
+  actionsUsed?: number;
+  maxActions?: number;
+  lastAction?: string;
+  eliminationReason?: 'NIGHT_KILL' | 'EXECUTION' | 'VIGILANTE' | 'SERIAL_KILLER';
   killedBy?: string;
-  diedAt?: string;
 }
 
+// =============================================================================
+// GAME STATE INTERFACE (COMPATÍVEL COM CLASSE GameState)
+// ✅ MUDANÇA CHAVE: Usar estruturas que a classe realmente usa
+// =============================================================================
 export interface GameState {
   gameId: string;
   roomId: string;
+  status: GameStatus;
   phase: GamePhase;
+  day: number;
+  phaseStartTime: Date;
+  phaseEndTime: Date;
   timeLeft: number;
-  currentDay: number;
-  players: Player[];
-  spectators: Player[];
-  events: GameEvent[];
-  yourRole?: Role;
-  yourFaction?: Faction;
-  winners?: {
-    faction: Faction;
-    players: string[];
-  };
 
-  // ✅ ADICIONADO: Estado adicional do jogo
-  phaseHistory: GamePhase[];
+  // ✅ IMPORTANTE: Compatível com a classe real que usa Map
+  players: Player[]; // Para serialização JSON
+  spectators: string[]; // IDs dos espectadores  
   eliminatedPlayers: Player[];
+
+  hostId: string;
+  events: GameEvent[];
+  votes: Record<string, string>; // Para serialização JSON - voterId -> targetId
   nightActions: NightAction[];
-  votingResults: VotingResult[];
+  config: GameConfig;
+  createdAt: Date;
+  updatedAt: Date;
+  startedAt?: Date;
+  finishedAt?: Date;
+  winningFaction?: Faction;
+  winningPlayers?: string[];
 }
 
 export interface GameEvent {
   id: string;
   type: string;
-  message: string;
-  timestamp: string;
-  visible: boolean;
   phase: GamePhase;
   day: number;
-
-  // ✅ ADICIONADO: Contexto adicional
-  playerId?: string;
-  targetId?: string;
-  metadata?: Record<string, any>;
+  timestamp: Date;
+  data: any;
+  visibleTo?: string[]; // If undefined, visible to all
 }
 
-// ✅ ADICIONADO: Tipos para ações noturnas
 export interface NightAction {
-  id: string;
   playerId: string;
-  targetId?: string;
-  action: string;
-  timestamp: string;
-  successful: boolean;
-  blocked?: boolean;
-  reason?: string;
-}
-
-// =============================================================================
-// ROOM TYPES
-// =============================================================================
-export interface Room {
-  id: string;
-  name: string;
-  code?: string;
-  isPrivate: boolean;
-  maxPlayers: number;
-  maxSpectators: number;
-  currentPlayers: number;
-  currentSpectators: number;
-  status: 'WAITING' | 'PLAYING' | 'FINISHED';
-  hostId: string;
-  hostUsername: string;
-  canJoin: boolean;
-  createdAt: string;
-  updatedAt?: string;
-
-  // ✅ ADICIONADO: Configurações da sala
-  settings: RoomSettings;
-}
-
-// ✅ ADICIONADO: Configurações detalhadas da sala
-export interface RoomSettings {
-  gameMode: 'CLASSIC' | 'RANKED' | 'CUSTOM';
-  timeDay: number; // segundos
-  timeNight: number; // segundos
-  timeVoting: number; // segundos
-  allowSpectators: boolean;
-  autoStart: boolean;
-  customRoles?: Role[];
-  bannedPlayers?: string[];
-}
-
-export interface CreateRoomRequest {
-  name: string;
-  isPrivate?: boolean;
-  maxPlayers?: number;
-  maxSpectators?: number;
-  settings?: Partial<RoomSettings>;
-}
-
-// =============================================================================
-// ✅ WEBSOCKET TYPES - MELHORADOS
-// =============================================================================
-export interface WebSocketMessage {
   type: string;
+  targetId?: string;
   data?: any;
-  timestamp?: string;
-  messageId?: string;
-  roomId?: string;
-  userId?: string;
+  priority: number;
 }
 
+// =============================================================================
+// ✅ CHAT TYPES (MELHORADOS)
+// =============================================================================
 export interface ChatMessage {
   id: string;
   userId: string;
@@ -260,71 +226,333 @@ export interface ChatMessage {
   editedAt?: string;
 }
 
-export enum SocketEvent {
-  // Connection
-  CONNECT = 'connect',
-  DISCONNECT = 'disconnect',
-  ERROR = 'error',
-  AUTH = 'auth',
+// =============================================================================
+// GAME ENGINE INTERFACES
+// =============================================================================
+export interface IGameEngine {
+  // Game lifecycle
+  createGame(hostId: string, config: GameConfig): Promise<GameState>;
+  startGame(gameId: string): Promise<boolean>;
+  endGame(gameId: string, reason?: string): Promise<void>;
 
+  // Player management
+  addPlayer(gameId: string, player: Player): Promise<boolean>;
+  removePlayer(gameId: string, playerId: string): Promise<boolean>;
+
+  // Game state
+  getGameState(gameId: string): Promise<GameState | null>;
+  updateGameState(gameId: string, updates: Partial<GameState>): Promise<void>;
+
+  // Actions
+  performPlayerAction(gameId: string, playerId: string, action: any): Promise<boolean>;
+
+  // Phase management
+  nextPhase(gameId: string): Promise<void>;
+
+  // Events
+  onGameEvent(gameId: string, event: string, handler: (data: any) => void): void;
+
+  // Voting
+  castVote?(gameId: string, voterId: string, targetId: string): Promise<boolean>;
+  removeVote?(gameId: string, voterId: string): Promise<boolean>;
+
+  // Administrative
+  getActiveGamesCount?(): number;
+  getAllGames?(): GameState[];
+  getGamesByRoom?(roomId: string): Promise<GameState[]>;
+  forceEndGame?(gameId: string, reason: string): Promise<boolean>;
+  getGameStats?(gameId: string): any;
+  cleanup?(): Promise<void>;
+}
+
+// =============================================================================
+// ROLE SYSTEM TYPES (IMPORTADOS DE RoleSystem.ts)
+// =============================================================================
+export interface RoleConfiguration {
+  role: Role;
+  faction: Faction;
+  name: string;
+  description: string;
+  abilities: string[];
+  goalDescription: string;
+  canAct: boolean;
+  actsDuring: string[];
+  hasNightChat: boolean;
+  immuneToInvestigation: boolean;
+  maxActions?: number;
+  priority: number;
+}
+
+export type RoleDistribution = Record<Role, number>;
+
+// =============================================================================
+// ACTION SYSTEM TYPES
+// =============================================================================
+export interface GameAction {
+  id: string;
+  playerId: string;
+  type: string;
+  targetId?: string;
+  data?: any;
+  timestamp: Date;
+  phase: string;
+  day: number;
+  priority: number;
+  isValid: boolean;
+  processed: boolean;
+}
+
+export interface ActionResult {
+  success: boolean;
+  actionId: string;
+  message?: string;
+  data?: any;
+  errors?: string[];
+}
+
+// =============================================================================
+// TIMER SYSTEM TYPES
+// =============================================================================
+export interface GameTimer {
+  id: string;
+  type: 'PHASE' | 'WARNING' | 'CUSTOM';
+  startTime: number;
+  duration: number;
+  remaining: number;
+  isActive: boolean;
+  callback?: () => void;
+  timeout?: NodeJS.Timeout; // ✅ Nome correto
+}
+
+// =============================================================================
+// SERVICE INTERFACES (CORRIGIDOS)
+// =============================================================================
+export interface ServiceMetadata {
+  id: string;
+  type: 'lobby' | 'game' | 'chat' | 'monolith';
+  host: string;
+  port: number;
+  capabilities: string[];
+  status: 'healthy' | 'unhealthy';
+  lastHeartbeat: Date;
+  maxRooms?: number;
+  currentRooms?: number;
+}
+
+export interface IEventBus {
+  publish<T>(channel: string, event: T): Promise<void>;
+  subscribe<T>(channel: string, handler: (event: T) => void): Promise<void>;
+  unsubscribe(channel: string, handler?: Function): Promise<void>;
+  healthCheck?(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }>;
+}
+
+export interface IServiceRegistry {
+  registerService(serviceId: string, metadata: ServiceMetadata): Promise<void>;
+  getAvailableServices(serviceType: string): Promise<string[]>;
+  unregisterService(serviceId: string): Promise<void>;
+  getServiceMetadata(serviceId: string): Promise<ServiceMetadata | null>;
+  healthCheck?(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }>;
+}
+
+// ✅ INTERFACE CORRIGIDA - Agora retorna GameState em vez de Game inexistente
+export interface IGameStateService {
+  createGame(hostId: string, config: GameConfig): Promise<GameState>;
+  getGame(gameId: string): Promise<GameState | null>;
+  updateGameState(gameId: string, updates: Partial<GameState>): Promise<void>;
+  deleteGame(gameId: string): Promise<void>;
+  addPlayer(gameId: string, player: Player): Promise<void>;
+  removePlayer(gameId: string, playerId: string): Promise<void>;
+  updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void>;
+  getGameState(gameId: string): Promise<GameState | null>;
+  getPlayer(gameId: string, playerId: string): Promise<Player | null>;
+  getAllPlayers(gameId: string): Promise<Player[]>;
+  getGamesByRoom(roomId: string): Promise<GameState[]>;
+  getActiveGamesCount(): Promise<number>;
+  cleanup?(): number;
+  healthCheck?(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }>;
+}
+
+// =============================================================================
+// WIN CONDITION TYPES
+// =============================================================================
+export interface WinCondition {
+  hasWinner: boolean;
+  winningFaction?: Faction;
+  winningPlayers?: string[];
+  reason?: string;
+}
+
+// =============================================================================
+// GAME STATISTICS TYPES
+// =============================================================================
+export interface GameStats {
+  gameId: string;
+  status: GameStatus;
+  phase: GamePhase;
+  day: number;
+  playerCount: number;
+  aliveCount: number;
+  spectatorCount: number;
+  timeLeft: number;
+  events: number;
+}
+
+export interface GameResults {
+  gameId: string;
+  roomId: string;
+  duration: number;
+  totalDays: number;
+  winningFaction?: Faction;
+  winningPlayers: string[];
+  players: PlayerResult[];
+  events: GameEvent[];
+}
+
+export interface PlayerResult {
+  id: string;
+  userId: string;
+  username: string;
+  role?: Role;
+  faction?: Faction;
+  survived: boolean;
+  won: boolean;
+  eliminationReason?: string;
+  killedBy?: string;
+}
+
+// =============================================================================
+// PHASE MANAGER TYPES
+// =============================================================================
+export interface PhaseTransition {
+  from: GamePhase;
+  to: GamePhase;
+  duration: number;
+  reason?: string;
+}
+
+export interface NightResults {
+  protections: string[];
+  investigations: Array<{
+    investigatorId: string;
+    targetId: string;
+    result: 'SUSPICIOUS' | 'NOT_SUSPICIOUS';
+  }>;
+  attacks: Array<{
+    attackerId: string;
+    targetId: string;
+    successful: boolean;
+  }>;
+  deaths: Array<{
+    playerId: string;
+    cause: string;
+    killedBy?: string;
+  }>;
+}
+
+// =============================================================================
+// ✅ WEBSOCKET EVENT TYPES (ATUALIZADOS)
+// =============================================================================
+export interface GameWebSocketEvents {
+  // Game lifecycle events
+  'game:created': { gameId: string; hostId: string; config: GameConfig };
+  'game:started': { gameId: string; players: Player[]; distribution: RoleDistribution };
+  'game:ended': { gameId: string; results: GameResults };
+
+  // Phase events
+  'phase:changed': { gameId: string; phase: GamePhase; duration: number; timeLeft: number };
+  'phase:warning': { gameId: string; phase: GamePhase; timeLeft: number };
+
+  // Player events
+  'player:joined': { gameId: string; player: Player };
+  'player:left': { gameId: string; playerId: string; username: string };
+  'player:died': { gameId: string; playerId: string; role: Role; cause: string };
+  'player:executed': { gameId: string; playerId: string; role: Role; votes: number };
+
+  // Action events
+  'action:submitted': { gameId: string; playerId: string; actionType: string };
+  'action:result': { gameId: string; playerId: string; result: ActionResult };
+
+  // Voting events
+  'vote:cast': { gameId: string; voterId: string; targetId: string; voteCounts: Record<string, number> };
+  'vote:removed': { gameId: string; voterId: string; voteCounts: Record<string, number> };
+
+  // ✅ NOVOS: Room events
+  'room:deleted': { roomId: string; reason: string; timestamp: string };
+  'room:player-joined': { roomId: string; userId: string; username: string; asSpectator: boolean; timestamp: string };
+  'room:player-left': { roomId: string; userId: string; username: string; timestamp: string };
+  'room:player-ready': { roomId: string; userId: string; username: string; ready: boolean; timestamp: string };
+  'room:game-started': { roomId: string; hostId: string; timestamp: string };
+}
+
+// =============================================================================
+// ✅ WEBSOCKET MESSAGE TYPES (ATUALIZADOS)
+// =============================================================================
+export interface ClientToServerEvents {
   // Room events
-  JOIN_ROOM = 'join-room',
-  LEAVE_ROOM = 'leave-room',
-  PLAYER_READY = 'player-ready',
-  START_GAME = 'start-game',
-  ROOM_UPDATED = 'room-updated',
+  'join-room': { roomId: string; asSpectator?: boolean };
+  'leave-room': { roomId?: string };
+  'delete-room': { roomId?: string }; // ✅ NOVO
+  'player-ready': { ready: boolean };
+  'start-game': {};
 
-  // Game events
-  GAME_STATE = 'game-state',
-  PHASE_CHANGE = 'phase-change',
-  GAME_ACTION = 'game-action',
-  VOTE = 'vote',
-  NIGHT_ACTION = 'night-action',
+  // Game actions
+  'game-action': { type: string; targetId?: string; data?: any };
+  'vote': { targetId: string };
+  'unvote': {};
 
   // Chat events
-  CHAT_MESSAGE = 'chat-message',
-  WHISPER = 'whisper',
+  'chat-message': { message: string; channel?: string };
 
-  // System events
-  PLAYER_JOINED = 'player-joined',
-  PLAYER_LEFT = 'player-left',
-  PLAYER_DISCONNECTED = 'player-disconnected',
-  PLAYER_RECONNECTED = 'player-reconnected',
-  GAME_STARTED = 'game-started',
-  GAME_ENDED = 'game-ended',
-  PLAYER_ELIMINATED = 'player-eliminated',
-  SYSTEM_MESSAGE = 'system-message',
+  // Werewolf coordination
+  'werewolf-kill-vote': { targetId: string };
+
+  // Admin events
+  'kick-player': { playerId: string };
+  'force-phase': {};
+  'extend-time': { additionalTime: number };
 }
 
-// =============================================================================
-// VOTING TYPES
-// =============================================================================
-export interface Vote {
-  voterId: string;
-  targetId: string;
-  timestamp: string;
-  weight?: number; // Para roles especiais
-}
+export interface ServerToClientEvents {
+  // Connection events
+  'connected': { userId: string };
+  'error': { code: WebSocketErrorCode; message: string };
 
-export interface VotingResult {
-  eliminated?: {
-    playerId: string;
-    username: string;
-    role: Role;
-    voteCount: number;
-  };
-  votes: VoteCount[];
-  isTie: boolean;
-  abstentions: number;
-  totalVoters: number;
-}
+  // Room events
+  'room-joined': { room: Room; player: Player; yourRole: string };
+  'room-left': { roomId: string };
+  'room-deleted': { roomId: string; reason: string; timestamp: string }; // ✅ NOVO
+  'player-joined': { player: Player };
+  'player-left': { userId: string; username: string };
+  'player-ready': { userId: string; username: string; ready: boolean };
 
-export interface VoteCount {
-  playerId: string;
-  username: string;
-  votes: number;
-  voters: string[];
-  percentage: number;
+  // Game events
+  'game-starting': { countdown: number };
+  'game-started': { gameId: string; players: Player[]; spectators: Player[] };
+  'game-state': GameState;
+  'game-ended': { results: GameResults };
+
+  // Phase events
+  'phase-changed': { phase: GamePhase; timeLeft: number; day: number };
+  'phase-warning': { timeLeft: number };
+
+  // Action events
+  'action-confirmed': { actionType: string; message: string };
+  'action-failed': { actionType: string; error: string };
+
+  // Voting events
+  'voting-update': { votes: Record<string, string>; counts: Record<string, number> };
+  'execution-result': { executedId?: string; executedName?: string; executedRole?: Role };
+
+  // Night events
+  'night-results': { deaths: any[]; messages: string[] };
+  'investigation-result': { targetName: string; result: 'SUSPICIOUS' | 'NOT_SUSPICIOUS' };
+
+  // Chat events
+  'chat-message': { userId: string; username: string; message: string; channel: string; timestamp: string };
+
+  // Role-specific events
+  'role-assigned': { role: Role; faction: Faction; abilities: string[] };
+  'werewolf-chat': { senderId: string; senderName: string; message: string };
 }
 
 // =============================================================================
@@ -364,20 +592,6 @@ export interface NotificationConfig {
 // =============================================================================
 // ✅ API RESPONSE TYPES - MELHORADOS
 // =============================================================================
-export interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
-  timestamp: string;
-  statusCode?: number;
-
-  // ✅ ADICIONADO: Metadata da resposta
-  requestId?: string;
-  version?: string;
-  cached?: boolean;
-}
-
 export interface PaginatedResponse<T> {
   items: T[];
   pagination: {
@@ -506,7 +720,7 @@ export interface ModalProps {
 
   // ✅ ADICIONADO: Props extras
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  variant?: 'default' | 'medieval' | 'dark';
+  variant?: 'default' | 'medieval' | 'dark' | 'error' | 'warning'; // ✅ ATUALIZADO
   showCloseButton?: boolean;
   preventScroll?: boolean;
   zIndex?: number;
@@ -549,220 +763,17 @@ export interface FormState<T = Record<string, any>> {
 }
 
 // =============================================================================
-// ✅ AUDIO TYPES - EXPANDIDOS
+// ✅ ROOM SETTINGS TYPES
 // =============================================================================
-export interface AudioConfig {
-  musicVolume: number;
-  sfxVolume: number;
-  enabled: boolean;
-
-  // ✅ ADICIONADO: Configurações avançadas
-  muteOnBackground: boolean;
-  spatialAudio: boolean;
-  audioQuality: 'low' | 'medium' | 'high';
-}
-
-export interface SoundEffect {
-  id: string;
-  url: string;
-  volume?: number;
-  loop?: boolean;
-
-  // ✅ ADICIONADO: Propriedades extras
-  preload?: boolean;
-  category: 'ui' | 'game' | 'ambient' | 'voice';
-  duration?: number;
-  fadeIn?: number;
-  fadeOut?: number;
-}
-
-export interface MusicTrack {
-  id: string;
-  name: string;
-  url: string;
-  loop: boolean;
-  volume: number;
-
-  // ✅ ADICIONADO: Metadata da música
-  artist?: string;
-  duration?: number;
-  genre?: string;
-  mood?: 'calm' | 'tense' | 'action' | 'victory' | 'defeat';
-}
-
-// =============================================================================
-// ✅ ACCESSIBILITY TYPES
-// =============================================================================
-export interface AccessibilityConfig {
-  reduceMotion: boolean;
-  highContrast: boolean;
-  largeText: boolean;
-  screenReader: boolean;
-  keyboardNavigation: boolean;
-  colorBlindFriendly: boolean;
-}
-
-// =============================================================================
-// ✅ PERFORMANCE TYPES
-// =============================================================================
-export interface PerformanceMetrics {
-  fps: number;
-  memoryUsage: number;
-  networkLatency: number;
-  renderTime: number;
-  jsHeapSize: number;
-}
-
-// =============================================================================
-// ✅ ERROR HANDLING TYPES
-// =============================================================================
-export interface ErrorInfo {
-  message: string;
-  stack?: string;
-  code?: string | number;
-  timestamp: string;
-  userId?: string;
-  context?: Record<string, any>;
-}
-
-export interface ErrorBoundaryState {
-  hasError: boolean;
-  error?: Error;
-  errorInfo?: ErrorInfo;
-}
-
-// =============================================================================
-// ✅ LOCALIZATION TYPES
-// =============================================================================
-export interface LocaleConfig {
-  language: string;
-  region: string;
-  dateFormat: string;
-  timeFormat: string;
-  numberFormat: string;
-  currency: string;
-}
-
-export interface TranslationKey {
-  key: string;
-  defaultValue: string;
-  interpolation?: Record<string, any>;
-}
-
-// =============================================================================
-// ✅ ANALYTICS TYPES
-// =============================================================================
-export interface AnalyticsEvent {
-  event: string;
-  category: string;
-  action: string;
-  label?: string;
-  value?: number;
-  customData?: Record<string, any>;
-  timestamp: string;
-}
-
-export interface UserSession {
-  sessionId: string;
-  userId?: string;
-  startTime: string;
-  endTime?: string;
-  pageViews: number;
-  events: AnalyticsEvent[];
-  device: {
-    type: 'desktop' | 'mobile' | 'tablet';
-    os: string;
-    browser: string;
-  };
-}
-
-// =============================================================================
-// ✅ SECURITY TYPES
-// =============================================================================
-export interface SecurityConfig {
-  rateLimit: {
-    requests: number;
-    window: number; // milliseconds
-  };
-  csrf: {
-    enabled: boolean;
-    tokenName: string;
-  };
-  encryption: {
-    algorithm: string;
-    keyLength: number;
-  };
-}
-
-export interface Permission {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-}
-
-export interface Role {
-  id: string;
-  name: string;
-  permissions: Permission[];
-  isAdmin: boolean;
-}
-
-// =============================================================================
-// ✅ FILE HANDLING TYPES
-// =============================================================================
-export interface FileUpload {
-  file: File;
-  progress: number;
-  status: 'pending' | 'uploading' | 'completed' | 'error';
-  error?: string;
-  url?: string;
-}
-
-export interface FileConfig {
-  maxSize: number; // bytes
-  allowedTypes: string[];
-  allowedExtensions: string[];
-  compressionEnabled: boolean;
-  compressionQuality: number;
-}
-
-// =============================================================================
-// ✅ CACHE TYPES
-// =============================================================================
-export interface CacheConfig {
-  ttl: number; // time to live in milliseconds
-  maxSize: number; // maximum items in cache
-  strategy: 'lru' | 'fifo' | 'lfu';
-}
-
-export interface CacheItem<T = any> {
-  key: string;
-  value: T;
-  timestamp: number;
-  ttl: number;
-  hits: number;
-}
-
-// =============================================================================
-// ✅ WEBHOOK TYPES
-// =============================================================================
-export interface WebhookEvent {
-  id: string;
-  type: string;
-  data: any;
-  timestamp: string;
-  signature?: string;
-  retryCount: number;
-}
-
-export interface WebhookConfig {
-  url: string;
-  secret: string;
-  events: string[];
-  active: boolean;
-  retryAttempts: number;
-  retryDelay: number;
+export interface RoomSettings {
+  gameMode: 'CLASSIC' | 'RANKED' | 'CUSTOM';
+  timeDay: number; // segundos
+  timeNight: number; // segundos
+  timeVoting: number; // segundos
+  allowSpectators: boolean;
+  autoStart: boolean;
+  customRoles?: Role[];
+  bannedPlayers?: string[];
 }
 
 // =============================================================================
@@ -819,7 +830,7 @@ export interface FeatureFlags {
 // =============================================================================
 
 // Type guards
-export function isUser(obj: any): obj is User {
+export function isUser(obj: any): obj is Player {
   return obj && typeof obj.id === 'string' && typeof obj.username === 'string';
 }
 
@@ -844,7 +855,7 @@ export function createGameId(id: string): GameId {
   return id as GameId;
 }
 
-// Default values
+// ✅ DEFAULT VALUES (ATUALIZADOS)
 export const DEFAULT_USER_STATS: UserStatistics = {
   totalGames: 0,
   totalWins: 0,
@@ -875,50 +886,13 @@ export const DEFAULT_THEME_CONFIG: ThemeConfig = {
   colorBlindMode: false,
 };
 
-export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
-  musicVolume: 0.7,
-  sfxVolume: 0.8,
-  enabled: true,
-  muteOnBackground: true,
-  spatialAudio: false,
-  audioQuality: 'medium',
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
+  gameMode: 'CLASSIC',
+  timeDay: 300, // 5 minutos
+  timeNight: 120, // 2 minutos
+  timeVoting: 60, // 1 minuto
+  allowSpectators: true,
+  autoStart: false,
+  customRoles: [],
+  bannedPlayers: [],
 };
-
-export const DEFAULT_ACCESSIBILITY_CONFIG: AccessibilityConfig = {
-  reduceMotion: false,
-  highContrast: false,
-  largeText: false,
-  screenReader: false,
-  keyboardNavigation: true,
-  colorBlindFriendly: false,
-};
-
-export interface RoomSettings {
-  gameMode: 'CLASSIC' | 'RANKED' | 'CUSTOM';
-  timeDay: number; // segundos
-  timeNight: number; // segundos
-  timeVoting: number; // segundos
-  allowSpectators: boolean;
-  autoStart: boolean;
-  customRoles?: Role[];
-  bannedPlayers?: string[];
-}
-
-// Atualizar interface Room existente para incluir settings:
-export interface Room {
-  id: string;
-  name: string;
-  code?: string;
-  isPrivate: boolean;
-  maxPlayers: number;
-  maxSpectators: number;
-  currentPlayers: number;
-  currentSpectators: number;
-  status: 'WAITING' | 'PLAYING' | 'FINISHED';
-  hostId: string;
-  hostUsername: string;
-  canJoin: boolean;
-  createdAt: string;
-  updatedAt?: string;
-  settings: RoomSettings; // ✅ NOVO CAMPO
-}

@@ -25,14 +25,21 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Se já está conectado na mesma URL, não faz nada
+    // ✅ CORRIGIDO: Verificar se já está conectado na mesma URL com readyState
     if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.OPEN) {
       console.log('✅ Already connected to', url);
       return;
     }
 
+    // ✅ CORRIGIDO: Verificar se há conexão pendente para a mesma URL
+    if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.CONNECTING) {
+      console.log('⏳ Connection already in progress for', url);
+      return;
+    }
+
     // Desconecta conexão anterior se existir
     if (socketRef.current) {
+      console.log('🔄 Closing previous connection');
       socketRef.current.close();
     }
 
@@ -58,43 +65,81 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         }
       };
 
-      ws.onclose = () => {
-        console.log('🔌 WebSocket disconnected');
+      ws.onclose = (event) => {
+        console.log('🔌 WebSocket disconnected', {
+          code: event.code,
+          reason: event.reason || 'No reason provided',
+          wasClean: event.wasClean
+        });
         setSocket(null);
         setIsConnected(false);
-        socketRef.current = null;
+
+        // ✅ CORRIGIDO: Só limpar ref se for a conexão atual
+        if (socketRef.current === ws) {
+          socketRef.current = null;
+        }
       };
 
       ws.onerror = (error) => {
         console.error('❌ WebSocket error:', error);
+        // ✅ ADICIONADO: Atualizar estado em caso de erro
+        setSocket(null);
+        setIsConnected(false);
       };
 
     } catch (error) {
       console.error('❌ Failed to create WebSocket:', error);
+      setSocket(null);
+      setIsConnected(false);
     }
   }, []);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
       console.log('🔌 Disconnecting WebSocket');
-      socketRef.current.close();
+
+      // ✅ CORRIGIDO: Verificar estado antes de fechar
+      if (socketRef.current.readyState === WebSocket.OPEN ||
+        socketRef.current.readyState === WebSocket.CONNECTING) {
+        socketRef.current.close();
+      }
+
       socketRef.current = null;
       setSocket(null);
       setIsConnected(false);
     }
   }, []);
 
+  // ✅ CORRIGIDO: Usar readyState real do socket em vez do estado React
   const sendMessage = useCallback((type: string, data?: any): boolean => {
+    // ✅ Verificar estado real do WebSocket
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       try {
-        socketRef.current.send(JSON.stringify({ type, data }));
+        const message = {
+          type,
+          data,
+          timestamp: new Date().toISOString(),
+        };
+        socketRef.current.send(JSON.stringify(message));
+        console.log('📤 Message sent:', type, data);
         return true;
       } catch (error) {
         console.error('❌ Error sending message:', error);
         return false;
       }
     }
-    console.warn('⚠️ WebSocket not connected');
+
+    // ✅ MELHOR: Log mais informativo sobre o estado atual
+    const currentState = socketRef.current?.readyState;
+    const stateNames = {
+      [WebSocket.CONNECTING]: 'CONNECTING',
+      [WebSocket.OPEN]: 'OPEN',
+      [WebSocket.CLOSING]: 'CLOSING',
+      [WebSocket.CLOSED]: 'CLOSED'
+    };
+
+    console.warn('⚠️ Cannot send message - WebSocket state:',
+      currentState !== undefined ? stateNames[currentState] : 'NULL');
     return false;
   }, []);
 

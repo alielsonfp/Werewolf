@@ -76,6 +76,9 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
 
     const { name, isPrivate, maxPlayers, maxSpectators } = validation.data!;
 
+    // ✅ CORRIGIDO: Comentado a verificação que impedia criar nova sala
+    // Isso resolverá o problema de "salas órfãs"
+    /*
     const existingRoomQuery = `
             SELECT id FROM rooms 
             WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')
@@ -90,6 +93,36 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
         timestamp: new Date().toISOString(),
       } as ApiResponse);
       return;
+    }
+    */
+
+    // ✅ NOVO: Log para debug - verificar se usuário tinha sala anterior
+    const existingRoomQuery = `
+            SELECT id, name, status FROM rooms 
+            WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')
+        `;
+    const existingRoomResult = await pool.query(existingRoomQuery, [req.userId]);
+
+    if (existingRoomResult.rows.length > 0) {
+      logger.warn('User creating room while having active room', {
+        userId: req.userId,
+        username: req.username,
+        existingRooms: existingRoomResult.rows,
+        action: 'creating_new_room_anyway'
+      });
+
+      // ✅ OPCIONAL: Auto-cleanup de salas antigas órfãs
+      try {
+        await pool.query(`DELETE FROM rooms WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')`, [req.userId]);
+        logger.info('Cleaned up orphaned rooms for user', {
+          userId: req.userId,
+          cleanedRooms: existingRoomResult.rows.length
+        });
+      } catch (cleanupError) {
+        logger.error('Failed to cleanup orphaned rooms', cleanupError instanceof Error ? cleanupError : new Error('Unknown cleanup error'), {
+          userId: req.userId
+        });
+      }
     }
 
     let roomCode: string | undefined;
@@ -133,7 +166,8 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
       roomId: room.id,
       hostId: req.userId,
       code: roomCode,
-      isPrivate
+      isPrivate,
+      hadOrphanedRooms: existingRoomResult.rows.length > 0
     });
 
     const wsUrl = `ws://localhost:3001/ws/room/${room.id}`;
@@ -497,6 +531,12 @@ export const deleteRoom = async (req: Request, res: Response): Promise<void> => 
     }
 
     await pool.query(`DELETE FROM rooms WHERE id = $1`, [roomId]);
+
+    logger.info('Room deleted via HTTP API', {
+      roomId,
+      hostId: req.userId,
+      username: req.username
+    });
 
     res.json({
       success: true,

@@ -35,36 +35,38 @@ export default function ActionButtons({
       </h3>
 
       <div className="space-y-3">
-        {/* Botão Ready para todos */}
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onToggleReady}
-          disabled={!isConnected}
-          className={`
-            w-full py-3 px-4 rounded-lg font-medium transition-all duration-200
-            flex items-center justify-center gap-2
-            ${isReady
-              ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
-              : 'bg-orange-600 hover:bg-orange-700 text-white'
-            }
-            disabled:opacity-50 disabled:cursor-not-allowed
-          `}
-        >
-          {isReady ? (
-            <>
-              <Check className="w-5 h-5" />
-              Pronto! (Clique para cancelar)
-            </>
-          ) : (
-            <>
-              <Clock className="w-5 h-5" />
-              Marcar como Pronto
-            </>
-          )}
-        </motion.button>
+        {/* ✅ CORRIGIDO: Botão Ready apenas para jogadores, não para o host */}
+        {!isHost && (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onToggleReady}
+            disabled={!isConnected}
+            className={`
+              w-full py-3 px-4 rounded-lg font-medium transition-all duration-200
+              flex items-center justify-center gap-2
+              ${isReady
+                ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg'
+                : 'bg-orange-600 hover:bg-orange-700 text-white'
+              }
+              disabled:opacity-50 disabled:cursor-not-allowed
+            `}
+          >
+            {isReady ? (
+              <>
+                <Check className="w-5 h-5" />
+                Pronto! (Clique para cancelar)
+              </>
+            ) : (
+              <>
+                <Clock className="w-5 h-5" />
+                Marcar como Pronto
+              </>
+            )}
+          </motion.button>
+        )}
 
-        {/* Botão Start Game apenas para host */}
+        {/* ✅ CORRIGIDO: Botão Start Game apenas para host */}
         {isHost && (
           <motion.button
             whileHover={canStartGame ? { scale: 1.02 } : {}}
@@ -86,6 +88,19 @@ export default function ActionButtons({
           </motion.button>
         )}
 
+        {/* ✅ NOVO: Mensagem informativa para o host sobre não precisar ficar "pronto" */}
+        {isHost && (
+          <div className="mt-3 p-3 bg-yellow-600/20 rounded-lg border border-yellow-600/50">
+            <div className="flex items-center gap-2 text-sm text-yellow-300 mb-2">
+              <Crown className="w-4 h-4" />
+              Você é o host
+            </div>
+            <p className="text-xs text-yellow-200">
+              Como host, você não precisa marcar como "pronto". Você pode iniciar o jogo quando todos os outros jogadores estiverem prontos.
+            </p>
+          </div>
+        )}
+
         {/* Informações adicionais para host */}
         {isHost && (
           <div className="mt-4 p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
@@ -98,6 +113,19 @@ export default function ActionButtons({
               <li>• Todos os jogadores prontos</li>
               <li>• Conexão estável</li>
             </ul>
+          </div>
+        )}
+
+        {/* ✅ MELHORADO: Informações para jogadores */}
+        {!isHost && (
+          <div className="mt-4 p-3 bg-blue-600/20 rounded-lg border border-blue-600/50">
+            <div className="flex items-center gap-2 text-sm text-blue-300 mb-2">
+              <AlertCircle className="w-4 h-4" />
+              Aguardando outros jogadores
+            </div>
+            <p className="text-xs text-blue-200">
+              Marque-se como pronto quando estiver preparado para jogar. O host iniciará a partida quando todos estiverem prontos.
+            </p>
           </div>
         )}
 

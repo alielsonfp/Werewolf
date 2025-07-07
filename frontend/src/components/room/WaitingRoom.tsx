@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import PlayerList from './PlayerList';
 import RoomChat from './RoomChat';
 import ActionButtons from './ActionButtons';
+import { ConfirmModal } from '@/components/common/Modal';
 
 interface WaitingRoomProps {
   roomId: string;
@@ -27,6 +28,9 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ✅ NOVO: Estado para modal de confirmação de saída do host
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+
   const currentUserId = user?.id || '';
   const isHost = room?.hostId === currentUserId;
   const currentPlayer = players.find(p => p.userId === currentUserId);
@@ -37,10 +41,15 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
     isConnected &&
     isHost;
 
-  // Conectar ao WebSocket quando o componente montar
+  // ✅ CORRIGIDO: Conectar ao WebSocket com dependências estáveis e verificações adequadas
   useEffect(() => {
-    if (!roomId || !isAuthenticated) {
-      console.log('⚠️ Missing roomId or not authenticated');
+    // ✅ Aguardar router estar pronto e autenticação
+    if (!router.isReady || !isAuthenticated || !roomId) {
+      console.log('⚠️ Waiting for router/auth to be ready', {
+        routerReady: router.isReady,
+        isAuthenticated,
+        roomId
+      });
       return;
     }
 
@@ -55,30 +64,25 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
     const wsBase = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
     const wsUrl = `${wsBase}/ws/${roomId}?token=${encodeURIComponent(token)}`;
 
-    console.log('🎮 Connecting to room:', roomId);
+    console.log('🎮 Initiating connection to room:', roomId);
+
+    // ✅ Conectar ao WebSocket
     connect(wsUrl);
 
-    // Enviar mensagem de join após conectar
-    const handleOpen = () => {
-      console.log('📤 Sending join-room message');
-      sendMessage('join-room', { roomId });
-    };
-
-    // Adicionar listener temporário para o evento de abertura
-    const checkConnection = setInterval(() => {
-      if (isConnected) {
-        handleOpen();
-        clearInterval(checkConnection);
-      }
-    }, 100);
-
-    // Cleanup
+    // ✅ Cleanup apropriado - só executa quando componente realmente desmonta
     return () => {
-      clearInterval(checkConnection);
-      console.log('🎮 Leaving room:', roomId);
+      console.log('🎮 Cleaning up connection for room:', roomId);
       disconnect();
     };
-  }, [roomId, isAuthenticated]); // Removido as dependências problemáticas
+  }, [router.isReady, roomId, isAuthenticated, getToken]); // ✅ Dependências estáveis
+
+  // ✅ CORRIGIDO: Enviar join-room após conexão estabelecida
+  useEffect(() => {
+    if (isConnected && roomId) {
+      console.log('📤 Sending join-room message');
+      sendMessage('join-room', { roomId });
+    }
+  }, [isConnected, roomId, sendMessage]);
 
   // Escutar mensagens do WebSocket
   useEffect(() => {
@@ -89,15 +93,20 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
       switch (type) {
         case 'room-joined':
           setRoom(data.room);
-          setPlayers(data.players || []);
-          setSpectators(data.spectators || []);
+          // ✅ CORRIGIDO: Garantir que players e spectators sejam arrays válidos
+          setPlayers(Array.isArray(data.players) ? data.players : []);
+          setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
           setLoading(false);
           toast.success(`Entrou na sala: ${data.room?.name || roomId}`);
           break;
 
         case 'player-joined':
           if (data.player) {
-            setPlayers(prev => [...prev.filter(p => p.userId !== data.player.userId), data.player]);
+            setPlayers(prev => {
+              // ✅ Evitar duplicatas
+              const filtered = prev.filter(p => p.userId !== data.player.userId);
+              return [...filtered, data.player];
+            });
 
             // Adicionar mensagem do sistema
             const systemMessage: ChatMessage = {
@@ -160,6 +169,12 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
           if (data.spectators) setSpectators(data.spectators);
           break;
 
+        // ✅ NOVO: Evento de sala deletada
+        case 'room-deleted':
+          toast.info('Sala foi encerrada pelo host');
+          router.push('/lobby');
+          break;
+
         case 'error':
           if (data.message) {
             toast.error(data.message);
@@ -206,9 +221,26 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
     }
   };
 
+  // ✅ CORRIGIDO: Lógica de saída diferente para host vs jogadores
   const handleLeaveRoom = () => {
-    disconnect();
-    router.push('/lobby');
+    if (isHost) {
+      // Host precisa de confirmação
+      setShowLeaveModal(true);
+    } else {
+      // Jogadores saem normalmente
+      sendMessage('leave-room', { roomId });
+      disconnect();
+      router.push('/lobby');
+    }
+  };
+
+  // ✅ NOVO: Confirmar encerramento da sala (apenas host)
+  const handleConfirmLeaveAsHost = () => {
+    sendMessage('delete-room', { roomId });
+    // Não precisa chamar disconnect aqui - o backend vai kickar todos
+    setShowLeaveModal(false);
+    toast.info('Encerrando sala...');
+    // O redirect vai acontecer quando recebermos 'room-deleted'
   };
 
   // Loading state
@@ -245,99 +277,113 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-      {/* Header */}
-      <div className="bg-slate-800/80 border-b border-slate-700 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleLeaveRoom}
-                className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+        {/* Header */}
+        <div className="bg-slate-800/80 border-b border-slate-700 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleLeaveRoom}
+                  className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
 
-              <div className="text-3xl">🐺</div>
+                <div className="text-3xl">🐺</div>
 
-              <div>
-                <h1 className="text-2xl font-bold">{room.name}</h1>
-                <div className="flex items-center gap-4 text-sm text-slate-400">
-                  <span>Código: {room.code}</span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    <Crown className="w-4 h-4" />
-                    Host: {room.hostUsername}
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1">
-                    {isConnected ? (
-                      <span className="text-green-400">🟢 Conectado</span>
-                    ) : (
-                      <span className="text-red-400">🔴 Desconectado</span>
-                    )}
-                  </span>
+                <div>
+                  <h1 className="text-2xl font-bold">{room.name}</h1>
+                  <div className="flex items-center gap-4 text-sm text-slate-400">
+                    <span>Código: {room.code}</span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Crown className="w-4 h-4" />
+                      Host: {room.hostUsername}
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      {isConnected ? (
+                        <span className="text-green-400">🟢 Conectado</span>
+                      ) : (
+                        <span className="text-red-400">🔴 Desconectado</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleShareRoom}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Share className="w-4 h-4" />
-                Compartilhar
-              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleShareRoom}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Share className="w-4 h-4" />
+                  Compartilhar
+                </button>
 
-              <div className="text-right">
-                <div className="text-sm text-slate-400">Jogadores Prontos</div>
-                <div className="text-lg font-bold">
-                  {players.filter(p => p.isReady).length}/{players.length}
+                <div className="text-right">
+                  <div className="text-sm text-slate-400">Jogadores Prontos</div>
+                  <div className="text-lg font-bold">
+                    {players.filter(p => p.isReady).length}/{players.length}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Players List */}
-          <div className="lg:col-span-2">
-            <PlayerList
-              players={players}
-              spectators={spectators}
-              currentUserId={currentUserId}
-              isHost={isHost}
-              onKickPlayer={handleKickPlayer}
-              maxPlayers={room.maxPlayers}
-              maxSpectators={room.maxSpectators}
-            />
-          </div>
+        {/* Main Content */}
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Players List */}
+            <div className="lg:col-span-2">
+              <PlayerList
+                players={players}
+                spectators={spectators}
+                currentUserId={currentUserId}
+                isHost={isHost}
+                onKickPlayer={handleKickPlayer}
+                maxPlayers={room.maxPlayers}
+                maxSpectators={room.maxSpectators}
+              />
+            </div>
 
-          {/* Actions and Chat */}
-          <div className="space-y-6">
-            <ActionButtons
-              isHost={isHost}
-              isReady={isReady}
-              canStartGame={canStartGame}
-              isConnected={isConnected}
-              onToggleReady={handleToggleReady}
-              onStartGame={handleStartGame}
-            />
+            {/* Actions and Chat */}
+            <div className="space-y-6">
+              <ActionButtons
+                isHost={isHost}
+                isReady={isReady}
+                canStartGame={canStartGame}
+                isConnected={isConnected}
+                onToggleReady={handleToggleReady}
+                onStartGame={handleStartGame}
+              />
 
-            <RoomChat
-              messages={messages}
-              onSendMessage={handleSendChatMessage}
-              currentUserId={currentUserId}
-              isConnected={isConnected}
-            />
+              <RoomChat
+                messages={messages}
+                onSendMessage={handleSendChatMessage}
+                currentUserId={currentUserId}
+                isConnected={isConnected}
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* ✅ NOVO: Modal de confirmação para host sair */}
+      <ConfirmModal
+        isOpen={showLeaveModal}
+        onClose={() => setShowLeaveModal(false)}
+        onConfirm={handleConfirmLeaveAsHost}
+        title="Encerrar Sala"
+        message="Você é o host desta sala. Ao sair, a sala será encerrada e todos os jogadores serão removidos. Deseja continuar?"
+        confirmText="Sim, Encerrar Sala"
+        cancelText="Cancelar"
+        variant="warning"
+      />
+    </>
   );
 }
 
