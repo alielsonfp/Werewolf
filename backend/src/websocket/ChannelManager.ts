@@ -31,7 +31,7 @@ export class ChannelManager {
     return true;
   }
 
-  joinRoom(roomId: string, connectionId: string, asSpectator: boolean = false): boolean {
+  joinRoom(roomId: string, connectionId: string, asSpectator = false): boolean {
     let room = this.rooms.get(roomId);
 
     if (!room) {
@@ -109,7 +109,6 @@ export class ChannelManager {
   getRoomConnections(roomId: string): Set<string> {
     const room = this.rooms.get(roomId);
     if (!room) return new Set();
-
     return new Set([...room.players, ...room.spectators]);
   }
 
@@ -137,21 +136,80 @@ export class ChannelManager {
     };
   }
 
+  // 🔧 NOVA VERSÃO: limpa conexões mortas automaticamente
   getRoomStats(roomId: string): { playersCount: number; spectatorsCount: number } | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
 
-    return {
+    console.log(`\n🔍 DEBUG LOBBY - Sala: ${roomId.slice(-6)}`);
+    console.log(`📊 Players no Set: ${room.players.size}`);
+
+    const deadPlayers = new Set<string>();
+    const deadSpectators = new Set<string>();
+
+    // Verificar players
+    for (const connectionId of room.players) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
+
+      console.log(`   👤 ${connectionId.slice(-6)}: ${isValid ? '✅ VIVO' : '💀 MORTO'}`);
+
+      if (!isValid) {
+        deadPlayers.add(connectionId);
+        this.connectionRooms.delete(connectionId);
+      }
+    }
+
+    // Verificar spectators
+    for (const connectionId of room.spectators) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
+
+      if (!isValid) {
+        deadSpectators.add(connectionId);
+        this.connectionRooms.delete(connectionId);
+      }
+    }
+
+    // Limpeza efetiva
+    if (deadPlayers.size > 0) {
+      console.log(`🧹 Limpando ${deadPlayers.size} players mortos`);
+      for (const deadId of deadPlayers) {
+        room.players.delete(deadId);
+      }
+    }
+
+    if (deadSpectators.size > 0) {
+      console.log(`🧹 Limpando ${deadSpectators.size} spectators mortos`);
+      for (const deadId of deadSpectators) {
+        room.spectators.delete(deadId);
+      }
+    }
+
+    const finalCount = {
       playersCount: room.players.size,
-      spectatorsCount: room.spectators.size
+      spectatorsCount: room.spectators.size,
     };
+
+    console.log(
+      `📊 APÓS LIMPEZA: ${finalCount.playersCount} players, ${finalCount.spectatorsCount} spectators`,
+    );
+
+    room.lastActivity = new Date();
+
+    if (finalCount.playersCount === 0 && finalCount.spectatorsCount === 0) {
+      console.log(`🗑️ Sala ${roomId.slice(-6)} ficou vazia, removendo`);
+      this.rooms.delete(roomId);
+    }
+
+    return finalCount;
   }
 
   broadcastToRoom(
     roomId: string,
     type: string,
     data?: any,
-    excludeConnectionId?: string
+    excludeConnectionId?: string,
   ): number {
     const connections = this.getRoomConnections(roomId);
     let sent = 0;
@@ -163,18 +221,24 @@ export class ChannelManager {
       if (!connection || connection.ws.readyState !== connection.ws.OPEN) continue;
 
       try {
-        connection.ws.send(JSON.stringify({
-          type,
-          data,
-          timestamp: new Date().toISOString(),
-        }));
+        connection.ws.send(
+          JSON.stringify({
+            type,
+            data,
+            timestamp: new Date().toISOString(),
+          }),
+        );
         sent++;
       } catch (error) {
-        wsLogger.error('Failed to broadcast to connection', error instanceof Error ? error : new Error('Unknown broadcast error'), {
-          connectionId,
-          roomId,
-          type,
-        });
+        wsLogger.error(
+          'Failed to broadcast to connection',
+          error instanceof Error ? error : new Error('Unknown broadcast error'),
+          {
+            connectionId,
+            roomId,
+            type,
+          },
+        );
       }
     }
 
@@ -228,7 +292,7 @@ export class ChannelManager {
     };
   }
 
-  cleanup(maxIdleTime: number = 3600000): number {
+  cleanup(maxIdleTime = 3_600_000): number {
     const now = Date.now();
     let cleaned = 0;
 

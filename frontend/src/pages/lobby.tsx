@@ -15,6 +15,7 @@ import JoinRoomModal from '@/components/lobby/JoinRoomModal';
 
 import { roomService, RoomListItem } from '@/services/roomService';
 
+// ✅ CORREÇÃO: SafeNumberDisplay à prova de hidratação
 interface SafeNumberDisplayProps {
   value: number;
   className?: string;
@@ -27,13 +28,43 @@ function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
     setMounted(true);
   }, []);
 
+  // ✅ No servidor, renderiza o número sem formatação para evitar mismatch
   if (!mounted) {
     return <span className={className}>{value}</span>;
   }
 
+  // ✅ No cliente, aplica a formatação brasileira
   return (
     <span className={className}>
       {value.toLocaleString('pt-BR')}
+    </span>
+  );
+}
+
+// ✅ CORREÇÃO: Componente para data/hora seguro
+interface SafeDateDisplayProps {
+  date: string | Date;
+  className?: string;
+}
+
+function SafeDateDisplay({ date, className = "" }: SafeDateDisplayProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Renderiza placeholder no servidor
+    return <span className={className}>--:--</span>;
+  }
+
+  return (
+    <span className={className}>
+      {new Date(date).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })}
     </span>
   );
 }
@@ -368,6 +399,7 @@ function LobbyPage() {
   );
 }
 
+// ✅ CORREÇÃO: RoomCard com renderização segura de data/hora
 interface RoomCardProps {
   room: RoomListItem;
   onJoin: () => void;
@@ -440,9 +472,10 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
               <span>Host: {room.hostUsername}</span>
             </div>
 
+            {/* ✅ CORREÇÃO: Usar SafeDateDisplay em vez de toLocaleTimeString direto */}
             <div className="flex items-center gap-1">
               <ClockIcon />
-              <span>{new Date(room.createdAt).toLocaleTimeString()}</span>
+              <SafeDateDisplay date={room.createdAt} />
             </div>
           </div>
         </div>

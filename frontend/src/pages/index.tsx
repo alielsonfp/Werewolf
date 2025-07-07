@@ -22,6 +22,30 @@ import { useTheme } from '@/context/ThemeContext';
 import Button from '@/components/common/Button';
 import Layout from '@/components/common/Layout';
 
+// ✅ CORREÇÃO: Componente de estatísticas à prova de hidratação
+interface SafeStatsDisplayProps {
+  value: number;
+  label: string;
+  color?: string;
+}
+
+function SafeStatsDisplay({ value, label, color = "text-salem-400" }: SafeStatsDisplayProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return (
+    <div className="text-center">
+      <div className={`text-2xl font-bold ${color}`}>
+        {mounted ? value.toLocaleString('pt-BR') : value}
+      </div>
+      <div className="text-sm text-white/60">{label}</div>
+    </div>
+  );
+}
+
 // =============================================================================
 // LANDING PAGE COMPONENT
 // =============================================================================
@@ -135,25 +159,26 @@ export default function LandingPage() {
               blefe, investigação e sobrevivência.
             </motion.p>
 
-            {/* Stats */}
+            {/* ✅ CORREÇÃO: Stats com componente seguro para hidratação */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 1.1, duration: 0.8 }}
               className="flex justify-center gap-8 mb-12"
             >
-              <div className="text-center">
-                <div className="text-2xl font-bold text-salem-400">{stats.totalPlayers.toLocaleString()}</div>
-                <div className="text-sm text-white/60">Jogadores</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-salem-400">{stats.gamesPlayed.toLocaleString()}</div>
-                <div className="text-sm text-white/60">Partidas</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">{stats.onlineNow}</div>
-                <div className="text-sm text-white/60">Online Agora</div>
-              </div>
+              <SafeStatsDisplay
+                value={stats.totalPlayers}
+                label="Jogadores"
+              />
+              <SafeStatsDisplay
+                value={stats.gamesPlayed}
+                label="Partidas"
+              />
+              <SafeStatsDisplay
+                value={stats.onlineNow}
+                label="Online Agora"
+                color="text-green-400"
+              />
             </motion.div>
 
             {/* CTA Buttons */}

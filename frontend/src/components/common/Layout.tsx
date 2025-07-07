@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Home,
@@ -32,6 +32,72 @@ interface LayoutProps {
   showFooter?: boolean;
   className?: string;
   variant?: 'default' | 'game' | 'auth' | 'landing';
+}
+
+// ✅ CORREÇÃO: Componente para tema escuro/claro seguro para hidratação
+interface SafeThemeDisplayProps {
+  isDark: boolean;
+  onToggle: () => void;
+}
+
+function SafeThemeToggle({ isDark, onToggle }: SafeThemeDisplayProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Renderiza um ícone neutro no servidor
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onToggle}
+        aria-label="Alternar tema"
+      >
+        <div className="w-5 h-5" /> {/* Placeholder invisível */}
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onToggle}
+      aria-label={isDark ? 'Tema claro' : 'Tema escuro'}
+    >
+      {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+    </Button>
+  );
+}
+
+// ✅ CORREÇÃO: Componente para status de conexão seguro para hidratação
+interface SafeConnectionStatusProps {
+  status: string;
+}
+
+function SafeConnectionStatus({ status }: SafeConnectionStatusProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Renderiza um estado neutro no servidor
+    return (
+      <div className="w-2 h-2 rounded-full bg-gray-400" />
+    );
+  }
+
+  return (
+    <div className={clsx(
+      'w-2 h-2 rounded-full',
+      status === 'connected' ? 'bg-green-400' : 'bg-red-400'
+    )} />
+  );
 }
 
 // =============================================================================
@@ -116,11 +182,8 @@ function Header() {
             Werewolf
           </h1>
 
-          {/* Connection status */}
-          <div className={clsx(
-            'w-2 h-2 rounded-full',
-            status === 'connected' ? 'bg-green-400' : 'bg-red-400'
-          )} />
+          {/* ✅ CORREÇÃO: Connection status com componente seguro */}
+          <SafeConnectionStatus status={status} />
         </div>
 
         {/* Controls */}
@@ -138,18 +201,8 @@ function Header() {
             }
           </Button>
 
-          {/* Theme toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleDarkMode}
-            aria-label={isDark ? 'Tema claro' : 'Tema escuro'}
-          >
-            {isDark ?
-              <Sun className="w-5 h-5" /> :
-              <Moon className="w-5 h-5" />
-            }
-          </Button>
+          {/* ✅ CORREÇÃO: Theme toggle com componente seguro */}
+          <SafeThemeToggle isDark={isDark} onToggle={toggleDarkMode} />
 
           {/* User menu */}
           {user && (
