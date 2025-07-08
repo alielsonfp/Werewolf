@@ -1,16 +1,24 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '@/config/database';
-import { generateTokenPair, generatePasswordResetToken, verifyPasswordResetToken } from '@/config/jwt';
+import {
+  generateTokenPair,
+  generatePasswordResetToken,
+  verifyPasswordResetToken,
+} from '@/config/jwt';
 import { authLogger } from '@/utils/logger';
 import { ERROR_MESSAGES } from '@/utils/constants';
 import {
   validateRegisterRequest,
   validateLoginRequest,
-  validateEmail
+  validateEmail,
 } from '@/utils/simpleValidators';
 import type { ApiResponse } from '@/types';
+import { config } from '@/config/environment';
 
+/* -------------------------------------------------------------------------- */
+/*                                   REGISTER                                 */
+/* -------------------------------------------------------------------------- */
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const validation = validateRegisterRequest(req.body);
@@ -30,23 +38,28 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       SELECT id, email, username FROM users 
       WHERE email = $1 OR username = $2
     `;
-    const existingUserResult = await pool.query(existingUserQuery, [email.toLowerCase(), username.toLowerCase()]);
+    const existingUserResult = await pool.query(existingUserQuery, [
+      email.toLowerCase(),
+      username.toLowerCase(),
+    ]);
 
     if (existingUserResult.rows.length > 0) {
       const existingUser = existingUserResult.rows[0];
       authLogger.warn('Registration attempt with existing credentials', {
         email,
         username,
-        existingField: existingUser.email === email.toLowerCase() ? 'email' : 'username',
+        existingField:
+          existingUser.email === email.toLowerCase() ? 'email' : 'username',
         ip: req.ip,
       });
 
       res.status(409).json({
         success: false,
         error: 'USER_ALREADY_EXISTS',
-        message: existingUser.email === email.toLowerCase()
-          ? 'Email já está em uso'
-          : 'Username já está em uso',
+        message:
+          existingUser.email === email.toLowerCase()
+            ? 'Email já está em uso'
+            : 'Username já está em uso',
         timestamp: new Date().toISOString(),
       } as ApiResponse);
       return;
@@ -54,13 +67,18 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // ✅ CORRIGIDO: Query SQL com todas as colunas camelCase entre aspas duplas
     const createUserQuery = `
-      INSERT INTO users (email, username, "passwordHash", level, "totalGames", "totalWins", "totalLosses", "winRate", "createdAt", "updatedAt")
-      VALUES ($1, $2, $3, 1, 0, 0, 0, 0.0, NOW(), NOW())
-      RETURNING id, email, username, level, "totalGames", "totalWins", "totalLosses", "winRate", "createdAt", "updatedAt", "lastLoginAt"
+      INSERT INTO users(email, username, "passwordHash", level, "totalGames",
+        "totalWins", "totalLosses", "winRate", "createdAt", "updatedAt")
+      VALUES($1, $2, $3, 1, 0, 0, 0, 0.0, NOW(), NOW())
+      RETURNING id, email, username, level, "totalGames", "totalWins",
+        "totalLosses", "winRate", "createdAt", "updatedAt", "lastLoginAt"
     `;
-    const userResult = await pool.query(createUserQuery, [email.toLowerCase(), username, passwordHash]);
+    const userResult = await pool.query(createUserQuery, [
+      email.toLowerCase(),
+      username,
+      passwordHash,
+    ]);
     const user = userResult.rows[0];
 
     const tokens = generateTokenPair({
@@ -88,13 +106,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       message: 'Usuário criado com sucesso',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
-
   } catch (error) {
-    authLogger.error('Registration error', error instanceof Error ? error : new Error('Unknown registration error'), {
-      email: req.body?.email,
-      username: req.body?.username,
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Registration error',
+      error instanceof Error ? error : new Error('Unknown registration error'),
+      {
+        email: req.body?.email,
+        username: req.body?.username,
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -105,6 +126,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                                    LOGIN                                   */
+/* -------------------------------------------------------------------------- */
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const validation = validateLoginRequest(req.body);
@@ -119,52 +143,103 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const { email, password } = validation.data!;
+    let user; // ✅ Variável declarada no escopo principal
 
-    const userQuery = `SELECT * FROM users WHERE email = $1`;
-    const userResult = await pool.query(userQuery, [email.toLowerCase()]);
+    // ✅ Bloco para determinar o usuário (Magic Login ou Login Normal)
+    if (config.IS_DEVELOPMENT && email.endsWith('@dev.test')) {
+      // 🔧 MAGIC LOGIN - Apenas para desenvolvimento
+      const username = email.split('@')[0];
 
-    if (userResult.rows.length === 0) {
-      authLogger.warn('Login attempt with non-existent email', {
-        email,
-        ip: req.ip,
-      });
+      let userResult = await pool.query(
+        `SELECT * FROM users WHERE email = $1`,
+        [email.toLowerCase()]
+      );
 
-      res.status(401).json({
-        success: false,
-        error: 'INVALID_CREDENTIALS',
-        message: 'Email ou senha incorretos',
-        timestamp: new Date().toISOString(),
-      } as ApiResponse);
-      return;
+      if (userResult.rows.length === 0) {
+        // Cria usuário de teste automaticamente
+        authLogger.info(`DEV_LOGIN: Creating user on-the-fly: ${username}`);
+        const fakePasswordHash = await bcrypt.hash('password123', 12);
+
+        const createUserQuery = `
+          INSERT INTO users(email, username, "passwordHash", level, "totalGames",
+            "totalWins", "totalLosses", "winRate", "createdAt", "updatedAt")
+          VALUES($1, $2, $3, 1, 0, 0, 0, 0.0, NOW(), NOW())
+          RETURNING id, email, username, level, "totalGames", "totalWins",
+            "totalLosses", "winRate", "createdAt", "updatedAt", "lastLoginAt"
+        `;
+
+        const newUserResult = await pool.query(createUserQuery, [
+          email.toLowerCase(),
+          username,
+          fakePasswordHash,
+        ]);
+        user = newUserResult.rows[0];
+      } else {
+        user = userResult.rows[0];
+      }
+
+      authLogger.warn(`DEV_LOGIN: Bypassing password check for ${email}`);
+    } else {
+      // 🔐 LOGIN NORMAL - Validação completa
+      const userResult = await pool.query(
+        `SELECT * FROM users WHERE email = $1`,
+        [email.toLowerCase()]
+      );
+
+      if (userResult.rows.length === 0) {
+        authLogger.warn('Login attempt with non-existent email', {
+          email,
+          ip: req.ip,
+        });
+
+        res.status(401).json({
+          success: false,
+          error: 'INVALID_CREDENTIALS',
+          message: 'Email ou senha incorretos',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      const foundUser = userResult.rows[0];
+      const isPasswordValid = await bcrypt.compare(password, foundUser.passwordHash);
+
+      if (!isPasswordValid) {
+        authLogger.warn('Login attempt with invalid password', {
+          userId: foundUser.id,
+          email: foundUser.email,
+          ip: req.ip,
+        });
+
+        res.status(401).json({
+          success: false,
+          error: 'INVALID_CREDENTIALS',
+          message: 'Email ou senha incorretos',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      user = foundUser; // ✅ Atribui o usuário validado
     }
 
-    const user = userResult.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    // ✅✅✅ LÓGICA DE SUCESSO UNIFICADA ✅✅✅
+    // Este bloco executa para ambos os casos (Magic Login e Login Normal)
 
-    if (!isPasswordValid) {
-      authLogger.warn('Login attempt with invalid password', {
-        userId: user.id,
-        email: user.email,
-        ip: req.ip,
-      });
+    // Atualiza o último login
+    await pool.query(
+      `UPDATE users SET "lastLoginAt" = NOW() WHERE id = $1`,
+      [user.id]
+    );
 
-      res.status(401).json({
-        success: false,
-        error: 'INVALID_CREDENTIALS',
-        message: 'Email ou senha incorretos',
-        timestamp: new Date().toISOString(),
-      } as ApiResponse);
-      return;
-    }
-
-    await pool.query(`UPDATE users SET "lastLoginAt" = NOW() WHERE id = $1`, [user.id]);
-
+    // Gera os tokens
     const tokens = generateTokenPair({
       userId: user.id,
       username: user.username,
       email: user.email,
     });
 
+    // Remove o hash da senha da resposta
     const { passwordHash, ...userWithoutPassword } = user;
 
     authLogger.info('User logged in successfully', {
@@ -174,6 +249,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       ip: req.ip,
     });
 
+    // Envia a resposta de sucesso
     res.json({
       success: true,
       data: {
@@ -183,15 +259,21 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           refreshToken: tokens.refreshToken,
         },
       },
-      message: 'Login realizado com sucesso',
+      message: config.IS_DEVELOPMENT && email.endsWith('@dev.test')
+        ? 'Login de desenvolvedor realizado com sucesso'
+        : 'Login realizado com sucesso',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
 
   } catch (error) {
-    authLogger.error('Login error', error instanceof Error ? error : new Error('Unknown login error'), {
-      email: req.body?.email,
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Login error',
+      error instanceof Error ? error : new Error('Unknown login error'),
+      {
+        email: req.body?.email,
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -202,6 +284,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                               FORGOT PASSWORD                              */
+/* -------------------------------------------------------------------------- */
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email } = req.body;
@@ -242,8 +327,11 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       ip: req.ip,
     });
 
+    /* Em produção, envie por email. Aqui apenas logamos. */
     console.log(`Password reset token for ${email}: ${resetToken}`);
-    console.log(`Reset URL: http://localhost:3000/auth/reset-password?token=${resetToken}`);
+    console.log(
+      `Reset URL: http://localhost:3000/auth/reset-password?token=${resetToken}`,
+    );
 
     res.json({
       success: true,
@@ -254,12 +342,15 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       message: 'Link de recuperação enviado para o email',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
-
   } catch (error) {
-    authLogger.error('Forgot password error', error instanceof Error ? error : new Error('Unknown forgot password error'), {
-      email: req.body?.email,
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Forgot password error',
+      error instanceof Error ? error : new Error('Unknown forgot password error'),
+      {
+        email: req.body?.email,
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -270,6 +361,9 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                               RESET PASSWORD                               */
+/* -------------------------------------------------------------------------- */
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { token, password } = req.body;
@@ -315,7 +409,10 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     const userQuery = `SELECT id, email FROM users WHERE id = $1`;
     const userResult = await pool.query(userQuery, [tokenPayload.userId]);
 
-    if (userResult.rows.length === 0 || userResult.rows[0].email !== tokenPayload.email) {
+    if (
+      userResult.rows.length === 0 ||
+      userResult.rows[0].email !== tokenPayload.email
+    ) {
       authLogger.warn('Password reset token user mismatch', {
         tokenUserId: tokenPayload.userId,
         tokenEmail: tokenPayload.email,
@@ -333,7 +430,10 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    await pool.query(`UPDATE users SET "passwordHash" = $1, "updatedAt" = NOW() WHERE id = $2`, [passwordHash, tokenPayload.userId]);
+    await pool.query(
+      `UPDATE users SET "passwordHash" = $1, "updatedAt" = NOW() WHERE id = $2`,
+      [passwordHash, tokenPayload.userId],
+    );
 
     authLogger.info('Password reset successfully', {
       userId: tokenPayload.userId,
@@ -346,11 +446,14 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       message: 'Senha alterada com sucesso',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
-
   } catch (error) {
-    authLogger.error('Reset password error', error instanceof Error ? error : new Error('Unknown reset password error'), {
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Reset password error',
+      error instanceof Error ? error : new Error('Unknown reset password error'),
+      {
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -361,10 +464,14 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                                  PROFILE                                   */
+/* -------------------------------------------------------------------------- */
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userQuery = `
-      SELECT id, email, username, avatar, level, "totalGames", "totalWins", "totalLosses", "winRate", "createdAt", "updatedAt", "lastLoginAt"
+      SELECT id, email, username, avatar, level, "totalGames", "totalWins",
+             "totalLosses", "winRate", "createdAt", "updatedAt", "lastLoginAt"
       FROM users WHERE id = $1
     `;
     const userResult = await pool.query(userQuery, [req.userId]);
@@ -384,11 +491,14 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       data: userResult.rows[0],
       timestamp: new Date().toISOString(),
     } as ApiResponse);
-
   } catch (error) {
-    authLogger.error('Get profile error', error instanceof Error ? error : new Error('Unknown profile error'), {
-      userId: req.userId,
-    });
+    authLogger.error(
+      'Get profile error',
+      error instanceof Error ? error : new Error('Unknown profile error'),
+      {
+        userId: req.userId,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -399,6 +509,9 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                              CHECK USERNAME                                */
+/* -------------------------------------------------------------------------- */
 export const checkUsername = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
@@ -422,10 +535,14 @@ export const checkUsername = async (req: Request, res: Response): Promise<void> 
       timestamp: new Date().toISOString(),
     } as ApiResponse);
   } catch (error) {
-    authLogger.error('Check username error', error instanceof Error ? error : new Error('Unknown check username error'), {
-      username: req.params?.username,
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Check username error',
+      error instanceof Error ? error : new Error('Unknown check username error'),
+      {
+        username: req.params?.username,
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,
@@ -436,6 +553,9 @@ export const checkUsername = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/*                                CHECK EMAIL                                 */
+/* -------------------------------------------------------------------------- */
 export const checkEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email } = req.params;
@@ -459,10 +579,14 @@ export const checkEmail = async (req: Request, res: Response): Promise<void> => 
       timestamp: new Date().toISOString(),
     } as ApiResponse);
   } catch (error) {
-    authLogger.error('Check email error', error instanceof Error ? error : new Error('Unknown check email error'), {
-      email: req.params?.email,
-      ip: req.ip,
-    });
+    authLogger.error(
+      'Check email error',
+      error instanceof Error ? error : new Error('Unknown check email error'),
+      {
+        email: req.params?.email,
+        ip: req.ip,
+      },
+    );
 
     res.status(500).json({
       success: false,

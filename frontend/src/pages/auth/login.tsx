@@ -1,5 +1,5 @@
 // 🐺 WEREWOLF - Login Page
-// Werewolf inspired login interface
+// Werewolf inspired login interface with Magic Login
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -28,6 +28,22 @@ export default function LoginPage() {
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ✅ NOVO: Gerar credenciais de dev uma única vez por renderização
+  // Usamos useState para que o valor não mude a cada re-render do componente
+  const [devCredentials] = useState(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const randomId = Math.floor(Math.random() * 1000);
+      const userTypes = ['player', 'admin', 'test', 'demo', 'dev'];
+      const randomType = userTypes[Math.floor(Math.random() * userTypes.length)];
+
+      return {
+        email: `${randomType}_${randomId}@dev.test`,
+        password: 'password123', // A senha pode ser fixa, pois será ignorada pelo backend
+      };
+    }
+    return null;
+  });
+
   // Form management
   const {
     values,
@@ -37,6 +53,7 @@ export default function LoginPage() {
     handleSubmit,
     setError: setFieldError,
     setTouched,
+    setValue, // ✅ Adicionar setValue para preencher campos programaticamente
   } = useForm<LoginRequest>(
     {
       email: '',
@@ -48,8 +65,18 @@ export default function LoginPage() {
       setIsSubmitting(true);
       setError('');
 
-      await login(formData);
-      setIsSubmitting(false);
+      try {
+        await login(formData);
+        // Se chegou aqui, o login foi bem-sucedido
+        toast.success('Login realizado com sucesso!');
+      } catch (loginError: any) {
+        // Captura erros específicos do login
+        const errorMessage = loginError?.message || 'Erro no login. Tente novamente.';
+        setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   );
 
@@ -85,6 +112,16 @@ export default function LoginPage() {
     }
 
     return isValid;
+  };
+
+  // ✅ Função para preencher credenciais de desenvolvimento
+  const fillDevCredentials = () => {
+    if (devCredentials) {
+      setValue('email', devCredentials.email);
+      setValue('password', devCredentials.password);
+      playSound('button_click');
+      toast.success('Credenciais de desenvolvimento preenchidas!');
+    }
   };
 
   // Show loading if checking authentication
@@ -142,6 +179,7 @@ export default function LoginPage() {
             onClick={() => {
               playSound('button_click');
               console.log('Google login clicked');
+              toast.info('Login com Google será implementado em breve');
               // TODO: Implementar login com Google
             }}
             className="w-full border border-white/20 hover:border-white/40 mb-6"
@@ -312,38 +350,71 @@ export default function LoginPage() {
             </Button>
           </div>
 
-          {/* Demo Credentials */}
-          {process.env.NODE_ENV === 'development' && (
+          {/* ✅✅✅ NOVO BLOCO DE DESENVOLVIMENTO COM CREDENCIAIS DINÂMICAS ✅✅✅ */}
+          {devCredentials && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1 }}
-              className="mt-8 p-4 bg-blue-900/20 border border-blue-500/30 rounded-lg"
+              className="mt-8 p-4 bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/30 rounded-lg"
             >
-              <h4 className="text-sm font-semibold text-blue-300 mb-2">
-                🧪 Modo Desenvolvimento
-              </h4>
-              <p className="text-xs text-blue-200/70 mb-2">
-                Credenciais de teste:
-              </p>
-              <div className="text-xs font-mono text-blue-200">
-                <div>Email: demo@werewolf.com</div>
-                <div>Senha: demo123</div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🧪</span>
+                <h4 className="text-sm font-semibold text-blue-300">
+                  Modo Desenvolvimento - Magic Login
+                </h4>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-2 text-xs"
-                onClick={() => {
-                  handleChange('email')({ target: { value: 'demo@werewolf.com' } } as any);
-                  handleChange('password')({ target: { value: 'demo123' } } as any);
-                }}
-                disabled={isSubmitting}
-              >
-                Preencher Automaticamente
-              </Button>
+
+              <p className="text-xs text-blue-200/70 mb-3">
+                Credenciais de teste geradas automaticamente:
+              </p>
+
+              <div className="bg-black/20 rounded p-3 mb-3">
+                <div className="text-xs font-mono text-blue-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <span>Email:</span>
+                    <span className="text-green-300">{devCredentials.email}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Senha:</span>
+                    <span className="text-green-300">{devCredentials.password}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs text-blue-200/60 mb-3">
+                ℹ️ Este email será aceito automaticamente pelo backend (bypassa validação de senha)
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 text-xs border border-blue-500/30 hover:border-blue-400/50"
+                  onClick={fillDevCredentials}
+                  disabled={isSubmitting}
+                >
+                  🚀 Preencher Automaticamente
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-blue-300/70"
+                  onClick={() => window.location.reload()}
+                  disabled={isSubmitting}
+                >
+                  🔄 Gerar Novos
+                </Button>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-blue-500/20">
+                <div className="text-xs text-blue-200/50">
+                  <strong>Como funciona:</strong> Emails terminados em <code className="bg-black/30 px-1 rounded">@dev.test</code> são automaticamente aceitos em desenvolvimento, criando usuários na hora se necessário.
+                </div>
+              </div>
             </motion.div>
           )}
+          {/* ✅✅✅ FIM DO NOVO BLOCO DE DESENVOLVIMENTO ✅✅✅ */}
         </motion.div>
 
         {/* Background Elements */}
