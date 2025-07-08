@@ -6,6 +6,215 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 
 // =============================================================================
+// TIPOS AUXILIARES PARA HOOKS
+// =============================================================================
+export interface WebSocketHookOptions {
+  autoConnect?: boolean;
+  heartbeatInterval?: number;
+  maxReconnectAttempts?: number;
+  reconnectBackoff?: 'linear' | 'exponential';
+}
+
+export interface UseWebSocketReturn {
+  socket: WebSocket | null;
+  status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+  isConnected: boolean;
+  pingLatency: number;
+  reconnectAttempts: number;
+  connect: () => void;
+  disconnect: () => void;
+  sendMessage: (type: string, data?: any) => boolean;
+}
+
+// =============================================================================
+// ✅ WEBSOCKET HOOK COM HEARTBEAT - CORRIGIDO
+// =============================================================================
+export function useWebSocket(
+  url: string,
+  options: WebSocketHookOptions = {}
+): UseWebSocketReturn {
+  const {
+    autoConnect = true,
+    heartbeatInterval = 30000, // 30 segundos
+    maxReconnectAttempts = 5,
+    reconnectBackoff = 'exponential'
+  } = options;
+
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'>('disconnected');
+  const [pingLatency, setPingLatency] = useState<number>(0);
+  const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
+
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pingStartTimeRef = useRef<number>(0);
+  const shouldReconnectRef = useRef<boolean>(true);
+
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+
+  const clearReconnectTimeout = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
+    clearHeartbeat();
+
+    heartbeatRef.current = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        pingStartTimeRef.current = Date.now();
+        socket.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, heartbeatInterval);
+  }, [socket, heartbeatInterval, clearHeartbeat]);
+
+  const calculateReconnectDelay = useCallback((attempts: number) => {
+    if (reconnectBackoff === 'linear') {
+      return Math.min(1000 * attempts, 30000); // Max 30 segundos
+    } else {
+      return Math.min(1000 * Math.pow(2, attempts), 30000); // Exponencial, max 30 segundos
+    }
+  }, [reconnectBackoff]);
+
+  const connect = useCallback(() => {
+    // ✅ CORREÇÃO: Validar URL antes de conectar
+    if (!url || url === '') {
+      console.warn('❌ Cannot connect: URL is empty');
+      return;
+    }
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      console.log('✅ WebSocket already connected, skipping...');
+      return;
+    }
+
+    setStatus('connecting');
+    shouldReconnectRef.current = true;
+
+    try {
+      console.log('🔌 Connecting to WebSocket:', url);
+      const ws = new WebSocket(url);
+      setSocket(ws);
+
+      ws.onopen = () => {
+        console.log('✅ WebSocket conectado');
+        setStatus('connected');
+        setReconnectAttempts(0);
+        startHeartbeat();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+
+          // Responder ao ping com pong
+          if (message.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }));
+          }
+
+          // Calcular latência do ping
+          if (message.type === 'pong') {
+            const latency = Date.now() - pingStartTimeRef.current;
+            setPingLatency(latency);
+          }
+
+          // Dispatchar evento customizado para outros componentes
+          const customEvent = new CustomEvent('websocket-message', {
+            detail: message
+          });
+          window.dispatchEvent(customEvent);
+        } catch (error) {
+          console.error('Erro ao processar mensagem WebSocket:', error);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('WebSocket fechado:', event.code, event.reason);
+        setSocket(null);
+        clearHeartbeat();
+
+        if (shouldReconnectRef.current && reconnectAttempts < maxReconnectAttempts) {
+          setStatus('reconnecting');
+          const delay = calculateReconnectDelay(reconnectAttempts);
+
+          reconnectTimeoutRef.current = setTimeout(() => {
+            setReconnectAttempts(prev => prev + 1);
+            connect();
+          }, delay);
+        } else {
+          setStatus('disconnected');
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('Erro WebSocket:', error);
+        setStatus('error');
+      };
+
+    } catch (error) {
+      console.error('Erro ao criar WebSocket:', error);
+      setStatus('error');
+    }
+  }, [url, startHeartbeat, reconnectAttempts, maxReconnectAttempts, calculateReconnectDelay]);
+
+  const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
+    clearHeartbeat();
+    clearReconnectTimeout();
+
+    if (socket) {
+      socket.close();
+      setSocket(null);
+    }
+
+    setStatus('disconnected');
+    setReconnectAttempts(0);
+  }, [socket, clearHeartbeat, clearReconnectTimeout]);
+
+  const sendMessage = useCallback((type: string, data?: any): boolean => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(JSON.stringify({ type, data }));
+        return true;
+      } catch (error) {
+        console.error('Erro ao enviar mensagem:', error);
+        return false;
+      }
+    }
+    return false;
+  }, [socket]);
+
+  // ✅ CORREÇÃO: useEffect para autoConnect sem dependências problemáticas
+  useEffect(() => {
+    if (autoConnect && url && url !== '') {
+      connect();
+    }
+
+    return () => {
+      disconnect();
+    };
+  }, [autoConnect, url]); // ✅ REMOVIDO: connect e disconnect das dependências para evitar loop
+
+  return {
+    socket,
+    status,
+    isConnected: status === 'connected',
+    pingLatency,
+    reconnectAttempts,
+    connect,
+    disconnect,
+    sendMessage,
+  };
+}
+
+// =============================================================================
 // LOCAL STORAGE HOOK
 // =============================================================================
 export function useLocalStorage<T>(

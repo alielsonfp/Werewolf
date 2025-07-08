@@ -23,20 +23,26 @@ export const listRooms = async (req: Request, res: Response): Promise<void> => {
         `;
     const roomsResult = await pool.query(roomsQuery);
 
-    const roomsMetadata = roomsResult.rows.map((room: any) => ({
-      id: room.id,
-      name: room.name,
-      isPrivate: room.isPrivate,
-      currentPlayers: 0,
-      maxPlayers: room.maxPlayers,
-      currentSpectators: 0,
-      maxSpectators: room.maxSpectators,
-      status: room.status as RoomStatus,
-      hostUsername: room.hostUsername,
-      createdAt: room.createdAt,
-      canJoin: room.status === 'WAITING',
-      isFull: false
-    }));
+    const channelManager = req.app.locals.channelManager;
+
+    const roomsMetadata = roomsResult.rows.map((room: any) => {
+      const stats = channelManager ? channelManager.getRoomStats(room.id) : null;
+
+      return {
+        id: room.id,
+        name: room.name,
+        isPrivate: room.isPrivate,
+        currentPlayers: stats?.playersCount || 0,
+        maxPlayers: room.maxPlayers,
+        currentSpectators: stats?.spectatorsCount || 0,
+        maxSpectators: room.maxSpectators,
+        status: room.status as RoomStatus,
+        hostUsername: room.hostUsername,
+        createdAt: room.createdAt,
+        canJoin: room.status === 'WAITING' && (stats?.playersCount || 0) < room.maxPlayers,
+        isFull: (stats?.playersCount || 0) >= room.maxPlayers
+      };
+    });
 
     res.json({
       success: true,
@@ -77,19 +83,30 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
     const { name, isPrivate, maxPlayers, maxSpectators } = validation.data!;
 
     const existingRoomQuery = `
-            SELECT id FROM rooms 
+            SELECT id, name, status FROM rooms 
             WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')
         `;
     const existingRoomResult = await pool.query(existingRoomQuery, [req.userId]);
 
     if (existingRoomResult.rows.length > 0) {
-      res.status(409).json({
-        success: false,
-        error: 'ROOM_ALREADY_EXISTS',
-        message: 'Você já possui uma sala ativa',
-        timestamp: new Date().toISOString(),
-      } as ApiResponse);
-      return;
+      logger.warn('User creating room while having active room', {
+        userId: req.userId,
+        username: req.username,
+        existingRooms: existingRoomResult.rows,
+        action: 'creating_new_room_anyway'
+      });
+
+      try {
+        await pool.query(`DELETE FROM rooms WHERE "hostId" = $1 AND status IN ('WAITING', 'PLAYING')`, [req.userId]);
+        logger.info('Cleaned up orphaned rooms for user', {
+          userId: req.userId,
+          cleanedRooms: existingRoomResult.rows.length
+        });
+      } catch (cleanupError) {
+        logger.error('Failed to cleanup orphaned rooms', cleanupError instanceof Error ? cleanupError : new Error('Unknown cleanup error'), {
+          userId: req.userId
+        });
+      }
     }
 
     let roomCode: string | undefined;
@@ -133,7 +150,8 @@ export const createRoom = async (req: Request, res: Response): Promise<void> => 
       roomId: room.id,
       hostId: req.userId,
       code: roomCode,
-      isPrivate
+      isPrivate,
+      hadOrphanedRooms: existingRoomResult.rows.length > 0
     });
 
     const wsUrl = `ws://localhost:3001/ws/room/${room.id}`;
@@ -497,6 +515,12 @@ export const deleteRoom = async (req: Request, res: Response): Promise<void> => 
     }
 
     await pool.query(`DELETE FROM rooms WHERE id = $1`, [roomId]);
+
+    logger.info('Room deleted via HTTP API', {
+      roomId,
+      hostId: req.userId,
+      username: req.username
+    });
 
     res.json({
       success: true,

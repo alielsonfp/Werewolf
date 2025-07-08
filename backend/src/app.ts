@@ -3,16 +3,19 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import http from 'http'; // ✅ NOVO: Importar http
 import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
-// ✅ CORREÇÃO: ServiceFactory não é mais necessária para o health check
-// import { ServiceFactory } from '@/websocket/ServiceFactory';
+import { ServiceFactory } from '@/websocket/ServiceFactory';
+import { WebSocketManager } from '@/websocket/WebSocketManager';
+import { GameEngine } from '@/game/GameEngine';
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
 
 const app = express();
 
+// ✅ CONFIGURAÇÃO DE MIDDLEWARES (mantida igual)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -34,11 +37,12 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:3001',
-      // Adicione aqui a URL do seu frontend em produção
+      'https://localhost:3000',
+      'https://localhost:3001',
     ];
 
     if (config.IS_PRODUCTION) {
-      allowedOrigins.push('https://your-domain.com'); // Substitua pelo seu domínio
+      allowedOrigins.push('https://your-domain.com');
     }
 
     if (allowedOrigins.includes(origin)) {
@@ -68,33 +72,107 @@ if (config.IS_DEVELOPMENT) {
   app.use(morgan('combined'));
 }
 
-// ✅ CORREÇÃO: Simplificado o endpoint /health
+// ✅✅✅ LÓGICA CRÍTICA MOVIDA PARA AQUI ✅✅✅
+// Criar servidor HTTP e WebSocket ANTES das rotas
+const httpServer = http.createServer(app);
+let wsManager: WebSocketManager;
+
+if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
+  try {
+    const gameStateService = ServiceFactory.getGameStateService();
+    const eventBus = ServiceFactory.getEventBus();
+
+    wsManager = new WebSocketManager(gameStateService, eventBus, config);
+    wsManager.setupWebSocketServer(httpServer);
+
+    // ✅ CORREÇÃO CRÍTICA: Injeção acontece ANTES das rotas
+    app.locals.channelManager = wsManager.channelManager;
+    console.log('✅ ChannelManager successfully injected into app.locals');
+
+    // ✅ NOVO: Exportar wsManager para shutdown
+    (httpServer as any).wsManager = wsManager;
+
+    // ✅✅✅ CONFIGURAÇÃO DO GAMEENGINE BROADCASTER ✅✅✅
+    // Configurar o broadcaster do GameEngine, se ele for a instância usada
+    if (gameStateService instanceof GameEngine) {
+      gameStateService.setBroadcaster(
+        (roomId: string, type: string, data: any) => {
+          wsManager.channelManager.broadcastToRoom(roomId, type, data);
+        }
+      );
+      console.log('✅ GameEngine broadcaster configured successfully');
+    }
+    // ✅✅✅ FIM DA CONFIGURAÇÃO ✅✅✅
+
+  } catch (error) {
+    console.error('❌ Failed to initialize WebSocket:', error);
+    throw error;
+  }
+} else {
+  console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
+}
+// ✅✅✅ FIM DA LÓGICA MOVIDA ✅✅✅
+
+// ✅ ROTAS SÃO CARREGADAS DEPOIS (channelManager já existe)
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+
+// ✅ HEALTH CHECKS - Versão híbrida: nova arquitetura + limpeza do colega
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
     const redisHealth = await checkRedisHealth();
+    
+    // ✅ MANTÉM: Nova arquitetura precisa verificar services
+    const servicesHealth = await ServiceFactory.getServicesHealth();
+    const servicesStats = ServiceFactory.getServicesStats();
 
-    const isSystemHealthy =
-      dbHealth.status === 'healthy' &&
-      (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy');
-
-    const healthStatus = {
-      status: isSystemHealthy ? 'healthy' : 'unhealthy',
+    const health = {
+      status: 'healthy',
       timestamp: new Date().toISOString(),
       service: {
         id: config.SERVICE_ID,
         type: config.SERVICE_TYPE,
         mode: config.DISTRIBUTED_MODE ? 'distributed' : 'monolithic',
       },
-      dependencies: {
-        database: dbHealth,
-        redis: redisHealth,
-      },
+      database: dbHealth,
+      redis: redisHealth,
+      services: servicesHealth,
+      stats: servicesStats,
       uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      // ✅ NOVO: Adicionar status do WebSocket
+      websocket: {
+        initialized: !!wsManager,
+        channelManagerInjected: !!app.locals.channelManager,
+      },
     };
 
-    res.status(isSystemHealthy ? 200 : 503).json(healthStatus);
+    let hasUnhealthyService = false;
 
+    if (config.DISTRIBUTED_MODE) {
+      hasUnhealthyService = Object.values(servicesHealth).some(
+        (service: any) => service.status === 'unhealthy'
+      );
+    } else {
+      const criticalServices = ['gameState'];
+      hasUnhealthyService = criticalServices.some(serviceName => {
+        const service = servicesHealth[serviceName];
+        return service && service.status === 'unhealthy';
+      });
+    }
+
+    const isSystemHealthy =
+      dbHealth.status === 'healthy' &&
+      (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy') &&
+      !hasUnhealthyService;
+
+    if (!isSystemHealthy) {
+      res.status(503).json(health);
+      return;
+    }
+
+    res.json(health);
   } catch (error) {
     res.status(503).json({
       status: 'unhealthy',
@@ -105,19 +183,26 @@ app.get('/health', async (req, res) => {
 });
 
 app.get('/health/ready', (req, res) => {
-  res.status(200).json({ status: 'ready' });
+  res.json({
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    service: config.SERVICE_ID,
+    websocket: !!wsManager,
+  });
 });
 
 app.get('/health/live', (req, res) => {
-  res.status(200).json({ status: 'alive' });
+  res.json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
 });
 
-// ✅ CORREÇÃO: Removido o endpoint /health/websocket que usava os métodos inexistentes.
-// A saúde do WebSocket é inerentemente verificada pela rota /health principal agora.
+// ✅ CORREÇÃO: Removido o endpoint /health/websocket conforme sugerido pelo colega
+// A saúde do WebSocket agora é verificada no endpoint principal /health
 
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-
+// ✅ ROOT ENDPOINT (mantido igual)
 app.get('/', (req, res) => {
   res.json({
     message: '🐺 Werewolf Online API',
@@ -127,19 +212,43 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     websocket: {
       enabled: config.IS_MONOLITH || config.IS_GAME_SERVICE,
+      initialized: !!wsManager,
       path: config.WS_BASE_PATH,
       url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
     },
     endpoints: {
       health: '/health',
-      auth: { /* ... */ },
-      rooms: { /* ... */ },
-      websocket: { /* ... */ },
+      websocketHealth: '/health/websocket',
+      ready: '/health/ready',
+      live: '/health/live',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        forgotPassword: 'POST /api/auth/forgot-password',
+        resetPassword: 'POST /api/auth/reset-password',
+        profile: 'GET /api/auth/profile',
+        logout: 'POST /api/auth/logout',
+      },
+      rooms: {
+        list: 'GET /api/rooms',
+        create: 'POST /api/rooms',
+        details: 'GET /api/rooms/:id',
+        join: 'POST /api/rooms/:id/join',
+        joinByCode: 'POST /api/rooms/join-by-code',
+        delete: 'DELETE /api/rooms/:id',
+      },
+      websocket: {
+        connect: `WS ${config.WS_BASE_PATH}`,
+        events: [
+          'join-room', 'leave-room', 'player-ready', 'start-game',
+          'chat-message', 'game-action', 'vote', 'kick-player'
+        ],
+      },
     },
   });
 });
 
-// Middleware de 404
+// ✅ ERROR HANDLERS (mantidos iguais)
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
@@ -148,7 +257,6 @@ app.use((req, res, next) => {
   });
 });
 
-// Middleware de tratamento de erro global
 app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ Express Error:', error);
 
@@ -161,4 +269,5 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-export default app;
+// ✅ EXPORTAR O HTTP SERVER (não mais o app)
+export default httpServer;

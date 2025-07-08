@@ -1,16 +1,11 @@
-// 🐺 LOBISOMEM ONLINE - Server Entry Point (CORREÇÃO FINAL)
-import http from 'http';
-import app from './app';
+// 🐺 LOBISOMEM ONLINE - Server Entry Point (SIMPLIFICADO)
+import httpServer from './app';
 import { config, validateConfig } from '@/config/environment';
 import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
 import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
 import { ServiceFactory } from './websocket/ServiceFactory';
-import { WebSocketManager } from '@/websocket/WebSocketManager';
+import { WebSocketManager } from './websocket/WebSocketManager';
 import { logger } from '@/utils/logger';
-import { GameEngine } from '@/game/GameEngine'; // Importar o GameEngine
-
-let server: http.Server;
-let wsManager: WebSocketManager;
 
 // Função de retry para conexão com o banco
 const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
@@ -32,47 +27,55 @@ const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, del
 async function startServer(): Promise<void> {
   try {
     validateConfig();
+
+    // Conectar banco (obrigatório) com retry
     await connectWithRetry(connectDatabase);
-    if (config.SHOULD_USE_REDIS) await connectRedis();
 
-    const gameStateService = ServiceFactory.getGameStateService();
-    const eventBus = ServiceFactory.getEventBus();
-
-    server = http.createServer(app);
-
-    if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
-      wsManager = new WebSocketManager(gameStateService, eventBus, config);
-      wsManager.setupWebSocketServer(server);
-
-      // ✅ CORREÇÃO FINAL: Injetar a função de broadcast no GameEngine
-      if (gameStateService instanceof GameEngine) {
-        gameStateService.setBroadcaster(
-          (roomId, type, data) => {
-            wsManager.channelManager.broadcastToRoom(roomId, type, data);
-          }
-        );
+    // Conectar Redis (opcional - não falha se der erro)
+    if (config.SHOULD_USE_REDIS) {
+      try {
+        await connectRedis();
+      } catch (error) {
+        logger.warn('Redis connection failed, continuing without Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }
-
-    server.listen(config.PORT, () => {
-      logger.info(`Server running at http://localhost:${config.PORT}`);
+    // A criação do servidor e do WebSocketManager já aconteceu em app.ts
+    // Agora só precisamos iniciar o servidor HTTP
+    httpServer.listen(config.PORT, () => {
+      logger.info(`🚀 Server running at http://localhost:${config.PORT}`);
+      logger.info(`🐺 Werewolf Online ${config.SERVICE_TYPE} service started`);
+      logger.info(`🔗 WebSocket available at ws://localhost:${config.PORT}${config.WS_BASE_PATH}`);
     });
 
-    setupGracefulShutdown(server);
+    setupGracefulShutdown(httpServer);
 
   } catch (error) {
-    logger.error('Failed to start server', error as Error);
+    logger.error('Failed to start server', error instanceof Error ? error : new Error('Unknown server start error'));
     process.exit(1);
   }
 }
 
-function setupGracefulShutdown(server: http.Server): void {
+function setupGracefulShutdown(server: any): void {
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}. Starting graceful shutdown...`);
+
     server.close(async () => {
       logger.info('HTTP server closed.');
-      if (wsManager) await wsManager.shutdown();
+
+      // Shutdown do WebSocketManager (se existir)
+      if (server.wsManager) {
+        try {
+          await server.wsManager.shutdown();
+          logger.info('WebSocket manager shut down.');
+        } catch (error) {
+          logger.warn('Error shutting down WebSocket manager', { error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      }
+
+      // Shutdown do banco
       await shutdownDatabase();
+
+      // Shutdown do Redis (se configurado)
       if (config.SHOULD_USE_REDIS) {
         try {
           await shutdownRedis();
@@ -80,7 +83,10 @@ function setupGracefulShutdown(server: http.Server): void {
           logger.warn('Error shutting down Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
         }
       }
+
+      // Limpar instâncias do ServiceFactory
       ServiceFactory.clearInstances();
+
       logger.info('Graceful shutdown completed.');
       process.exit(0);
     });
@@ -90,8 +96,9 @@ function setupGracefulShutdown(server: http.Server): void {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
+// Iniciar servidor se for executado diretamente
 if (require.main === module) {
   startServer();
 }
 
-export default app;
+export default httpServer;
