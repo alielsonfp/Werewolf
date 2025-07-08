@@ -1,12 +1,11 @@
 // 🐺 LOBISOMEM ONLINE - Server Entry Point (SIMPLIFICADO)
-import httpServer from './app'; // ✅ Importar o httpServer já configurado
+import httpServer from './app';
 import { config, validateConfig } from '@/config/environment';
 import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
 import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
 import { ServiceFactory } from './websocket/ServiceFactory';
+import { WebSocketManager } from './websocket/WebSocketManager';
 import { logger } from '@/utils/logger';
-
-// ✅ A instância de wsManager agora vive dentro de app.ts
 
 // Função de retry para conexão com o banco
 const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
@@ -16,7 +15,7 @@ const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, del
       logger.info('Database connected successfully.');
       return;
     } catch (error) {
-      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, { error });
+      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, error as Error);
       if (i === retries) {
         throw new Error(`Could not connect to the database after ${retries} attempts.`);
       }
@@ -40,8 +39,7 @@ async function startServer(): Promise<void> {
         logger.warn('Redis connection failed, continuing without Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }
-
-    // ✅ A criação do servidor e do WebSocketManager já aconteceu em app.ts
+    // A criação do servidor e do WebSocketManager já aconteceu em app.ts
     // Agora só precisamos iniciar o servidor HTTP
     httpServer.listen(config.PORT, () => {
       logger.info(`🚀 Server running at http://localhost:${config.PORT}`);
@@ -64,7 +62,7 @@ function setupGracefulShutdown(server: any): void {
     server.close(async () => {
       logger.info('HTTP server closed.');
 
-      // ✅ Shutdown do WebSocketManager (se existir)
+      // Shutdown do WebSocketManager (se existir)
       if (server.wsManager) {
         try {
           await server.wsManager.shutdown();
@@ -98,7 +96,7 @@ function setupGracefulShutdown(server: any): void {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-// ✅ Iniciar servidor se for executado diretamente
+// Iniciar servidor se for executado diretamente
 if (require.main === module) {
   startServer();
 }

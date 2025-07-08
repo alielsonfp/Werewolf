@@ -8,7 +8,8 @@ import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
 import { ServiceFactory } from '@/websocket/ServiceFactory';
-import { WebSocketManager } from '@/websocket/WebSocketManager'; // ✅ NOVO: Importar WebSocketManager
+import { WebSocketManager } from '@/websocket/WebSocketManager';
+import { GameEngine } from '@/game/GameEngine';
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
 
@@ -30,6 +31,7 @@ app.use(helmet({
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Permitir requisições sem 'origin' (ex: Postman, apps mobile)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
@@ -90,6 +92,18 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
     // ✅ NOVO: Exportar wsManager para shutdown
     (httpServer as any).wsManager = wsManager;
 
+    // ✅✅✅ CONFIGURAÇÃO DO GAMEENGINE BROADCASTER ✅✅✅
+    // Configurar o broadcaster do GameEngine, se ele for a instância usada
+    if (gameStateService instanceof GameEngine) {
+      gameStateService.setBroadcaster(
+        (roomId: string, type: string, data: any) => {
+          wsManager.channelManager.broadcastToRoom(roomId, type, data);
+        }
+      );
+      console.log('✅ GameEngine broadcaster configured successfully');
+    }
+    // ✅✅✅ FIM DA CONFIGURAÇÃO ✅✅✅
+
   } catch (error) {
     console.error('❌ Failed to initialize WebSocket:', error);
     throw error;
@@ -103,11 +117,13 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 
-// ✅ HEALTH CHECKS (mantidos iguais)
+// ✅ HEALTH CHECKS - Versão híbrida: nova arquitetura + limpeza do colega
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
     const redisHealth = await checkRedisHealth();
+    
+    // ✅ MANTÉM: Nova arquitetura precisa verificar services
     const servicesHealth = await ServiceFactory.getServicesHealth();
     const servicesStats = ServiceFactory.getServicesStats();
 
@@ -183,27 +199,8 @@ app.get('/health/live', (req, res) => {
   });
 });
 
-app.get('/health/websocket', async (req, res) => {
-  try {
-    const servicesHealth = await ServiceFactory.getServicesHealth();
-    const servicesStats = ServiceFactory.getServicesStats();
-
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      services: servicesHealth,
-      stats: servicesStats,
-      wsManager: !!wsManager,
-      channelManager: !!app.locals.channelManager,
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'WebSocket health check failed',
-    });
-  }
-});
+// ✅ CORREÇÃO: Removido o endpoint /health/websocket conforme sugerido pelo colega
+// A saúde do WebSocket agora é verificada no endpoint principal /health
 
 // ✅ ROOT ENDPOINT (mantido igual)
 app.get('/', (req, res) => {
