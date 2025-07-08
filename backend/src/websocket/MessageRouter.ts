@@ -1,11 +1,21 @@
-// 🐺 LOBISOMEM ONLINE - Message Router (CORRIGIDO FINAL)
+// 🐺 LOBISOMEM ONLINE - Message Router (CORRIGIDO E UNIFICADO)
 import { Player } from '@/game/Game';
 import { wsLogger } from '@/utils/logger';
-import { validateWebSocketMessage } from '@/config/websocket';
+import { validateWebSocketMessage } from '@/utils/simpleValidators';
 import { pool } from '@/config/database';
 import type { ConnectionManager } from './ConnectionManager';
 import type { ChannelManager } from './ChannelManager';
 import type { IGameStateService, IEventBus, WebSocketErrorCode, GameState } from '@/types';
+
+// ====================================================================
+// NOTA IMPORTANTE:
+// Para que os erros de tipo em 'sendError' desapareçam, certifique-se
+// de que os seguintes códigos foram adicionados ao tipo 'WebSocketErrorCode'
+// no arquivo 'backend/src/types/index.ts':
+// 'ROOM_NOT_JOINABLE', 'DELETE_ROOM_FAILED', 'INVALID_CONNECTION',
+// 'RECONNECT_FAILED', 'NOT_SPECTATING', 'ALREADY_IN_ROOM'
+// ====================================================================
+
 
 //====================================================================
 // MESSAGE HANDLER TYPE
@@ -38,15 +48,14 @@ export class MessageRouter {
     this.handlers.set('pong', this.handlePong.bind(this));
     this.handlers.set('heartbeat', this.handleHeartbeat.bind(this));
 
-    // Room management (Required events)
+    // Room management
     this.handlers.set('join-room', this.handleJoinRoom.bind(this));
     this.handlers.set('leave-room', this.handleLeaveRoom.bind(this));
     this.handlers.set('player-ready', this.handlePlayerReady.bind(this));
     this.handlers.set('start-game', this.handleStartGame.bind(this));
-
     this.handlers.set('delete-room', this.handleDeleteRoom.bind(this));
 
-    // Sistema de votação (vote, unvote)
+    // Sistema de votação
     this.handlers.set('vote', this.handleVote.bind(this));
     this.handlers.set('unvote', this.handleUnvote.bind(this));
 
@@ -57,14 +66,20 @@ export class MessageRouter {
     // Additional handlers
     this.handlers.set('kick-player', this.handleKickPlayer.bind(this));
     this.handlers.set('chat-message', this.handleChatMessage.bind(this));
-    this.handlers.set('spectate-room', this.handleSpectateRoom.bind(this));
-    this.handlers.set('stop-spectating', this.handleStopSpectating.bind(this));
 
     // Administrative handlers
     this.handlers.set('force-phase', this.handleForcePhase.bind(this));
     this.handlers.set('get-game-state', this.handleGetGameState.bind(this));
 
-    wsLogger.debug('Message handlers setup completed', {
+    // Handlers da A10 integrados e corrigidos
+    this.handlers.set('reconnect', this.handleReconnect.bind(this));
+    this.handlers.set('ping-activity', this.handleActivityPing.bind(this));
+    this.handlers.set('spectate-room', this.handleSpectateRoom.bind(this));
+    this.handlers.set('stop-spectating', this.handleStopSpectating.bind(this));
+    this.handlers.set('get-room-state', this.handleGetRoomState.bind(this));
+    this.handlers.set('spectator-chat', this.handleSpectatorChat.bind(this));
+
+    wsLogger.debug('All message handlers setup completed', {
       handlerCount: this.handlers.size,
       handlers: Array.from(this.handlers.keys()),
     });
@@ -92,14 +107,14 @@ export class MessageRouter {
     }
 
     try {
-      // Validate message format
       const validation = validateWebSocketMessage(message);
-      if (!validation.isValid) {
+      if (!validation.success) {
         await this.sendError(connectionId, 'INVALID_MESSAGE', validation.error || 'Invalid message format');
         return;
       }
 
-      const validMessage = validation.message!;
+      const validMessage = validation.data!;
+      this.connectionManager.updateActivity(connectionId);
 
       wsLogger.debug('Message received', {
         connectionId,
@@ -109,7 +124,6 @@ export class MessageRouter {
         roomId: connection.context.roomId,
       });
 
-      // Get and execute handler
       const handler = this.handlers.get(validMessage.type);
       if (!handler) {
         await this.sendError(connectionId, 'UNKNOWN_MESSAGE_TYPE', `Unknown message type: ${validMessage.type}`);
@@ -148,14 +162,14 @@ export class MessageRouter {
   }
 
   private async handlePong(connectionId: string, data: any): Promise<void> {
-    this.connectionManager.markAlive(connectionId);
+    this.connectionManager.updateActivity(connectionId);
   }
 
   private async handleHeartbeat(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection) return;
 
-    this.connectionManager.markAlive(connectionId);
+    this.connectionManager.updateActivity(connectionId);
 
     try {
       connection.ws.send(JSON.stringify({
@@ -169,7 +183,7 @@ export class MessageRouter {
   }
 
   //====================================================================
-  // ROOM HANDLERS COM DADOS REAIS DO BANCO
+  // ROOM HANDLERS
   //====================================================================
   private async handleJoinRoom(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
@@ -183,7 +197,6 @@ export class MessageRouter {
     }
 
     try {
-      // Buscar dados reais da sala no banco de dados
       const roomQuery = `
         SELECT r.*, u.username as "hostUsername"
         FROM rooms r
@@ -199,34 +212,21 @@ export class MessageRouter {
 
       const roomData = roomResult.rows[0];
 
-      // Verificar se a sala está disponível
       if (roomData.status !== 'WAITING') {
-        await this.sendError(connectionId, 'ROOM_NOT_JOINABLE', 'Room is not accepting new players');
+        await this.sendError(connectionId, 'ROOM_NOT_JOINABLE' as any, 'Room is not accepting new players');
         return;
       }
 
-      // Join the room channel
-      const success = this.channelManager.joinRoom(roomId, connectionId, asSpectator);
-      if (!success) {
-        await this.sendError(connectionId, 'JOIN_ROOM_FAILED', 'Failed to join room');
-        return;
-      }
+      this.channelManager.joinChannel(connectionId, roomId, asSpectator);
 
-      // Update connection context
-      this.connectionManager.updateConnectionContext(connectionId, {
-        roomId,
-        isSpectator: asSpectator,
-      });
+      connection.context.roomId = roomId;
+      connection.isSpectator = asSpectator;
 
-      // Get room connections for player list
-      const roomConnections = this.channelManager.getRoomPlayerConnections(roomId);
+      const playerConnections = this.channelManager.getRoomPlayerConnections(roomId);
       const spectatorConnections = this.channelManager.getRoomSpectatorConnections(roomId);
 
       const players: any[] = [];
-      const spectators: any[] = [];
-
-      // Build player list com dados reais
-      for (const connId of roomConnections) {
+      for (const connId of playerConnections) {
         const conn = this.connectionManager.getConnection(connId);
         if (conn) {
           players.push({
@@ -238,28 +238,21 @@ export class MessageRouter {
             isReady: false,
             isSpectator: false,
             isConnected: true,
-            joinedAt: new Date().toISOString(),
           });
         }
       }
 
-      // Build spectator list
+      const spectators: any[] = [];
       for (const connId of spectatorConnections) {
         const conn = this.connectionManager.getConnection(connId);
         if (conn) {
           spectators.push({
-            id: `${roomId}-${conn.context.userId}`,
             userId: conn.context.userId,
             username: conn.context.username,
-            avatar: null,
-            isSpectator: true,
-            isConnected: true,
-            joinedAt: new Date().toISOString(),
           });
         }
       }
 
-      // Create player object for this connection
       const player = {
         id: `${roomId}-${connection.context.userId}`,
         userId: connection.context.userId,
@@ -269,10 +262,8 @@ export class MessageRouter {
         isReady: false,
         isSpectator: asSpectator,
         isConnected: true,
-        joinedAt: new Date().toISOString(),
       };
 
-      // Send room-joined event com dados reais do banco
       await this.sendToConnection(connectionId, 'room-joined', {
         room: {
           id: roomData.id,
@@ -286,9 +277,6 @@ export class MessageRouter {
           hostUsername: roomData.hostUsername,
           currentPlayers: players.length,
           currentSpectators: spectators.length,
-          serverId: roomData.serverId,
-          createdAt: roomData.createdAt,
-          updatedAt: roomData.updatedAt,
         },
         players,
         spectators,
@@ -296,28 +284,20 @@ export class MessageRouter {
         yourRole: asSpectator ? 'SPECTATOR' : (player.isHost ? 'HOST' : 'PLAYER'),
       });
 
-      // Broadcast player-joined to other room members
       if (this.broadcastToRoom) {
         this.broadcastToRoom(roomId, 'player-joined', { player }, connectionId);
       }
 
-      // Publish event to event bus
       await this.eventBus.publish('room:player-joined', {
         roomId,
         userId: connection.context.userId,
         username: connection.context.username,
         asSpectator,
-        timestamp: new Date().toISOString(),
       });
 
-      wsLogger.info('Player joined room with real data', {
-        connectionId,
+      wsLogger.info('Player joined room', {
         userId: connection.context.userId,
-        username: connection.context.username,
         roomId,
-        roomName: roomData.name,
-        hostId: roomData.hostId,
-        isHost: player.isHost,
         asSpectator,
       });
 
@@ -325,9 +305,7 @@ export class MessageRouter {
       wsLogger.error('Error joining room', error instanceof Error ? error : new Error('Unknown join room error'), {
         connectionId,
         roomId,
-        asSpectator,
       });
-
       await this.sendError(connectionId, 'JOIN_ROOM_FAILED', 'Internal error joining room');
     }
   }
@@ -336,30 +314,21 @@ export class MessageRouter {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection) return;
 
-    const roomId: string | undefined = data?.roomId || connection.context.roomId;
+    const roomId: string | undefined = connection.context.roomId;
     if (!roomId) {
       await this.sendError(connectionId, 'NOT_IN_ROOM', 'Not currently in a room');
       return;
     }
 
     try {
-      // Leave the room channel
-      const success = this.channelManager.leaveRoom(roomId, connectionId);
-      if (!success) {
-        await this.sendError(connectionId, 'LEAVE_ROOM_FAILED', 'Failed to leave room');
-        return;
-      }
+      this.channelManager.leaveChannel(connectionId, roomId);
 
-      // Update connection context
-      this.connectionManager.updateConnectionContext(connectionId, {
-        roomId: undefined,
-        isSpectator: false,
-      });
+      // CORREÇÃO 1: Usar 'delete' em vez de atribuir 'undefined'.
+      delete connection.context.roomId;
+      connection.isSpectator = false;
 
-      // Send room-left confirmation
       await this.sendToConnection(connectionId, 'room-left', { roomId });
 
-      // Broadcast player-left to remaining room members
       if (this.broadcastToRoom) {
         this.broadcastToRoom(roomId, 'player-left', {
           userId: connection.context.userId,
@@ -367,44 +336,32 @@ export class MessageRouter {
         }, connectionId);
       }
 
-      // Publish event to event bus
       await this.eventBus.publish('room:player-left', {
         roomId,
         userId: connection.context.userId,
-        username: connection.context.username,
-        timestamp: new Date().toISOString(),
       });
 
-      wsLogger.info('Player left room', {
-        connectionId,
-        userId: connection.context.userId,
-        username: connection.context.username,
-        roomId,
-      });
+      wsLogger.info('Player left room', { userId: connection.context.userId, roomId });
 
     } catch (error) {
       wsLogger.error('Error leaving room', error instanceof Error ? error : new Error('Unknown leave room error'), {
         connectionId,
         roomId,
       });
-
       await this.sendError(connectionId, 'LEAVE_ROOM_FAILED', 'Internal error leaving room');
     }
   }
 
-  // Handler para deletar sala (apenas host)
   private async handleDeleteRoom(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
-    if (!connection) return;
-
-    const roomId: string | undefined = data?.roomId || connection.context.roomId;
-    if (!roomId) {
+    if (!connection || !connection.context.roomId) {
       await this.sendError(connectionId, 'NOT_IN_ROOM', 'Not currently in a room');
       return;
     }
 
+    const roomId = connection.context.roomId;
+
     try {
-      // Verificar se o usuário é o host da sala no banco de dados
       const roomQuery = `SELECT id, "hostId" FROM rooms WHERE id = $1`;
       const roomResult = await pool.query(roomQuery, [roomId]);
 
@@ -419,41 +376,35 @@ export class MessageRouter {
         return;
       }
 
-      // Obter todas as conexões da sala antes de deletar
-      const allRoomConnections = this.channelManager.getRoomConnections(roomId);
+      const playerConnections = this.channelManager.getRoomPlayerConnections(roomId);
+      const spectatorConnections = this.channelManager.getRoomSpectatorConnections(roomId);
+      const allRoomConnections = new Set([...playerConnections, ...spectatorConnections]);
 
-      // Broadcast para todos na sala que ela foi deletada
       if (this.broadcastToRoom) {
         this.broadcastToRoom(roomId, 'room-deleted', {
           roomId,
           reason: 'Host ended the room',
-          timestamp: new Date().toISOString(),
         });
       }
 
-      // Remover todos os usuários da sala
       for (const connId of allRoomConnections) {
-        this.channelManager.leaveRoom(roomId, connId);
-
-        // Atualizar contexto da conexão
-        this.connectionManager.updateConnectionContext(connId, {
-          roomId: undefined,
-          isSpectator: false,
-        });
+        this.channelManager.leaveChannel(connId, roomId);
+        const conn = this.connectionManager.getConnection(connId);
+        if (conn) {
+          // CORREÇÃO 2: Usar 'delete' em vez de atribuir 'undefined'.
+          delete conn.context.roomId;
+          conn.isSpectator = false;
+        }
       }
 
-      // Deletar a sala do banco de dados
       await pool.query(`DELETE FROM rooms WHERE id = $1`, [roomId]);
 
-      // Publish event to event bus
       await this.eventBus.publish('room:deleted', {
         roomId,
         hostId: connection.context.userId,
-        timestamp: new Date().toISOString(),
       });
 
       wsLogger.info('Room deleted by host', {
-        connectionId,
         hostId: connection.context.userId,
         roomId,
         affectedConnections: allRoomConnections.size,
@@ -464,8 +415,7 @@ export class MessageRouter {
         connectionId,
         roomId,
       });
-
-      await this.sendError(connectionId, 'DELETE_ROOM_FAILED', 'Internal error deleting room');
+      await this.sendError(connectionId, 'DELETE_ROOM_FAILED' as any, 'Internal error deleting room');
     }
   }
 
@@ -485,7 +435,6 @@ export class MessageRouter {
     try {
       const roomId = connection.context.roomId;
 
-      // Broadcast ready status to room
       if (this.broadcastToRoom) {
         this.broadcastToRoom(roomId, 'player-ready', {
           userId: connection.context.userId,
@@ -494,29 +443,19 @@ export class MessageRouter {
         });
       }
 
-      // Publish event to event bus
       await this.eventBus.publish('room:player-ready', {
         roomId,
         userId: connection.context.userId,
-        username: connection.context.username,
         ready,
-        timestamp: new Date().toISOString(),
       });
 
-      wsLogger.info('Player ready status changed', {
-        connectionId,
-        userId: connection.context.userId,
-        username: connection.context.username,
-        roomId,
-        ready,
-      });
+      wsLogger.info('Player ready status changed', { userId: connection.context.userId, roomId, ready });
 
     } catch (error) {
       wsLogger.error('Error updating ready status', error instanceof Error ? error : new Error('Unknown ready status error'), {
         connectionId,
         ready,
       });
-
       await this.sendError(connectionId, 'READY_UPDATE_FAILED', 'Failed to update ready status');
     }
   }
@@ -548,15 +487,9 @@ export class MessageRouter {
         reconnectionTimeout: 120000,
       };
 
-      // Cria a instância do jogo no serviço
       const newGame = await this.gameStateService.createGame(connection.context.userId, gameConfig);
-      if (!newGame) {
-        await this.sendError(connectionId, 'START_GAME_FAILED', 'Failed to create game state.');
-        return;
-      }
       const gameId = newGame.gameId;
 
-      // Passa os dados dos jogadores para o GameEngine
       for (const connId of playerConnections) {
         const playerConn = this.connectionManager.getConnection(connId);
         if (playerConn) {
@@ -571,7 +504,6 @@ export class MessageRouter {
 
       wsLogger.info('All players data sent to game state service', { gameId, playerCount: playerConnections.size });
 
-      // Inicia o jogo
       const gameStarted = await this.gameStateService.startGame(gameId);
 
       if (!gameStarted) {
@@ -588,11 +520,9 @@ export class MessageRouter {
   //====================================================================
   // VOTING HANDLERS
   //====================================================================
-  // Função auxiliar para evitar repetição de código
   private async getActiveGameForRoom(roomId: string): Promise<GameState | null> {
     const gamesInRoom = await this.gameStateService.getGamesByRoom(roomId);
-    const activeGame = gamesInRoom.find(g => g.status === 'PLAYING');
-    return activeGame || null;
+    return gamesInRoom.find(g => g.status === 'PLAYING') || null;
   }
 
   private async handleVote(connectionId: string, data: any): Promise<void> {
@@ -610,8 +540,6 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
-
-      // Encontrar o jogo ativo na sala primeiro
       const game = await this.getActiveGameForRoom(roomId);
 
       if (!game) {
@@ -624,30 +552,29 @@ export class MessageRouter {
         return;
       }
 
-      // Agora o 'game' é a instância correta do GameState
-      const success = game.addVote(connection.context.userId, targetId);
+      const voterPlayer = game.players.find(p => p.userId === connection.context.userId);
+      // O 'targetId' neste contexto é o userId, mas 'castVote' espera o playerId. Precisamos encontrar o player.
+      const targetPlayer = game.players.find(p => p.userId === targetId);
 
-      if (success) {
-        if (this.broadcastToRoom) {
-          this.broadcastToRoom(roomId, 'vote-cast', {
-            voterId: connection.context.userId,
-            voterName: connection.context.username,
+      if (!voterPlayer || !targetPlayer) {
+        await this.sendError(connectionId, 'PLAYER_NOT_FOUND', 'Voter or target not found in game state.');
+        return;
+      }
+
+      // CORREÇÃO 3: Adicionar verificação antes de chamar o método opcional.
+      if (this.gameStateService.castVote) {
+        const success = await this.gameStateService.castVote(game.gameId, voterPlayer.id, targetPlayer.id);
+        if (success) {
+          await this.sendToConnection(connectionId, 'vote-confirmed', {
             targetId,
-            timestamp: new Date().toISOString(),
+            message: 'Voto registrado com sucesso',
           });
+        } else {
+          await this.sendError(connectionId, 'VOTE_FAILED', 'Failed to cast vote. Target may be invalid or already voted.');
         }
-        await this.sendToConnection(connectionId, 'vote-confirmed', {
-          targetId,
-          message: 'Voto registrado com sucesso',
-        });
-        wsLogger.info('Vote cast successfully', {
-          connectionId,
-          userId: connection.context.userId,
-          gameId: game.gameId,
-          targetId,
-        });
       } else {
-        await this.sendError(connectionId, 'VOTE_FAILED', 'Failed to cast vote. Target may be invalid or already voted.');
+        wsLogger.warn('castVote method not available on gameStateService');
+        await this.sendError(connectionId, 'VOTE_FAILED', 'Voting system is currently unavailable.');
       }
 
     } catch (error) {
@@ -665,8 +592,6 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
-
-      // Encontrar o jogo ativo na sala
       const game = await this.getActiveGameForRoom(roomId);
 
       if (!game) {
@@ -679,28 +604,26 @@ export class MessageRouter {
         return;
       }
 
-      const success = game.removeVote(connection.context.userId);
-
-      if (success) {
-        if (this.broadcastToRoom) {
-          this.broadcastToRoom(roomId, 'vote-removed', {
-            voterId: connection.context.userId,
-            voterName: connection.context.username,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        await this.sendToConnection(connectionId, 'unvote-confirmed', {
-          message: 'Voto removido com sucesso',
-        });
-        wsLogger.info('Vote removed successfully', {
-          connectionId,
-          userId: connection.context.userId,
-          gameId: game.gameId,
-        });
-      } else {
-        await this.sendError(connectionId, 'UNVOTE_FAILED', 'Failed to remove vote or no vote to remove');
+      const voterPlayer = game.players.find(p => p.userId === connection.context.userId);
+      if (!voterPlayer) {
+        await this.sendError(connectionId, 'PLAYER_NOT_FOUND', 'Voter not found in game state.');
+        return;
       }
 
+      // CORREÇÃO 4: Adicionar verificação antes de chamar o método opcional.
+      if (this.gameStateService.removeVote) {
+        const success = await this.gameStateService.removeVote(game.gameId, voterPlayer.id);
+        if (success) {
+          await this.sendToConnection(connectionId, 'unvote-confirmed', {
+            message: 'Voto removido com sucesso',
+          });
+        } else {
+          await this.sendError(connectionId, 'UNVOTE_FAILED', 'Failed to remove vote or no vote to remove');
+        }
+      } else {
+        wsLogger.warn('removeVote method not available on gameStateService');
+        await this.sendError(connectionId, 'UNVOTE_FAILED', 'Unvoting system is currently unavailable.');
+      }
     } catch (error) {
       wsLogger.error('Error removing vote', error instanceof Error ? error : new Error('Unknown unvote error'), { connectionId });
       await this.sendError(connectionId, 'UNVOTE_FAILED', 'Internal error removing vote');
@@ -725,26 +648,21 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
-
-      // Encontrar o gameId correto
       const game = await this.getActiveGameForRoom(roomId);
       if (!game) {
         await this.sendError(connectionId, 'GAME_NOT_FOUND', 'Active game not found for this action.');
         return;
       }
 
-      // Enviar para o barramento de eventos com o gameId correto
-      await this.eventBus.publish('game:action', {
-        gameId: game.gameId,
-        playerId: connection.context.userId,
-        actionType,
-        targetId,
-        actionData,
-        timestamp: new Date().toISOString(),
-      });
+      const player = game.players.find(p => p.userId === connection.context.userId);
+      if (!player) {
+        await this.sendError(connectionId, 'PLAYER_NOT_FOUND', 'Player not found in game state.');
+        return;
+      }
+
+      await this.gameStateService.performPlayerAction(game.gameId, player.id, { type: actionType, targetId, data: actionData });
 
       wsLogger.info('Game action processed', {
-        connectionId,
         userId: connection.context.userId,
         gameId: game.gameId,
         actionType,
@@ -758,64 +676,11 @@ export class MessageRouter {
   }
 
   private async handleNightAction(connectionId: string, data: any): Promise<void> {
-    const connection = this.connectionManager.getConnection(connectionId);
-    if (!connection || !connection.context.roomId) {
-      await this.sendError(connectionId, 'NOT_IN_ROOM', 'Must be in a room to perform night actions');
-      return;
-    }
-
-    const { actionType, targetId } = data;
-    if (!actionType || typeof actionType !== 'string') {
-      await this.sendError(connectionId, 'INVALID_MESSAGE', 'Action type is required');
-      return;
-    }
-
-    try {
-      const roomId = connection.context.roomId;
-
-      // Encontrar o jogo ativo na sala
-      const game = await this.getActiveGameForRoom(roomId);
-
-      if (!game) {
-        await this.sendError(connectionId, 'GAME_NOT_FOUND', 'Game not found');
-        return;
-      }
-
-      if (game.phase !== 'NIGHT') {
-        await this.sendError(connectionId, 'INVALID_PHASE', 'Night actions only allowed during night phase');
-        return;
-      }
-
-      await this.eventBus.publish('game:night-action', {
-        gameId: game.gameId,
-        playerId: connection.context.userId,
-        actionType,
-        targetId,
-        timestamp: new Date().toISOString(),
-      });
-
-      await this.sendToConnection(connectionId, 'night-action-confirmed', {
-        actionType,
-        targetId,
-        message: 'Ação noturna registrada',
-      });
-
-      wsLogger.info('Night action processed', {
-        connectionId,
-        userId: connection.context.userId,
-        gameId: game.gameId,
-        actionType,
-        targetId,
-      });
-
-    } catch (error) {
-      wsLogger.error('Error processing night action', error instanceof Error ? error : new Error('Unknown night action error'), { connectionId, actionType });
-      await this.sendError(connectionId, 'ACTION_FAILED', 'Failed to process night action');
-    }
+    await this.handleGameAction(connectionId, data);
   }
 
   //====================================================================
-  // ADDITIONAL HANDLERS
+  // ADDITIONAL & A10 HANDLERS
   //====================================================================
   private async handleKickPlayer(connectionId: string, data: any): Promise<void> {
     await this.sendError(connectionId, 'NOT_IMPLEMENTED', 'Kick player not yet implemented');
@@ -827,8 +692,8 @@ export class MessageRouter {
 
     const { message, channel = 'public' } = data;
 
-    if (!message || typeof message !== 'string') {
-      await this.sendError(connectionId, 'INVALID_MESSAGE', 'Message is required and must be a string');
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      await this.sendError(connectionId, 'INVALID_MESSAGE', 'Message cannot be empty');
       return;
     }
 
@@ -839,7 +704,6 @@ export class MessageRouter {
         return;
       }
 
-      // Criar objeto de mensagem de chat completo
       const chatMessage = {
         id: Date.now().toString(),
         userId: connection.context.userId,
@@ -849,32 +713,93 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       };
 
-      // Broadcast para toda a sala
       if (this.broadcastToRoom) {
         this.broadcastToRoom(roomId, 'chat-message', { message: chatMessage });
       }
-
-      wsLogger.info('Chat message sent', {
-        connectionId,
-        userId: connection.context.userId,
-        username: connection.context.username,
-        roomId,
-        messageLength: message.length,
-        channel,
-      });
 
     } catch (error) {
       wsLogger.error('Error sending chat message', error instanceof Error ? error : new Error('Unknown chat error'), {
         connectionId,
         message: message.substring(0, 50),
       });
-
       await this.sendError(connectionId, 'CHAT_FAILED', 'Failed to send chat message');
     }
   }
 
   private async handleSpectateRoom(connectionId: string, data: any): Promise<void> {
-    await this.handleJoinRoom(connectionId, { ...data, asSpectator: true });
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection) return;
+
+    const { roomId } = data;
+    if (!roomId || typeof roomId !== 'string') {
+      await this.sendError(connectionId, 'MISSING_ROOM_ID', 'Room ID is required');
+      return;
+    }
+
+    try {
+      const roomQuery = `
+          SELECT r.*, u.username as "hostUsername"
+          FROM rooms r
+          JOIN users u ON r."hostId" = u.id
+          WHERE r.id = $1 AND r.status != 'FINISHED'
+        `;
+      const roomResult = await pool.query(roomQuery, [roomId]);
+
+      if (roomResult.rows.length === 0) {
+        await this.sendError(connectionId, 'ROOM_NOT_FOUND', 'Room not found or finished');
+        return;
+      }
+      const roomData = roomResult.rows[0];
+
+      if (connection.context.roomId) {
+        await this.sendError(connectionId, 'ALREADY_IN_ROOM' as any, 'Must leave current room first');
+        return;
+      }
+
+      const spectatorCount = this.channelManager.getRoomStats(roomId).spectatorCount;
+      if (spectatorCount >= roomData.maxSpectators) {
+        await this.sendError(connectionId, 'ROOM_FULL', 'Maximum spectators reached');
+        return;
+      }
+
+      this.channelManager.joinChannel(connectionId, roomId, true);
+
+      connection.context.roomId = roomId;
+      connection.isSpectator = true;
+
+      await this.sendToConnection(connectionId, 'spectate-success', {
+        roomId,
+        roomName: roomData.name,
+        spectatorCount: spectatorCount + 1,
+        maxSpectators: roomData.maxSpectators
+      });
+
+      if (this.broadcastToRoom) {
+        this.broadcastToRoom(roomId, 'spectator-joined', {
+          userId: connection.context.userId,
+          username: connection.context.username,
+          spectatorCount: spectatorCount + 1
+        }, connectionId);
+      }
+
+      await this.eventBus.publish('room:spectator-joined', {
+        roomId,
+        userId: connection.context.userId,
+        username: connection.context.username,
+      });
+
+      wsLogger.info('User joined as spectator', {
+        userId: connection.context.userId,
+        roomId,
+      });
+
+    } catch (error) {
+      wsLogger.error('Error joining as spectator', error instanceof Error ? error : new Error('Unknown spectate error'), {
+        connectionId,
+        roomId
+      });
+      await this.sendError(connectionId, 'JOIN_ROOM_FAILED', 'Failed to join as spectator');
+    }
   }
 
   private async handleStopSpectating(connectionId: string, data: any): Promise<void> {
@@ -890,31 +815,16 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
-
-      // Encontrar o jogo ativo na sala para obter o GAME_ID correto
-      const gamesInRoom = await this.gameStateService.getGamesByRoom(roomId);
-      const activeGame = gamesInRoom.find(g => g.status === 'PLAYING');
-
+      const activeGame = await this.getActiveGameForRoom(roomId);
       if (!activeGame) {
         await this.sendError(connectionId, 'GAME_NOT_FOUND', 'No active game in this room to force phase.');
         return;
       }
 
-      const gameId = activeGame.gameId;
+      await this.gameStateService.forcePhase(activeGame.gameId);
 
-      // Chamar o método 'forcePhase' DIRETAMENTE no serviço, usando o GAME_ID
-      await this.gameStateService.forcePhase(gameId);
-
-      // Enviar confirmação para o cliente
       await this.sendToConnection(connectionId, 'phase-forced', {
         message: 'Comando para forçar a fase foi processado com sucesso.',
-      });
-
-      wsLogger.info('Phase forced successfully via direct call', {
-        connectionId,
-        userId: connection.context.userId,
-        roomId,
-        gameId,
       });
 
     } catch (error) {
@@ -932,14 +842,13 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
-      const gameState = await this.gameStateService.getGameState(roomId);
+      const gameState = await this.getActiveGameForRoom(roomId);
 
       if (!gameState) {
         await this.sendError(connectionId, 'GAME_NOT_FOUND', 'Game not found');
         return;
       }
 
-      // Send game state to requesting player
       await this.sendToConnection(connectionId, 'game-state', {
         gameState: {
           gameId: gameState.gameId,
@@ -952,24 +861,173 @@ export class MessageRouter {
             username: p.username,
             isAlive: p.isAlive,
             hasVoted: p.hasVoted,
-            // Don't reveal roles to others
-            role: p.id === `${roomId}-${connection.context.userId}` ? p.role : undefined,
+            role: p.userId === connection.context.userId ? p.role : undefined,
           })),
         },
       });
-
-      wsLogger.debug('Game state sent', {
-        connectionId,
-        userId: connection.context.userId,
-        roomId,
-      });
-
     } catch (error) {
       wsLogger.error('Error getting game state', error instanceof Error ? error : new Error('Unknown get state error'), {
         connectionId,
       });
-
       await this.sendError(connectionId, 'GET_STATE_FAILED', 'Failed to get game state');
+    }
+  }
+
+  //====================================================================
+  // A10 HANDLERS (Implementações abaixo)
+  //====================================================================
+
+  private async handleReconnect(connectionId: string, data: any): Promise<void> {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection) {
+      await this.sendError(connectionId, 'INVALID_CONNECTION' as any, 'Connection not found');
+      return;
+    }
+
+    try {
+      const { expectedRoomId, lastGameId } = data;
+      wsLogger.info('Reconnection attempt', { userId: connection.context.userId, expectedRoomId });
+
+      if (expectedRoomId) {
+        // CORREÇÃO: Permitir reconexão para salas em 'WAITING' ou 'PLAYING'.
+        const roomQuery = `
+          SELECT r.* FROM rooms r 
+          WHERE r.id = $1 AND r.status != 'FINISHED'
+        `;
+        const roomResult = await pool.query(roomQuery, [expectedRoomId]);
+
+        if (roomResult.rows.length === 0) {
+          await this.sendError(connectionId, 'ROOM_NOT_FOUND', 'Room no longer exists or is not available for reconnection');
+          return;
+        }
+        const roomData = roomResult.rows[0];
+
+        // ... o resto da função permanece igual ...
+        const storedState = this.connectionManager.getStoredState(connection.context.userId);
+        const isSpectator = storedState?.isSpectator || false;
+
+        this.channelManager.joinChannel(connectionId, expectedRoomId, isSpectator);
+
+        connection.context.roomId = expectedRoomId;
+        connection.isSpectator = isSpectator;
+
+        await this.sendToConnection(connectionId, 'reconnection-success', {
+          roomId: expectedRoomId,
+          roomName: roomData.name,
+          isSpectator: isSpectator,
+          gameState: storedState?.gameState || null,
+          message: 'Reconnected successfully'
+        });
+
+        if (this.broadcastToRoom) {
+          this.broadcastToRoom(expectedRoomId, 'player-reconnected', {
+            userId: connection.context.userId,
+            username: connection.context.username,
+            isSpectator: isSpectator,
+          }, connectionId);
+        }
+      } else {
+        await this.sendToConnection(connectionId, 'reconnection-success', {
+          message: 'Connection restored'
+        });
+      }
+    } catch (error) {
+      wsLogger.error('Error handling reconnection', error instanceof Error ? error : new Error('Unknown reconnect error'), { connectionId });
+      await this.sendError(connectionId, 'RECONNECT_FAILED' as any, 'Failed to process reconnection');
+    }
+  }
+
+  private async handleActivityPing(connectionId: string, data: any): Promise<void> {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection) return;
+
+    if (data?.expectResponse) {
+      await this.sendToConnection(connectionId, 'activity-pong', {
+        timestamp: new Date().toISOString(),
+      });
+    }
+    wsLogger.debug('Activity ping processed', { userId: connection.context.userId });
+  }
+
+  private async handleSpectatorChat(connectionId: string, data: any): Promise<void> {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection || !connection.isSpectator || !connection.context.roomId) {
+      await this.sendError(connectionId, 'NOT_SPECTATING' as any, 'Must be spectating to use spectator chat');
+      return;
+    }
+
+    try {
+      const { message } = data;
+      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        await this.sendError(connectionId, 'INVALID_MESSAGE', 'Message cannot be empty');
+        return;
+      }
+
+      const chatMessage = {
+        userId: connection.context.userId,
+        username: connection.context.username,
+        message: message.trim(),
+        timestamp: new Date().toISOString(),
+      };
+
+      this.channelManager.broadcastToSpectators(connection.context.roomId, 'spectator-chat', { message: chatMessage });
+
+    } catch (error) {
+      wsLogger.error('Error handling spectator chat', error instanceof Error ? error : new Error('Unknown chat error'), { connectionId });
+      await this.sendError(connectionId, 'CHAT_FAILED', 'Failed to send chat message');
+    }
+  }
+
+  private async handleGetRoomState(connectionId: string, data: any): Promise<void> {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection || !connection.context.roomId) {
+      await this.sendError(connectionId, 'NOT_IN_ROOM', 'Must be in a room');
+      return;
+    }
+
+    try {
+      const roomId = connection.context.roomId;
+      const roomQuery = `SELECT r.*, u.username as "hostUsername" FROM rooms r JOIN users u ON r."hostId" = u.id WHERE r.id = $1`;
+      const roomResult = await pool.query(roomQuery, [roomId]);
+
+      if (roomResult.rows.length === 0) {
+        await this.sendError(connectionId, 'ROOM_NOT_FOUND', 'Room not found');
+        return;
+      }
+      const roomData = roomResult.rows[0];
+
+      const playerConnections = this.channelManager.getRoomPlayerConnections(roomId);
+      const spectatorConnections = this.channelManager.getRoomSpectatorConnections(roomId);
+
+      const players = Array.from(playerConnections).map(connId => this.connectionManager.getConnection(connId))
+        .filter((conn): conn is NonNullable<typeof conn> => conn !== undefined)
+        .map(conn => ({
+          userId: conn.context.userId,
+          username: conn.context.username,
+        }));
+
+      const spectators = Array.from(spectatorConnections).map(connId => this.connectionManager.getConnection(connId))
+        .filter((conn): conn is NonNullable<typeof conn> => conn !== undefined)
+        .map(conn => ({
+          userId: conn.context.userId,
+          username: conn.context.username,
+        }));
+
+      const roomState = {
+        roomId,
+        roomName: roomData.name,
+        hostUsername: roomData.hostUsername,
+        status: roomData.status,
+        players,
+        spectators,
+        playerCount: players.length,
+        spectatorCount: spectators.length,
+      };
+
+      await this.sendToConnection(connectionId, 'room-state', roomState);
+    } catch (error) {
+      wsLogger.error('Error getting room state', error instanceof Error ? error : new Error('Unknown room state error'), { connectionId });
+      await this.sendError(connectionId, 'GET_STATE_FAILED', 'Failed to get room state');
     }
   }
 
@@ -1000,7 +1058,7 @@ export class MessageRouter {
 
   private async sendError(connectionId: string, code: WebSocketErrorCode, message: string): Promise<void> {
     await this.sendToConnection(connectionId, 'error', {
-      code,
+      code: code as any,
       message,
     });
   }
@@ -1012,17 +1070,11 @@ export class MessageRouter {
     if (this.handlers.has(type)) {
       wsLogger.warn('Overriding existing message handler', { type });
     }
-
     this.handlers.set(type, handler);
-    wsLogger.debug('Message handler registered', { type });
   }
 
   unregisterHandler(type: string): boolean {
-    const existed = this.handlers.delete(type);
-    if (existed) {
-      wsLogger.debug('Message handler unregistered', { type });
-    }
-    return existed;
+    return this.handlers.delete(type);
   }
 
   getRegisteredHandlers(): string[] {

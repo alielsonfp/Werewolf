@@ -7,20 +7,39 @@ import { Role, Faction, GamePhase } from '@/utils/constants';
 import type { GameConfig, GameResults, IGameStateService } from '@/types';
 import { logger } from '@/utils/logger';
 
+// A10 - Interfaces para espectadores e reconexão
+interface GameSpectator {
+    id: string;
+    userId: string;
+    username: string;
+    joinedAt: Date;
+    lastActivity: Date;
+}
+
+interface ReconnectionData {
+    playerId: string;
+    disconnectedAt: string;
+    gamePhase: GamePhase;
+    gameDay: number;
+    playerState: any;
+}
+
 export class GameEngine implements IGameStateService {
     private games = new Map<string, GameState>();
     private votingManagers = new Map<string, VotingManager>();
     private phaseManagers = new Map<string, PhaseManager>();
     private eventHandlers = new Map<string, Map<string, ((data: any) => void)[]>>();
 
-    // ✅ 1. A ponte para o WebSocket: uma função de broadcast.
+    // A ponte para o WebSocket: uma função de broadcast.
     private broadcast: (roomId: string, type: string, data: any, excludeConnectionId?: string) => void = () => { };
+    private gameSpectators = new Map<string, Map<string, GameSpectator>>(); // gameId -> Map<spectatorId, GameSpectator>
+    private reconnectionData = new Map<string, Map<string, ReconnectionData>>(); // gameId -> Map<playerId, ReconnectionData>
 
     constructor() {
         logger.info('GameEngine initialized');
     }
 
-    // ✅ 2. Método público para injetar a função de broadcast a partir do server.ts
+    // Método público para injetar a função de broadcast a partir do server.ts
     public setBroadcaster(broadcaster: (roomId: string, type: string, data: any, excludeConnectionId?: string) => void) {
         this.broadcast = broadcaster;
     }
@@ -66,7 +85,6 @@ export class GameEngine implements IGameStateService {
                 if (player) player.assignRole(role, ROLE_CONFIGURATIONS[role].faction, ROLE_CONFIGURATIONS[role].maxActions);
             });
 
-            // ✅ CORREÇÃO: Definir o status e logar explicitamente
             gameState.status = 'PLAYING';
             logger.info('Game status changed to PLAYING', { gameId });
 
@@ -82,7 +100,6 @@ export class GameEngine implements IGameStateService {
         }
     }
 
-    // ✅ 3. O emitGameEvent agora usa a função de broadcast injetada.
     public emitGameEvent(gameId: string, event: string, data: any): void {
         const game = this.games.get(gameId);
         if (game) {
@@ -90,17 +107,26 @@ export class GameEngine implements IGameStateService {
         }
     }
 
+    // CORREÇÃO: Função 'endGame' unificada para evitar duplicidade.
     async endGame(gameId: string, reason?: string): Promise<void> {
         const gameState = this.games.get(gameId);
         if (!gameState || gameState.status === 'FINISHED') return;
 
         try {
-            const alivePlayers = gameState.getAlivePlayers();
-            const winCondition = WinConditionCalculator.calculateWinCondition(
-                alivePlayers.map(p => ({ playerId: p.id, role: p.role! }))
-            );
+            // Lógica original de cálculo de vitória (se não for um encerramento forçado)
+            if (!gameState.winningFaction) {
+                const alivePlayers = gameState.getAlivePlayers();
+                const winCondition = WinConditionCalculator.calculateWinCondition(
+                    alivePlayers.map(p => ({ playerId: p.id, role: p.role! }))
+                );
+                gameState.endGame(winCondition.winningFaction, winCondition.winningPlayers);
+            } else {
+                gameState.endGame(); // Finaliza o jogo com os dados já existentes
+            }
 
-            gameState.endGame(winCondition.winningFaction, winCondition.winningPlayers);
+            // Lógica de limpeza A10
+            this.gameSpectators.delete(gameId);
+            this.reconnectionData.delete(gameId);
 
             logger.info('Game ended', {
                 gameId,
@@ -108,21 +134,24 @@ export class GameEngine implements IGameStateService {
                 winningPlayers: gameState.winningPlayers,
                 reason,
                 totalDays: gameState.day,
+                cleanup: "A10 data cleared"
             });
 
-            this.emitGameEvent(gameId, 'game:ended', {
+            this.emitGameEvent(gameId, 'game-ended', { // Nome do evento padronizado
                 gameId,
                 winningFaction: gameState.winningFaction,
                 winningPlayers: gameState.winningPlayers,
-                reason,
+                reason: reason || 'Game completed',
                 totalDays: gameState.day,
                 finalResults: this.generateGameResults(gameState),
+                timestamp: new Date().toISOString()
             });
 
         } catch (error) {
             logger.error('Error ending game', error instanceof Error ? error : new Error('Unknown game end error'), { gameId });
         }
     }
+
 
     //====================================================================
     // PLAYER MANAGEMENT
@@ -132,7 +161,7 @@ export class GameEngine implements IGameStateService {
         if (!gameState) return false;
 
         const player = new Player({
-            id: `${gameId}-${playerData.userId}`, // Formato de ID padronizado
+            id: `${gameId}-${playerData.userId}`,
             userId: playerData.userId,
             username: playerData.username,
             isHost: playerData.isHost,
@@ -153,7 +182,7 @@ export class GameEngine implements IGameStateService {
                 username: player.username,
             });
 
-            this.emitGameEvent(gameState.roomId, 'player:joined', { // Emite para a roomId
+            this.emitGameEvent(gameState.roomId, 'player:joined', {
                 gameId,
                 player: player.getPublicInfo(),
             });
@@ -195,19 +224,16 @@ export class GameEngine implements IGameStateService {
         return success;
     }
 
-    // ✅ CORREÇÃO: Método adicionado para cumprir a interface IGameStateService
     async getPlayer(gameId: string, playerId: string): Promise<Player | null> {
         const game = await this.getGameState(gameId);
         return game?.getPlayer(playerId) || null;
     }
 
-    // ✅ CORREÇÃO: Método adicionado para cumprir a interface IGameStateService
     async getAllPlayers(gameId: string): Promise<Player[]> {
         const game = await this.getGameState(gameId);
         return game ? game.players : [];
     }
 
-    // ✅ CORREÇÃO: Método adicionado para cumprir a interface IGameStateService
     async updatePlayer(gameId: string, playerId: string, updates: Partial<Player>): Promise<void> {
         const game = await this.getGameState(gameId);
         const player = game?.getPlayer(playerId);
@@ -223,7 +249,6 @@ export class GameEngine implements IGameStateService {
         return this.games.get(gameId) || null;
     }
 
-    // ✅ CORREÇÃO: Método adicionado para cumprir a interface IGameStateService
     async getGame(gameId: string): Promise<GameState | null> {
         return this.getGameState(gameId);
     }
@@ -241,10 +266,6 @@ export class GameEngine implements IGameStateService {
     }
 
     // ... (restante do código da classe GameEngine permanece o mesmo)
-    // ... (incluindo nextPhase, processNightResults, etc.)
-    //====================================================================
-    // PLAYER ACTIONS
-    //====================================================================
     async performPlayerAction(gameId: string, playerId: string, action: any): Promise<boolean> {
         const gameState = this.games.get(gameId);
         if (!gameState) return false;
@@ -259,9 +280,6 @@ export class GameEngine implements IGameStateService {
         return false;
     }
 
-    //====================================================================
-    // TASK 7 - PHASE MANAGEMENT E VOTING SYSTEM
-    //====================================================================
     async nextPhase(gameId: string): Promise<void> {
         const gameState = this.games.get(gameId);
         if (!gameState) return;
@@ -295,9 +313,6 @@ export class GameEngine implements IGameStateService {
         }
     }
 
-    //====================================================================
-    // A7.1 - PROCESSAR RESULTADOS DA NOITE
-    //====================================================================
     private async processNightResults(gameState: GameState): Promise<void> {
         logger.info('Processing night results', {
             gameId: gameState.gameId,
@@ -422,9 +437,6 @@ export class GameEngine implements IGameStateService {
         return messages;
     }
 
-    //====================================================================
-    // A7.2, A7.3, A7.4 - SISTEMA DE VOTAÇÃO
-    //====================================================================
     private async processVotingResults(gameState: GameState): Promise<void> {
         const votingManager = this.votingManagers.get(gameState.gameId);
         if (!votingManager) return;
@@ -468,9 +480,6 @@ export class GameEngine implements IGameStateService {
         });
     }
 
-    //====================================================================
-    // A7.5 - VERIFICAR CONDIÇÕES DE VITÓRIA
-    //====================================================================
     private async checkWinCondition(gameId: string): Promise<void> {
         const gameState = this.games.get(gameId);
         if (!gameState || gameState.status !== 'PLAYING') return;
@@ -481,23 +490,10 @@ export class GameEngine implements IGameStateService {
         );
 
         if (winCondition.hasWinner) {
-            gameState.endGame(winCondition.winningFaction!, winCondition.winningPlayers!);
-            this.emitGameEvent(gameId, 'game:ended', {
-                gameId, winningFaction: winCondition.winningFaction, winningPlayers: winCondition.winningPlayers,
-                reason: winCondition.reason, totalDays: gameState.day, finalResults: this.generateGameResults(gameState),
-            });
-            logger.info('Game ended - win condition met', {
-                gameId, winningFaction: winCondition.winningFaction,
-                reason: winCondition.reason,
-            });
-            gameState.phase = GamePhase.ENDED;
-            gameState.status = 'FINISHED';
+            await this.endGame(gameId, winCondition.reason);
         }
     }
 
-    //====================================================================
-    // PHASE TRANSITION HELPERS
-    //====================================================================
     private async startFirstNight(gameState: GameState): Promise<void> {
         await this.changePhase(gameState, GamePhase.NIGHT, gameState.config.nightDuration);
         gameState.addEvent('FIRST_NIGHT_STARTED', {
@@ -515,9 +511,6 @@ export class GameEngine implements IGameStateService {
         });
     }
 
-    //====================================================================
-    // A7.2 - VOTING SYSTEM (vote, unvote)
-    //====================================================================
     async castVote(gameId: string, voterId: string, targetId: string): Promise<boolean> {
         const gameState = this.games.get(gameId);
         const votingManager = this.votingManagers.get(gameId);
@@ -548,19 +541,18 @@ export class GameEngine implements IGameStateService {
         return success;
     }
 
-    //====================================================================
-    // EVENT SYSTEM
-    //====================================================================
     onGameEvent(gameId: string, event: string, handler: (data: any) => void): void {
         const gameHandlers = this.eventHandlers.get(gameId);
-        if (!gameHandlers) return;
-        if (!gameHandlers.has(event)) gameHandlers.set(event, []);
-        gameHandlers.get(event)!.push(handler);
+        if (!gameHandlers) {
+            this.eventHandlers.set(gameId, new Map());
+        }
+        const gameEventHandlers = this.eventHandlers.get(gameId)!;
+        if (!gameEventHandlers.has(event)) {
+            gameEventHandlers.set(event, []);
+        }
+        gameEventHandlers.get(event)!.push(handler);
     }
 
-    //====================================================================
-    // UTILITY METHODS
-    //====================================================================
     private generateGameResults(gameState: GameState): GameResults {
         return {
             gameId: gameState.gameId, roomId: gameState.roomId,
@@ -608,18 +600,420 @@ export class GameEngine implements IGameStateService {
         return {
             gameId, status: gameState.status, phase: gameState.phase, day: gameState.day,
             playerCount: gameState.players.length, aliveCount: gameState.getAlivePlayers().length,
-            spectatorCount: gameState.spectators.length, timeLeft: gameState.timeLeft,
+            spectatorCount: this.gameSpectators.get(gameId)?.size || 0, // Usa a contagem correta de espectadores
+            timeLeft: gameState.timeLeft,
             events: gameState.events.length,
         };
     }
 
     //====================================================================
-    // CLEANUP
+    // A10.1 - MÉTODOS PARA ESPECTADORES
     //====================================================================
+    async addSpectator(gameId: string, spectatorUserId: string, username: string): Promise<boolean> {
+        try {
+            const gameState = this.games.get(gameId);
+            if (!gameState) {
+                logger.warn('Cannot add spectator to non-existent game', { gameId, spectatorUserId });
+                return false;
+            }
+
+            const maxSpectators = gameState.config?.maxSpectators || 10;
+            const currentSpectators = this.gameSpectators.get(gameId) || new Map();
+
+            if (currentSpectators.size >= maxSpectators) {
+                logger.warn('Cannot add spectator - limit reached', {
+                    gameId, spectatorUserId, currentCount: currentSpectators.size, maxSpectators
+                });
+                return false;
+            }
+
+            const isPlayer = gameState.players.some(p => p.userId === spectatorUserId);
+            if (isPlayer) {
+                logger.warn('Cannot add player as spectator', { gameId, spectatorUserId });
+                return false;
+            }
+
+            const spectator: GameSpectator = {
+                id: `spectator-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                userId: spectatorUserId, username, joinedAt: new Date(), lastActivity: new Date()
+            };
+
+            if (!this.gameSpectators.has(gameId)) {
+                this.gameSpectators.set(gameId, new Map());
+            }
+            this.gameSpectators.get(gameId)!.set(spectator.id, spectator);
+
+            if ('spectatorsSet' in gameState && (gameState as any).spectatorsSet instanceof Set) {
+                (gameState as any).spectatorsSet.add(spectator.id);
+            }
+
+            await this.sendSpectatorGameState(gameId, spectator.id);
+
+            this.emitGameEvent(gameState.roomId, 'spectator-joined', {
+                spectatorId: spectator.id,
+                username,
+                spectatorCount: currentSpectators.size + 1,
+                timestamp: new Date().toISOString()
+            });
+
+            logger.info('Spectator added to game', {
+                gameId, spectatorId: spectator.id, username, spectatorCount: currentSpectators.size + 1
+            });
+
+            return true;
+
+        } catch (error) {
+            logger.error('Error adding spectator to game', error as Error, {
+                gameId, spectatorUserId
+            });
+            return false;
+        }
+    }
+
+    async removeSpectator(gameId: string, spectatorUserId: string): Promise<boolean> {
+        try {
+            const gameSpectators = this.gameSpectators.get(gameId);
+            if (!gameSpectators) {
+                return false;
+            }
+
+            let spectatorToRemove: GameSpectator | null = null;
+            let spectatorIdToRemove: string | null = null;
+
+            for (const [spectatorId, spectator] of gameSpectators.entries()) {
+                if (spectator.userId === spectatorUserId) {
+                    spectatorToRemove = spectator;
+                    spectatorIdToRemove = spectatorId;
+                    break;
+                }
+            }
+
+            if (!spectatorToRemove || !spectatorIdToRemove) {
+                return false;
+            }
+
+            gameSpectators.delete(spectatorIdToRemove);
+
+            const gameState = this.games.get(gameId);
+
+            // CORREÇÃO: Envolver a lógica que depende do gameState em uma verificação para evitar erro de 'undefined'.
+            if (gameState) {
+                if ('spectatorsSet' in gameState && (gameState as any).spectatorsSet instanceof Set) {
+                    (gameState as any).spectatorsSet.delete(spectatorIdToRemove);
+                }
+
+                // Emite o evento apenas se o gameState for encontrado (para obter o roomId)
+                this.emitGameEvent(gameState.roomId, 'spectator-left', {
+                    spectatorId: spectatorIdToRemove,
+                    username: spectatorToRemove.username,
+                    spectatorCount: gameSpectators.size,
+                    timestamp: new Date().toISOString()
+                });
+            } else {
+                logger.warn('Removed spectator, but could not find corresponding game to broadcast event.', { gameId, spectatorUserId });
+            }
+
+
+            logger.info('Spectator removed from game', {
+                gameId,
+                spectatorId: spectatorIdToRemove,
+                username: spectatorToRemove.username,
+                remainingSpectators: gameSpectators.size
+            });
+
+            return true;
+
+        } catch (error) {
+            logger.error('Error removing spectator from game', error as Error, {
+                gameId,
+                spectatorUserId
+            });
+            return false;
+        }
+    }
+
+    private async sendSpectatorGameState(gameId: string, spectatorId: string): Promise<void> {
+        try {
+            const gameState = this.games.get(gameId);
+            if (!gameState) return;
+
+            const spectatorState = {
+                gameId,
+                roomId: gameState.roomId,
+                status: gameState.status,
+                phase: gameState.phase,
+                day: gameState.day,
+                timeLeft: gameState.timeLeft,
+                players: gameState.players.map(p => ({
+                    id: p.id,
+                    username: p.username,
+                    isAlive: p.isAlive,
+                    isHost: p.userId === gameState.hostId,
+                    hasVoted: p.hasVoted,
+                    hasActed: p.hasActed
+                })),
+                gameStats: {
+                    totalPlayers: gameState.players.length,
+                    alivePlayers: gameState.getAlivePlayers().length,
+                    spectatorCount: this.gameSpectators.get(gameId)?.size || 0,
+                    currentDay: gameState.day
+                },
+                recentEvents: gameState.events.slice(-10).filter(event =>
+                    !event.type.includes('NIGHT_') && !event.type.includes('ROLE_')
+                ),
+                timestamp: new Date().toISOString()
+            };
+
+            logger.debug('Spectator game state prepared', {
+                gameId,
+                spectatorId,
+                stateSize: JSON.stringify(spectatorState).length
+            });
+
+        } catch (error) {
+            logger.error('Error sending spectator game state', error as Error, {
+                gameId, spectatorId
+            });
+        }
+    }
+
+    //====================================================================
+    // A10.2 & A10.3 - MÉTODOS PARA RECONEXÃO E RECUPERAÇÃO DE ESTADO
+    //====================================================================
+    async reconnectPlayer(gameId: string, playerId: string): Promise<GameState | null> {
+        try {
+            const gameState = this.games.get(gameId);
+            if (!gameState) {
+                logger.warn('Attempted to reconnect to non-existent game', { gameId, playerId });
+                return null;
+            }
+
+            const player = gameState.players.find(p => p.id === playerId);
+            if (!player) {
+                logger.warn('Player not found in game for reconnection', { gameId, playerId });
+                return null;
+            }
+
+            const gameReconnectionData = this.reconnectionData.get(gameId);
+            const playerReconnectionData = gameReconnectionData?.get(playerId);
+
+            if (playerReconnectionData) {
+                // CORREÇÃO: Usar 'lastSeen' em vez de 'lastActivity' para alinhar com a classe Player.
+                player.lastSeen = new Date();
+
+                logger.info('Player reconnected to game with stored data', {
+                    gameId,
+                    playerId,
+                    playerUsername: player.username,
+                    gamePhase: gameState.phase,
+                    gameDay: gameState.day,
+                    disconnectedAt: playerReconnectionData.disconnectedAt
+                });
+
+                gameReconnectionData?.delete(playerId);
+            } else {
+                logger.info('Player reconnected to game without stored data', {
+                    gameId,
+                    playerId,
+                    playerUsername: player.username,
+                    gamePhase: gameState.phase,
+                    gameDay: gameState.day
+                });
+            }
+
+            this.emitGameEvent(gameState.roomId, 'player-reconnected', {
+                playerId,
+                username: player.username,
+                timestamp: new Date().toISOString()
+            });
+
+            return gameState;
+
+        } catch (error) {
+            logger.error('Error reconnecting player to game', error as Error, {
+                gameId, playerId
+            });
+            return null;
+        }
+    }
+
+    async getPlayerGameState(gameId: string, playerId: string): Promise<any> {
+        try {
+            const gameState = this.games.get(gameId);
+            if (!gameState) {
+                logger.warn('Game not found for player state request', { gameId, playerId });
+                return null;
+            }
+
+            const player = gameState.players.find(p => p.id === playerId);
+            if (!player) {
+                logger.warn('Player not found for state request', { gameId, playerId });
+                return null;
+            }
+
+            const playerState = {
+                gameId,
+                roomId: gameState.roomId,
+                status: gameState.status,
+                phase: gameState.phase,
+                day: gameState.day,
+                timeLeft: gameState.timeLeft,
+                playerId,
+                username: player.username,
+                role: player.role,
+                faction: player.faction,
+                isAlive: player.isAlive,
+                isHost: player.userId === gameState.hostId,
+                hasVoted: player.hasVoted,
+                hasActed: player.hasActed,
+                isProtected: player.isProtected,
+                visiblePlayers: this.getVisiblePlayersForRole(gameState, player),
+                currentVotes: gameState.phase === GamePhase.VOTING ? gameState.votes : null,
+                gameStats: {
+                    totalPlayers: gameState.players.length,
+                    alivePlayers: gameState.getAlivePlayers().length,
+                    spectatorCount: this.gameSpectators.get(gameId)?.size || 0,
+                    currentDay: gameState.day
+                },
+                recentEvents: gameState.events.slice(-20),
+                syncedAt: new Date().toISOString()
+            };
+
+            logger.info('Player game state retrieved', {
+                gameId, playerId, phase: gameState.phase, role: player.role, isAlive: player.isAlive
+            });
+
+            return playerState;
+
+        } catch (error) {
+            logger.error('Error getting player game state', error as Error, {
+                gameId, playerId
+            });
+            return null;
+        }
+    }
+
+    storeReconnectionData(gameId: string, playerId: string, additionalData: any = {}): void {
+        try {
+            const gameState = this.games.get(gameId);
+            if (!gameState) return;
+
+            const player = gameState.players.find(p => p.id === playerId);
+            if (!player) return;
+
+            if (!this.reconnectionData.has(gameId)) {
+                this.reconnectionData.set(gameId, new Map());
+            }
+
+            const reconnectionData: ReconnectionData = {
+                playerId,
+                disconnectedAt: new Date().toISOString(),
+                gamePhase: gameState.phase,
+                gameDay: gameState.day,
+                playerState: {
+                    role: player.role,
+                    faction: player.faction,
+                    isAlive: player.isAlive,
+                    hasVoted: player.hasVoted,
+                    hasActed: player.hasActed,
+                    isProtected: player.isProtected,
+                    ...additionalData
+                }
+            };
+
+            this.reconnectionData.get(gameId)!.set(playerId, reconnectionData);
+
+            logger.info('Reconnection data stored', {
+                gameId, playerId, gamePhase: gameState.phase, gameDay: gameState.day
+            });
+
+        } catch (error) {
+            logger.error('Error storing reconnection data', error as Error, {
+                gameId, playerId
+            });
+        }
+    }
+
+    //====================================================================
+    // MÉTODOS AUXILIARES
+    //====================================================================
+    private getVisiblePlayersForRole(gameState: GameState, player: Player): any[] {
+        return gameState.players
+            .filter(p => p.id !== player.id)
+            .map(p => ({
+                id: p.id,
+                username: p.username,
+                isAlive: p.isAlive,
+                hasVoted: p.hasVoted,
+                role: (player.role === Role.WEREWOLF && p.role === Role.WEREWOLF) ? p.role : undefined
+            }));
+    }
+
+    getGameStatistics(gameId: string): any {
+        const gameState = this.games.get(gameId);
+        if (!gameState) return null;
+
+        return {
+            gameId,
+            roomId: gameState.roomId,
+            status: gameState.status,
+            phase: gameState.phase,
+            day: gameState.day,
+            timeLeft: gameState.timeLeft,
+            playerCount: gameState.players.length,
+            alivePlayerCount: gameState.getAlivePlayers().length,
+            spectatorCount: this.gameSpectators.get(gameId)?.size || 0,
+            startedAt: gameState.startedAt,
+            lastActivity: new Date().toISOString(),
+            reconnectionDataCount: this.reconnectionData.get(gameId)?.size || 0
+        };
+    }
+
+    cleanupExpiredReconnectionData(gameId: string): void {
+        const gameReconnectionData = this.reconnectionData.get(gameId);
+        if (!gameReconnectionData) return;
+
+        const now = Date.now();
+        const expirationTime = 120000; // 2 minutos
+
+        for (const [playerId, data] of gameReconnectionData.entries()) {
+            const disconnectedAt = new Date(data.disconnectedAt).getTime();
+            if (now - disconnectedAt > expirationTime) {
+                gameReconnectionData.delete(playerId);
+                logger.info('Expired reconnection data cleaned', { gameId, playerId });
+            }
+        }
+    }
+
+    updateSpectatorActivity(gameId: string, spectatorUserId: string): void {
+        const gameSpectators = this.gameSpectators.get(gameId);
+        if (!gameSpectators) return;
+
+        for (const spectator of gameSpectators.values()) {
+            if (spectator.userId === spectatorUserId) {
+                spectator.lastActivity = new Date();
+                break;
+            }
+        }
+    }
+
+    getGameSpectators(gameId: string): GameSpectator[] {
+        const gameSpectators = this.gameSpectators.get(gameId);
+        return gameSpectators ? Array.from(gameSpectators.values()) : [];
+    }
+
+    // CORREÇÃO: Função 'cleanup' unificada para evitar duplicidade.
     async cleanup(): Promise<void> {
+        // Limpeza original
         this.games.clear();
         this.votingManagers.clear();
+        this.phaseManagers.clear(); // Adicionando limpeza do phaseManagers
         this.eventHandlers.clear();
-        logger.info('GameEngine cleanup completed');
+
+        // Limpeza A10
+        this.gameSpectators.clear();
+        this.reconnectionData.clear();
+
+        logger.info('GameEngine cleanup completed with A10 data');
     }
 }

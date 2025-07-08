@@ -1,9 +1,10 @@
+// 🐺 LOBISOMEM ONLINE - App Entry Point (CORRIGIDO)
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import http from 'http'; // ✅ NOVO: Importar http
+import http from 'http';
 import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
@@ -15,7 +16,7 @@ import roomRoutes from '@/routes/rooms';
 
 const app = express();
 
-// ✅ CONFIGURAÇÃO DE MIDDLEWARES (mantida igual)
+// MIDDLEWARES
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -31,20 +32,16 @@ app.use(helmet({
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir requisições sem 'origin' (ex: Postman, apps mobile)
     if (!origin) return callback(null, true);
-
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:3001',
       'https://localhost:3000',
       'https://localhost:3001',
     ];
-
     if (config.IS_PRODUCTION) {
       allowedOrigins.push('https://your-domain.com');
     }
-
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -66,14 +63,9 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-if (config.IS_DEVELOPMENT) {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+app.use(config.IS_DEVELOPMENT ? morgan('dev') : morgan('combined'));
 
-// ✅✅✅ LÓGICA CRÍTICA MOVIDA PARA AQUI ✅✅✅
-// Criar servidor HTTP e WebSocket ANTES das rotas
+// CRIAÇÃO DO SERVIDOR HTTP E WEBSOCKET
 const httpServer = http.createServer(app);
 let wsManager: WebSocketManager;
 
@@ -82,18 +74,15 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
     const gameStateService = ServiceFactory.getGameStateService();
     const eventBus = ServiceFactory.getEventBus();
 
-    wsManager = new WebSocketManager(gameStateService, eventBus, config);
+    wsManager = new WebSocketManager(gameStateService, eventBus, config as any); // Usando 'as any' para contornar complexidade de tipo na config
     wsManager.setupWebSocketServer(httpServer);
 
-    // ✅ CORREÇÃO CRÍTICA: Injeção acontece ANTES das rotas
+    // Injeção de dependência para os controllers HTTP
     app.locals.channelManager = wsManager.channelManager;
     console.log('✅ ChannelManager successfully injected into app.locals');
 
-    // ✅ NOVO: Exportar wsManager para shutdown
     (httpServer as any).wsManager = wsManager;
 
-    // ✅✅✅ CONFIGURAÇÃO DO GAMEENGINE BROADCASTER ✅✅✅
-    // Configurar o broadcaster do GameEngine, se ele for a instância usada
     if (gameStateService instanceof GameEngine) {
       gameStateService.setBroadcaster(
         (roomId: string, type: string, data: any) => {
@@ -102,7 +91,6 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
       );
       console.log('✅ GameEngine broadcaster configured successfully');
     }
-    // ✅✅✅ FIM DA CONFIGURAÇÃO ✅✅✅
 
   } catch (error) {
     console.error('❌ Failed to initialize WebSocket:', error);
@@ -111,21 +99,27 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
 } else {
   console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
 }
-// ✅✅✅ FIM DA LÓGICA MOVIDA ✅✅✅
 
-// ✅ ROTAS SÃO CARREGADAS DEPOIS (channelManager já existe)
+// ROTAS
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 
-// ✅ HEALTH CHECKS - Versão híbrida: nova arquitetura + limpeza do colega
+// HEALTH CHECKS
 app.get('/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
     const redisHealth = await checkRedisHealth();
     
-    // ✅ MANTÉM: Nova arquitetura precisa verificar services
-    const servicesHealth = await ServiceFactory.getServicesHealth();
-    const servicesStats = ServiceFactory.getServicesStats();
+    // CORREÇÃO: Chamar o método 'healthCheck' individual de cada serviço, pois 'getServicesHealth' não existe.
+    // Usamos o operador '?.' (optional chaining) porque healthCheck é opcional na interface.
+    const servicesHealth = {
+        gameState: await ServiceFactory.getGameStateService().healthCheck?.(),
+        eventBus: await ServiceFactory.getEventBus().healthCheck?.(),
+        serviceRegistry: await ServiceFactory.getServiceRegistry().healthCheck?.()
+    };
+    
+    // CORREÇÃO: O método 'getServicesStats' não existe. As estatísticas mais relevantes estão no wsManager.
+    const wsStats = wsManager ? wsManager.getStats() : 'Not Initialized';
 
     const health = {
       status: 'healthy',
@@ -138,29 +132,20 @@ app.get('/health', async (req, res) => {
       database: dbHealth,
       redis: redisHealth,
       services: servicesHealth,
-      stats: servicesStats,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      // ✅ NOVO: Adicionar status do WebSocket
+      stats: {
+          websocket: wsStats,
+          uptime: process.uptime(),
+          memory: process.memoryUsage(),
+      },
       websocket: {
         initialized: !!wsManager,
         channelManagerInjected: !!app.locals.channelManager,
       },
     };
 
-    let hasUnhealthyService = false;
-
-    if (config.DISTRIBUTED_MODE) {
-      hasUnhealthyService = Object.values(servicesHealth).some(
-        (service: any) => service.status === 'unhealthy'
-      );
-    } else {
-      const criticalServices = ['gameState'];
-      hasUnhealthyService = criticalServices.some(serviceName => {
-        const service = servicesHealth[serviceName];
-        return service && service.status === 'unhealthy';
-      });
-    }
+    const hasUnhealthyService = Object.values(servicesHealth).some(
+      (service) => service && service.status === 'unhealthy'
+    );
 
     const isSystemHealthy =
       dbHealth.status === 'healthy' &&
@@ -168,8 +153,9 @@ app.get('/health', async (req, res) => {
       !hasUnhealthyService;
 
     if (!isSystemHealthy) {
-      res.status(503).json(health);
-      return;
+        health.status = 'unhealthy';
+        res.status(503).json(health);
+        return;
     }
 
     res.json(health);
@@ -199,10 +185,7 @@ app.get('/health/live', (req, res) => {
   });
 });
 
-// ✅ CORREÇÃO: Removido o endpoint /health/websocket conforme sugerido pelo colega
-// A saúde do WebSocket agora é verificada no endpoint principal /health
-
-// ✅ ROOT ENDPOINT (mantido igual)
+// ROOT ENDPOINT
 app.get('/', (req, res) => {
   res.json({
     message: '🐺 Werewolf Online API',
@@ -216,39 +199,10 @@ app.get('/', (req, res) => {
       path: config.WS_BASE_PATH,
       url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
     },
-    endpoints: {
-      health: '/health',
-      websocketHealth: '/health/websocket',
-      ready: '/health/ready',
-      live: '/health/live',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        forgotPassword: 'POST /api/auth/forgot-password',
-        resetPassword: 'POST /api/auth/reset-password',
-        profile: 'GET /api/auth/profile',
-        logout: 'POST /api/auth/logout',
-      },
-      rooms: {
-        list: 'GET /api/rooms',
-        create: 'POST /api/rooms',
-        details: 'GET /api/rooms/:id',
-        join: 'POST /api/rooms/:id/join',
-        joinByCode: 'POST /api/rooms/join-by-code',
-        delete: 'DELETE /api/rooms/:id',
-      },
-      websocket: {
-        connect: `WS ${config.WS_BASE_PATH}`,
-        events: [
-          'join-room', 'leave-room', 'player-ready', 'start-game',
-          'chat-message', 'game-action', 'vote', 'kick-player'
-        ],
-      },
-    },
   });
 });
 
-// ✅ ERROR HANDLERS (mantidos iguais)
+// ERROR HANDLERS
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
@@ -269,5 +223,5 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-// ✅ EXPORTAR O HTTP SERVER (não mais o app)
+// EXPORTAR O HTTP SERVER
 export default httpServer;
