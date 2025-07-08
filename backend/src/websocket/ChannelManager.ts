@@ -4,6 +4,7 @@ import type { ConnectionManager } from './ConnectionManager';
 interface RoomChannel {
   players: Set<string>;
   spectators: Set<string>;
+  readyPlayers: Set<string>;
   createdAt: Date;
   lastActivity: Date;
 }
@@ -261,6 +262,36 @@ export class ChannelManager {
   isSpectatorInRoom(roomId: string, connectionId: string): boolean {
     const room = this.rooms.get(roomId);
     return room ? room.spectators.has(connectionId) : false;
+  }
+
+  // ✅ Define ou remove o status de "pronto" de um jogador
+  setPlayerReadyStatus(roomId: string, connectionId: string, isReady: boolean): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    if (!room.readyPlayers) room.readyPlayers = new Set();
+
+    if (isReady) {
+      room.readyPlayers.add(connectionId);
+    } else {
+      room.readyPlayers.delete(connectionId);
+    }
+
+    wsLogger.debug('Player ready status updated', {
+      roomId,
+      connectionId,
+      isReady,
+      totalReady: room.readyPlayers.size,
+    });
+
+    room.lastActivity = new Date();
+  }
+
+
+  // ✅ Verifica se um jogador está marcado como "pronto"
+  isPlayerReady(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.readyPlayers?.has(connectionId) ?? false : false;
   }
 
   getActiveRoomsCount(): number {

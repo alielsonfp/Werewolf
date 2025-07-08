@@ -229,7 +229,7 @@ export class MessageRouter {
             username: conn.context.username,
             avatar: null,
             isHost: roomData.hostId === conn.context.userId, // ✅ Verificação real do host
-            isReady: false, // TODO: Implementar storage de ready status
+            isReady: this.channelManager.isPlayerReady(roomId, connId), // TODO: Implementar storage de ready status
             isSpectator: false,
             isConnected: true,
             joinedAt: new Date().toISOString(),
@@ -260,7 +260,7 @@ export class MessageRouter {
         username: connection.context.username,
         avatar: null,
         isHost: roomData.hostId === connection.context.userId, // ✅ Verificação real do host
-        isReady: false,
+        isReady: this.channelManager.isPlayerReady(roomId, connectionId),
         isSpectator: asSpectator,
         isConnected: true,
         joinedAt: new Date().toISOString(),
@@ -478,6 +478,8 @@ export class MessageRouter {
 
     try {
       const roomId = connection.context.roomId;
+
+      this.channelManager.setPlayerReadyStatus(roomId, connectionId, ready);
 
       // Broadcast ready status to room
       if (this.broadcastToRoom) {

@@ -37,7 +37,7 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
   const isReady = currentPlayer?.isReady || false;
 
   const canStartGame = players.length >= 3 &&
-    players.every(p => p.isReady) &&
+    players.filter(p => !p.isHost).every(p => p.isReady) &&
     isConnected &&
     isHost;
 
