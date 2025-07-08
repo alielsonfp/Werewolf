@@ -1,7 +1,7 @@
 // 🐺 LOBISOMEM ONLINE - Action Manager (CORRIGIDO DEFINITIVAMENTE)
 import { GameState, Player } from './Game';
 import { ROLE_CONFIGURATIONS } from './RoleSystem';
-import type { Role, Faction, GamePhase, GameStatus, GameConfig, IGameEngine } from '@/types';
+import type { Role, Faction, GamePhase, GameStatus, GameConfig} from '@/types';
 import { logger } from '@/utils/logger';
 
 //====================================================================

@@ -1,8 +1,8 @@
-// 🐺 LOBISOMEM ONLINE - Heartbeat Manager
-// ✅ PREPARADO PARA MIGRAÇÃO AUTOMÁTICA → game-service
+// 🐺 LOBISOMEM ONLINE - Heartbeat Manager (CORRIGIDO)
 import { wsConfig } from '@/config/websocket';
 import { wsLogger } from '@/utils/logger';
 import type { ConnectionManager } from './ConnectionManager';
+import type { WebSocketConnection } from '@/types'; // CORREÇÃO: Importar tipo de conexão
 
 //====================================================================
 // HEARTBEAT STATS INTERFACE
@@ -47,15 +47,13 @@ export class HeartbeatManager {
 
         this.isRunning = true;
 
-        // Start ping interval
         this.pingInterval = setInterval(() => {
             this.sendPingToAllConnections();
         }, wsConfig.heartbeat.interval);
 
-        // Start cleanup interval (check for dead connections)
         this.cleanupInterval = setInterval(() => {
             this.cleanupDeadConnections();
-        }, wsConfig.heartbeat.interval * 2); // Run cleanup less frequently
+        }, wsConfig.heartbeat.interval * 2);
 
         wsLogger.info('HeartbeatManager started', {
             pingInterval: wsConfig.heartbeat.interval,
@@ -64,10 +62,7 @@ export class HeartbeatManager {
     }
 
     stop(): void {
-        if (!this.isRunning) {
-            return;
-        }
-
+        if (!this.isRunning) return;
         this.isRunning = false;
 
         if (this.pingInterval) {
@@ -96,6 +91,7 @@ export class HeartbeatManager {
     // PING OPERATIONS
     //====================================================================
     private sendPingToAllConnections(): void {
+        // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
         const connections = this.connectionManager.getAllConnections();
         let sentCount = 0;
         let failedCount = 0;
@@ -103,30 +99,17 @@ export class HeartbeatManager {
         for (const connection of connections) {
             try {
                 if (connection.ws.readyState === connection.ws.OPEN) {
-                    // Mark as potentially dead - will be marked alive when pong is received
+                    // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
                     this.connectionManager.markDead(connection.id);
-
-                    // Send ping
                     connection.ws.ping();
                     sentCount++;
-
-                    wsLogger.debug('Ping sent', {
-                        connectionId: connection.id,
-                        userId: connection.context.userId,
-                    });
                 } else {
-                    // Connection is already closed
                     failedCount++;
-                    wsLogger.debug('Skipping ping for closed connection', {
-                        connectionId: connection.id,
-                        readyState: connection.ws.readyState,
-                    });
                 }
             } catch (error) {
                 failedCount++;
                 wsLogger.error('Failed to send ping', error instanceof Error ? error : new Error('Unknown ping error'), {
                     connectionId: connection.id,
-                    userId: connection.context.userId,
                 });
             }
         }
@@ -138,7 +121,6 @@ export class HeartbeatManager {
             wsLogger.debug('Ping round completed', {
                 sent: sentCount,
                 failed: failedCount,
-                total: connections.length,
             });
         }
     }
@@ -152,26 +134,15 @@ export class HeartbeatManager {
 
         try {
             if (connection.ws.readyState === connection.ws.OPEN) {
+                // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
                 this.connectionManager.markDead(connectionId);
                 connection.ws.ping();
-
-                wsLogger.debug('Individual ping sent', {
-                    connectionId,
-                    userId: connection.context.userId,
-                });
-
                 return true;
-            } else {
-                wsLogger.debug('Cannot ping closed connection', {
-                    connectionId,
-                    readyState: connection.ws.readyState,
-                });
-                return false;
             }
+            return false;
         } catch (error) {
             wsLogger.error('Failed to send individual ping', error instanceof Error ? error : new Error('Unknown individual ping error'), {
                 connectionId,
-                userId: connection.context.userId,
             });
             return false;
         }
@@ -181,14 +152,11 @@ export class HeartbeatManager {
     // PONG HANDLING
     //====================================================================
     handlePong(connectionId: string): void {
+        // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
         const success = this.connectionManager.markAlive(connectionId);
         if (success) {
             this.stats.totalPongsReceived++;
-
-            wsLogger.debug('Pong received', {
-                connectionId,
-                responseTime: Date.now(), // Could calculate actual response time if needed
-            });
+            wsLogger.debug('Pong received', { connectionId });
         } else {
             wsLogger.warn('Received pong for unknown connection', { connectionId });
         }
@@ -198,38 +166,31 @@ export class HeartbeatManager {
     // DEAD CONNECTION CLEANUP
     //====================================================================
     private cleanupDeadConnections(): void {
+        // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
         const deadConnections = this.connectionManager.getDeadConnections();
         let cleanedCount = 0;
 
-        for (const connectionId of deadConnections) {
-            const connection = this.connectionManager.getConnection(connectionId);
-            if (!connection) continue;
-
-            // Check if connection has been dead for too long
+        for (const connection of deadConnections) {
             const timeSinceLastPing = Date.now() - connection.lastPing;
             const isTimedOut = timeSinceLastPing > (wsConfig.heartbeat.interval + wsConfig.heartbeat.timeout);
 
             if (isTimedOut) {
                 wsLogger.info('Removing dead connection', {
-                    connectionId,
+                    connectionId: connection.id,
                     userId: connection.context.userId,
-                    username: connection.context.username,
-                    timeSinceLastPing,
-                    lastPing: new Date(connection.lastPing).toISOString(),
                 });
 
-                // Close the connection and remove it
                 try {
                     if (connection.ws.readyState === connection.ws.OPEN) {
-                        connection.ws.terminate(); // Force close
+                        connection.ws.terminate();
                     }
                 } catch (error) {
                     wsLogger.error('Error terminating dead connection', error instanceof Error ? error : new Error('Unknown termination error'), {
-                        connectionId,
+                        connectionId: connection.id,
                     });
                 }
 
-                this.connectionManager.removeConnection(connectionId);
+                this.connectionManager.removeConnection(connection.id);
                 cleanedCount++;
                 this.stats.deadConnectionsDetected++;
             }
@@ -240,7 +201,6 @@ export class HeartbeatManager {
         if (cleanedCount > 0) {
             wsLogger.info('Dead connection cleanup completed', {
                 cleanedCount,
-                totalDeadConnections: deadConnections.length,
                 remainingConnections: this.connectionManager.getConnectionCount(),
             });
         }
@@ -249,9 +209,8 @@ export class HeartbeatManager {
     forceCleanupDeadConnections(): number {
         wsLogger.info('Force cleanup requested');
         this.cleanupDeadConnections();
-
-        const deadConnections = this.connectionManager.getDeadConnections();
-        return deadConnections.length;
+        // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
+        return this.connectionManager.getDeadConnections().length;
     }
 
     //====================================================================
@@ -287,10 +246,12 @@ export class HeartbeatManager {
         timeSinceLastPing: number;
         isHealthy: boolean;
     }> {
+        // CORREÇÃO: Usar o método correto que será adicionado ao ConnectionManager
         const connections = this.connectionManager.getAllConnections();
         const now = Date.now();
 
-        return connections.map(connection => {
+        // CORREÇÃO: Adicionar tipo explícito ao parâmetro para evitar erro de 'any' implícito
+        return connections.map((connection: WebSocketConnection) => {
             const timeSinceLastPing = now - connection.lastPing;
             const isHealthy = connection.isAlive && timeSinceLastPing < wsConfig.heartbeat.interval * 2;
 
@@ -351,15 +312,13 @@ export class HeartbeatManager {
 
     resetStats(): void {
         this.stats = {
+            ...this.stats,
             totalPingsSent: 0,
             totalPongsReceived: 0,
-            currentInterval: wsConfig.heartbeat.interval,
-            timeout: wsConfig.heartbeat.timeout,
             lastCleanup: new Date(),
             connectionsMonitored: this.connectionManager.getConnectionCount(),
             deadConnectionsDetected: 0,
         };
-
         wsLogger.info('HeartbeatManager stats reset');
     }
 
@@ -374,11 +333,7 @@ export class HeartbeatManager {
         this.stats.currentInterval = newInterval;
 
         if (this.isRunning) {
-            wsLogger.info('Updating heartbeat interval', {
-                oldInterval: wsConfig.heartbeat.interval,
-                newInterval,
-            });
-
+            wsLogger.info('Updating heartbeat interval', { newInterval });
             this.restart();
         }
     }
@@ -393,21 +348,19 @@ export class HeartbeatManager {
         issues: string[];
     } {
         const issues: string[] = [];
-
         if (!this.isRunning) {
             issues.push('HeartbeatManager is not running');
         }
 
         const healthSummary = this.getHealthySummary();
-        const unhealthyPercentage = healthSummary.total > 0
-            ? (healthSummary.unhealthy / healthSummary.total) * 100
-            : 0;
-
-        if (unhealthyPercentage > 50) {
-            issues.push(`${unhealthyPercentage.toFixed(1)}% of connections are unhealthy`);
+        if (healthSummary.total > 0) {
+            const unhealthyPercentage = (healthSummary.unhealthy / healthSummary.total) * 100;
+            if (unhealthyPercentage > 50) {
+                issues.push(`${unhealthyPercentage.toFixed(1)}% of connections are unhealthy`);
+            }
         }
 
-        if (this.stats.totalPingsSent > 0) {
+        if (this.stats.totalPingsSent > 10) { // Apenas checar se houver um número razoável de pings
             const successRate = (this.stats.totalPongsReceived / this.stats.totalPingsSent) * 100;
             if (successRate < 80) {
                 issues.push(`Low ping success rate: ${successRate.toFixed(1)}%`);
