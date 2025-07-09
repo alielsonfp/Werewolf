@@ -13,12 +13,12 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 export default function GamePage() {
   const router = useRouter();
   const { gameId } = router.query;
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, getToken } = useAuth();
   const { isConnected, connect, sendMessage } = useSocket();
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hasJoinedGame, setHasJoinedGame] = useState(false);
+  const [hasRequestedGameState, setHasRequestedGameState] = useState(false);
 
   // =============================================================================
   // AUTHENTICATION CHECK
@@ -41,39 +41,38 @@ export default function GamePage() {
   }, [router.isReady, isAuthenticated, gameId, router]);
 
   // =============================================================================
-  // WEBSOCKET CONNECTION
+  // WEBSOCKET CONNECTION - NOVA CONEXÃO PARA O JOGO
   // =============================================================================
   useEffect(() => {
-    if (!gameId || !user || isLoading) return;
+    if (!router.isReady || !isAuthenticated || !gameId) return;
 
-    // Build WebSocket URL for this specific game
-    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${gameId}?token=${localStorage.getItem('token')}`;
+    const token = getToken();
+    if (!token) {
+      router.push('/auth/login');
+      return;
+    }
 
+    // ✅ IMPORTANTE: A URL agora é do JOGO, não mais da SALA
+    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${gameId}?token=${encodeURIComponent(token)}`;
+
+    // Conecta se não estiver conectado
     if (!isConnected) {
       console.log('🔌 Connecting to game WebSocket:', wsUrl);
       connect(wsUrl);
     }
-  }, [gameId, user, isLoading, isConnected, connect]);
+  }, [router.isReady, gameId, isAuthenticated, isConnected, connect, getToken, router]);
 
   // =============================================================================
-  // JOIN GAME
+  // REQUEST INITIAL GAME STATE
   // =============================================================================
   useEffect(() => {
-    if (!isConnected || !gameId || hasJoinedGame || !user) return;
+    if (!isConnected || !gameId || hasRequestedGameState) return;
 
-    // Send join-game message to backend
-    const success = sendMessage('join-game', {
-      gameId: gameId as string,
-      asSpectator: false,
-    });
-
-    if (success) {
-      console.log('🎮 Sent join-game message for:', gameId);
-      setHasJoinedGame(true);
-    } else {
-      setError('Falha ao conectar com o jogo');
-    }
-  }, [isConnected, gameId, hasJoinedGame, user, sendMessage]);
+    // ✅ Assim que estiver conectado, pede o estado do jogo
+    console.log(`🚀 Requesting initial game state for game: ${gameId}`);
+    sendMessage('get-game-state', { gameId });
+    setHasRequestedGameState(true);
+  }, [isConnected, gameId, hasRequestedGameState, sendMessage]);
 
   // =============================================================================
   // ERROR HANDLING
@@ -84,11 +83,14 @@ export default function GamePage() {
 
   const handleRetry = () => {
     setError(null);
-    setHasJoinedGame(false);
+    setHasRequestedGameState(false);
 
     if (gameId && user) {
-      const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${gameId}?token=${localStorage.getItem('token')}`;
-      connect(wsUrl);
+      const token = getToken();
+      if (token) {
+        const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${gameId}?token=${encodeURIComponent(token)}`;
+        connect(wsUrl);
+      }
     }
   };
 
@@ -188,6 +190,16 @@ export default function GamePage() {
                     {isConnected ? 'Conectado' : 'Desconectado'}
                   </span>
                 </div>
+
+                {/* User Info */}
+                {user && (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                      👤
+                    </div>
+                    <span className="text-sm text-white">{user.username}</span>
+                  </div>
+                )}
 
                 {/* Back Button */}
                 <button

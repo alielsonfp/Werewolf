@@ -1,11 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/router';
-import { ArrowLeft, Crown, Share, Volume2 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
-import { useSocket } from '@/context/SocketContext';
+import { ArrowLeft, Crown, Share } from 'lucide-react';
 import { Player, Room, ChatMessage } from '@/types';
-import { toast } from 'react-hot-toast';
 
 import PlayerList from './PlayerList';
 import RoomChat from './RoomChat';
@@ -13,268 +9,57 @@ import ActionButtons from './ActionButtons';
 import { ConfirmModal } from '@/components/common/Modal';
 
 interface WaitingRoomProps {
+  // Dados
   roomId: string;
-}
+  room: Room | null;
+  players: Player[];
+  spectators: Player[];
+  messages: ChatMessage[];
 
-export default function WaitingRoom({ roomId }: WaitingRoomProps) {
-  const router = useRouter();
-  const { user, getToken, isAuthenticated } = useAuth();
-  const { connect, disconnect, sendMessage, isConnected } = useSocket();
-
-  // Estado da sala
-  const [room, setRoom] = useState<Room | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [spectators, setSpectators] = useState<Player[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ✅ NOVO: Estado para modal de confirmação de saída do host
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
-
-  const currentUserId = user?.id || '';
-  const isHost = room?.hostId === currentUserId;
-  const currentPlayer = players.find(p => p.userId === currentUserId);
-  const isReady = currentPlayer?.isReady || false;
-
-  const canStartGame = players.length >= 3 &&
-    players.filter(p => !p.isHost).every(p => p.isReady) &&
-    isConnected &&
-    isHost;
-
-  // ✅ CORRIGIDO: Conectar ao WebSocket com dependências estáveis e verificações adequadas
-  useEffect(() => {
-    // ✅ Aguardar router estar pronto e autenticação
-    if (!router.isReady || !isAuthenticated || !roomId) {
-      console.log('⚠️ Waiting for router/auth to be ready', {
-        routerReady: router.isReady,
-        isAuthenticated,
-        roomId
-      });
-      return;
-    }
-
-    const token = getToken();
-    if (!token) {
-      console.error('❌ No auth token available');
-      router.push('/auth/login');
-      return;
-    }
-
-    // Construir URL do WebSocket
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
-    const wsUrl = `${wsBase}/ws/${roomId}?token=${encodeURIComponent(token)}`;
-
-    console.log('🎮 Initiating connection to room:', roomId);
-
-    // ✅ Conectar ao WebSocket
-    connect(wsUrl);
-
-    // ✅ Cleanup apropriado - só executa quando componente realmente desmonta
-    return () => {
-      console.log('🎮 Cleaning up connection for room:', roomId);
-      disconnect();
-    };
-  }, [router.isReady, roomId, isAuthenticated, getToken]); // ✅ Dependências estáveis
-
-  // ✅ CORRIGIDO: Enviar join-room após conexão estabelecida
-  useEffect(() => {
-    if (isConnected && roomId) {
-      console.log('📤 Sending join-room message');
-      sendMessage('join-room', { roomId });
-    }
-  }, [isConnected, roomId, sendMessage]);
-
-  // Escutar mensagens do WebSocket
-  useEffect(() => {
-    const handleMessage = (event: CustomEvent) => {
-      const { type, data } = event.detail;
-      console.log('📨 Received:', type, data);
-
-      switch (type) {
-        case 'room-joined':
-          setRoom(data.room);
-          // ✅ CORRIGIDO: Garantir que players e spectators sejam arrays válidos
-          setPlayers(Array.isArray(data.players) ? data.players : []);
-          setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
-          setLoading(false);
-          toast.success(`Entrou na sala: ${data.room?.name || roomId}`);
-          break;
-
-        case 'player-joined':
-          if (data.player) {
-            setPlayers(prev => {
-              // ✅ Evitar duplicatas
-              const filtered = prev.filter(p => p.userId !== data.player.userId);
-              return [...filtered, data.player];
-            });
-
-            // Adicionar mensagem do sistema
-            const systemMessage: ChatMessage = {
-              id: Date.now().toString(),
-              userId: 'system',
-              username: 'Sistema',
-              message: `${data.player.username} entrou na sala`,
-              channel: 'system',
-              timestamp: new Date().toISOString()
-            };
-            setMessages(prev => [...prev, systemMessage]);
-          }
-          break;
-
-        case 'player-left':
-          if (data.userId) {
-            setPlayers(prev => prev.filter(p => p.userId !== data.userId));
-            setSpectators(prev => prev.filter(s => s.userId !== data.userId));
-
-            if (data.username) {
-              const systemMessage: ChatMessage = {
-                id: Date.now().toString(),
-                userId: 'system',
-                username: 'Sistema',
-                message: `${data.username} saiu da sala`,
-                channel: 'system',
-                timestamp: new Date().toISOString()
-              };
-              setMessages(prev => [...prev, systemMessage]);
-            }
-          }
-          break;
-
-        case 'player-ready':
-          if (data.userId) {
-            setPlayers(prev => prev.map(p =>
-              p.userId === data.userId ? { ...p, isReady: data.ready } : p
-            ));
-          }
-          break;
-
-        case 'chat-message':
-          if (data) {
-            const message = data.message || data;
-            setMessages(prev => [...prev, message]);
-          }
-          break;
-
-        case 'game-starting':
-        case 'game-started':
-          toast.success('🎮 Jogo iniciando!');
-          setTimeout(() => {
-            router.push(`/game/${roomId}`);
-          }, 2000);
-          break;
-
-        case 'room-updated':
-          if (data.room) setRoom(data.room);
-          if (data.players) setPlayers(data.players);
-          if (data.spectators) setSpectators(data.spectators);
-          break;
-
-        // ✅ NOVO: Evento de sala deletada
-        case 'room-deleted':
-          toast.error(data.reason || 'A sala foi encerrada pelo host');
-          disconnect(); // ✅ Garantir desconexão
-          router.push('/lobby');
-          break;
-
-        case 'error':
-          if (data.message) {
-            toast.error(data.message);
-          }
-          break;
-      }
-    };
-
-    window.addEventListener('websocket-message', handleMessage as EventListener);
-    return () => {
-      window.removeEventListener('websocket-message', handleMessage as EventListener);
-    };
-  }, [roomId, router]);
+  // Estados
+  currentUserId: string;
+  isHost: boolean;
+  isReady: boolean;
+  canStartGame: boolean;
+  isConnected: boolean;
+  showLeaveModal: boolean;
+  setShowLeaveModal: (show: boolean) => void;
 
   // Handlers
-  const handleToggleReady = () => {
-    sendMessage('player-ready', { ready: !isReady });
-  };
+  onToggleReady: () => void;
+  onStartGame: () => void;
+  onKickPlayer: (playerId: string) => void;
+  onSendChatMessage: (message: string) => void;
+  onShareRoom: () => void;
+  onLeaveRoom: () => void;
+  onConfirmLeaveAsHost: () => void;
+}
 
-  const handleStartGame = () => {
-    if (!isHost || !canStartGame) return;
-    sendMessage('start-game', {});
-    toast.success('Iniciando jogo...');
-  };
+export default function WaitingRoom({
+  roomId,
+  room,
+  players,
+  spectators,
+  messages,
+  currentUserId,
+  isHost,
+  isReady,
+  canStartGame,
+  isConnected,
+  showLeaveModal,
+  setShowLeaveModal,
+  onToggleReady,
+  onStartGame,
+  onKickPlayer,
+  onSendChatMessage,
+  onShareRoom,
+  onLeaveRoom,
+  onConfirmLeaveAsHost
+}: WaitingRoomProps) {
 
-  const handleKickPlayer = (playerId: string) => {
-    if (!isHost) return;
-    sendMessage('kick-player', { playerId });
-  };
-
-  const handleSendChatMessage = (message: string) => {
-    sendMessage('chat-message', { message });
-  };
-
-  const handleShareRoom = async () => {
-    if (!room) return;
-    const shareUrl = `${window.location.origin}/room/${room.id}`;
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success('Link da sala copiado!');
-    } catch (error) {
-      toast.error('Erro ao copiar link');
-    }
-  };
-
-  // ✅ CORRIGIDO: Lógica de saída diferente para host vs jogadores
-  const handleLeaveRoom = () => {
-    if (isHost) {
-      // Host precisa de confirmação
-      setShowLeaveModal(true);
-    } else {
-      // Jogadores saem normalmente
-      sendMessage('leave-room', { roomId });
-      disconnect();
-      router.push('/lobby');
-    }
-  };
-
-  // ✅ NOVO: Confirmar encerramento da sala (apenas host)
-  const handleConfirmLeaveAsHost = () => {
-    sendMessage('delete-room', { roomId });
-    // Não precisa chamar disconnect aqui - o backend vai kickar todos
-    setShowLeaveModal(false);
-    toast('Encerrando sala...', { icon: '🏠' });
-    // O redirect vai acontecer quando recebermos 'room-deleted'
-  };
-
-  // Loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🐺</div>
-          <div className="text-xl text-white">Entrando na sala...</div>
-          <div className="text-sm text-slate-400 mt-2">
-            {isConnected ? 'Conectado' : 'Conectando...'}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Se não tem dados da sala após o loading, mostra erro
+  // Se não tiver dados da sala, não deve renderizar (isso é controlado pelo componente pai)
   if (!room) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4">❌</div>
-          <div className="text-xl text-white mb-4">Sala não encontrada</div>
-          <Button
-            variant="primary"
-            onClick={() => router.push('/lobby')}
-          >
-            Voltar ao Lobby
-          </Button>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -286,7 +71,7 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <button
-                  onClick={handleLeaveRoom}
+                  onClick={onLeaveRoom}
                   className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -317,7 +102,7 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
 
               <div className="flex items-center gap-4">
                 <button
-                  onClick={handleShareRoom}
+                  onClick={onShareRoom}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
                 >
                   <Share className="w-4 h-4" />
@@ -345,7 +130,7 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
                 spectators={spectators}
                 currentUserId={currentUserId}
                 isHost={isHost}
-                onKickPlayer={handleKickPlayer}
+                onKickPlayer={onKickPlayer}
                 maxPlayers={room.maxPlayers}
                 maxSpectators={room.maxSpectators}
               />
@@ -358,13 +143,13 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
                 isReady={isReady}
                 canStartGame={canStartGame}
                 isConnected={isConnected}
-                onToggleReady={handleToggleReady}
-                onStartGame={handleStartGame}
+                onToggleReady={onToggleReady}
+                onStartGame={onStartGame}
               />
 
               <RoomChat
                 messages={messages}
-                onSendMessage={handleSendChatMessage}
+                onSendMessage={onSendChatMessage}
                 currentUserId={currentUserId}
                 isConnected={isConnected}
               />
@@ -373,11 +158,11 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
         </div>
       </div>
 
-      {/* ✅ NOVO: Modal de confirmação para host sair */}
+      {/* Modal de confirmação para host sair */}
       <ConfirmModal
         isOpen={showLeaveModal}
         onClose={() => setShowLeaveModal(false)}
-        onConfirm={handleConfirmLeaveAsHost}
+        onConfirm={onConfirmLeaveAsHost}
         title="Encerrar Sala"
         message="Você é o host desta sala. Ao sair, a sala será encerrada e todos os jogadores serão removidos. Deseja continuar?"
         confirmText="Sim, Encerrar Sala"
@@ -385,21 +170,5 @@ export default function WaitingRoom({ roomId }: WaitingRoomProps) {
         variant="warning"
       />
     </>
-  );
-}
-
-// Componente Button temporário (você já tem um componente Button)
-function Button({ variant, onClick, children, ...props }: any) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-lg transition-colors ${variant === 'primary'
-        ? 'bg-blue-600 hover:bg-blue-700 text-white'
-        : 'bg-gray-600 hover:bg-gray-700 text-white'
-        }`}
-      {...props}
-    >
-      {children}
-    </button>
   );
 }

@@ -14,6 +14,7 @@ export default function TimerDisplay() {
   useEffect(() => {
     if (!gameState) return;
 
+    // Use timeLeft from gameState
     const newTimeLeft = gameState.timeLeft || 0;
     setLocalTimeLeft(newTimeLeft);
   }, [gameState?.timeLeft, gameState?.phase]);
@@ -126,7 +127,10 @@ export default function TimerDisplay() {
 
         {!isUrgent && !isEmpty && (
           <div className="text-xs text-white/50">
-            Tempo restante
+            {gameState.phase === 'NIGHT' ? 'Fase Noite' :
+              gameState.phase === 'DAY' ? 'Fase Dia' :
+                gameState.phase === 'VOTING' ? 'Votação' :
+                  'Tempo restante'}
           </div>
         )}
       </div>

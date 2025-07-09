@@ -14,12 +14,12 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 // GAME BOARD COMPONENT - LAYOUT TOWN OF SALEM
 // =============================================================================
 export default function GameBoard() {
-  const { gameState, isLoading, error, me } = useGame();
+  const { gameState, isLoading, error, me, connectionStatus } = useGame();
 
   // =============================================================================
   // LOADING STATE
   // =============================================================================
-  if (isLoading) {
+  if (isLoading || connectionStatus === 'connecting') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center">
@@ -33,13 +33,19 @@ export default function GameBoard() {
   // =============================================================================
   // ERROR STATE
   // =============================================================================
-  if (error) {
+  if (error || connectionStatus === 'error') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="text-red-400 text-6xl mb-4">💀</div>
           <h2 className="text-xl font-bold text-white mb-4">Erro no Jogo</h2>
-          <p className="text-white/70">{error}</p>
+          <p className="text-white/70">{error || 'Erro de conexão'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"
+          >
+            Recarregar
+          </button>
         </div>
       </div>
     );
@@ -48,7 +54,7 @@ export default function GameBoard() {
   // =============================================================================
   // NO GAME STATE
   // =============================================================================
-  if (!gameState) {
+  if (!gameState || connectionStatus === 'disconnected') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center">
@@ -65,14 +71,14 @@ export default function GameBoard() {
   // =============================================================================
   // LOBBY STATE
   // =============================================================================
-  if (gameState.phase === 'LOBBY') {
+  if (gameState.phase === 'LOBBY' || gameState.status === 'WAITING') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center max-w-2xl mx-auto p-8">
           <div className="text-6xl mb-6">🏰</div>
-          <h2 className="text-3xl font-bold text-white mb-4">Sala de Espera</h2>
+          <h2 className="text-3xl font-bold text-white mb-4">Preparando o Jogo</h2>
           <p className="text-white/70 mb-6">
-            Aguardando outros jogadores se juntarem...
+            O jogo está sendo configurado...
           </p>
 
           <div className="bg-medieval-800/30 border border-medieval-600 rounded-lg p-6">
@@ -92,6 +98,11 @@ export default function GameBoard() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="mt-6 text-amber-400">
+            <div className="animate-bounce">⌛</div>
+            <p className="text-sm">Aguardando início...</p>
           </div>
         </div>
       </div>
@@ -185,6 +196,25 @@ export default function GameBoard() {
                   </div>
                 </div>
               )}
+
+              {/* All Players Results */}
+              <div className="mb-6 max-h-48 overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-2">Todos os Jogadores:</h3>
+                <div className="space-y-1 text-sm">
+                  {gameState.players.filter(p => !p.isSpectator).map((player) => (
+                    <div key={player.id} className="flex justify-between text-white/70">
+                      <span>{player.username}</span>
+                      <span className={`
+                        ${player.faction === 'TOWN' ? 'text-green-400' :
+                          player.faction === 'WEREWOLF' ? 'text-red-400' :
+                            'text-purple-400'}
+                      `}>
+                        {player.role}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <button
                 onClick={() => window.location.href = '/lobby'}

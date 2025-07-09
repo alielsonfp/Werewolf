@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { useSocket } from '@/context/SocketContext';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
 // TYPES
@@ -27,6 +28,7 @@ export default function ChatGigante() {
   const [activeTab, setActiveTab] = useState<ChatTab>('public');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // =============================================================================
@@ -49,22 +51,58 @@ export default function ChatGigante() {
 
       if (data.type === 'chat-message') {
         const newMessage: ChatMessage = {
-          id: data.data.message.id,
-          userId: data.data.message.userId,
-          username: data.data.message.username,
-          message: data.data.message.message,
-          channel: data.data.message.channel || 'public',
-          timestamp: data.data.message.timestamp,
-          filtered: data.data.message.filtered,
+          id: data.data.message?.id || Date.now().toString(),
+          userId: data.data.message?.userId || data.data.userId,
+          username: data.data.message?.username || data.data.username,
+          message: data.data.message?.message || data.data.message,
+          channel: data.data.message?.channel || data.data.channel || 'public',
+          timestamp: data.data.message?.timestamp || data.data.timestamp || new Date().toISOString(),
+          filtered: data.data.message?.filtered,
         };
 
         setMessages(prev => [...prev, newMessage]);
+      }
+
+      // System messages from game events
+      if (data.type === 'phase-changed') {
+        const systemMessage: ChatMessage = {
+          id: `system-${Date.now()}`,
+          userId: 'system',
+          username: 'Sistema',
+          message: `Fase mudou para ${data.data.phase}`,
+          channel: 'system',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, systemMessage]);
+      }
+
+      if (data.type === 'player-died') {
+        const systemMessage: ChatMessage = {
+          id: `system-${Date.now()}`,
+          userId: 'system',
+          username: 'Sistema',
+          message: `${data.data.playerName || 'Um jogador'} foi eliminado!`,
+          channel: 'system',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, systemMessage]);
       }
     };
 
     window.addEventListener('websocket-message', handleChatMessage as EventListener);
     return () => window.removeEventListener('websocket-message', handleChatMessage as EventListener);
   }, []);
+
+  // =============================================================================
+  // LOADING STATE
+  // =============================================================================
+  if (!gameState || !me) {
+    return (
+      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex items-center justify-center">
+        <LoadingSpinner text="Carregando chat..." />
+      </div>
+    );
+  }
 
   // =============================================================================
   // DETERMINE AVAILABLE TABS
@@ -110,8 +148,10 @@ export default function ChatGigante() {
   // =============================================================================
   // SEND MESSAGE
   // =============================================================================
-  const handleSendMessage = () => {
-    if (!message.trim() || !gameState) return;
+  const handleSendMessage = async () => {
+    if (!message.trim() || !gameState || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     const success = sendMessage('chat-message', {
       message: message.trim(),
@@ -121,6 +161,10 @@ export default function ChatGigante() {
     if (success) {
       setMessage('');
     }
+
+    setTimeout(() => {
+      setIsSubmitting(false);
+    }, 200);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -168,6 +212,17 @@ export default function ChatGigante() {
           available: true,
         };
     }
+  };
+
+  // =============================================================================
+  // CHECK CHAT RESTRICTIONS
+  // =============================================================================
+  const canSendMessage = () => {
+    if (!me.isAlive && activeTab !== 'dead') return false;
+    if (activeTab === 'system') return false;
+    if (activeTab === 'werewolf' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') return false;
+    if (gameState.phase === 'NIGHT' && activeTab === 'public' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') return false;
+    return true;
   };
 
   // =============================================================================
@@ -290,9 +345,9 @@ export default function ChatGigante() {
       {/* Chat Input */}
       <div className="flex-shrink-0 border-t border-medieval-600 p-4">
         {/* Phase restriction info */}
-        {gameState?.phase === 'NIGHT' && activeTab === 'public' && (
+        {gameState?.phase === 'NIGHT' && activeTab === 'public' && me?.role !== 'WEREWOLF' && me?.role !== 'WEREWOLF_KING' && (
           <div className="mb-2 text-xs text-amber-400 text-center">
-            🌙 Durante a noite, apenas Lobisomens podem conversar
+            🌙 Durante a noite, apenas Lobisomens podem conversar no chat público
           </div>
         )}
 
@@ -303,32 +358,22 @@ export default function ChatGigante() {
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              activeTab === 'public' ? 'Digite sua mensagem...' :
-                activeTab === 'werewolf' ? 'Coordenem seus ataques...' :
-                  activeTab === 'dead' ? 'Fale com outros mortos...' :
-                    'Mensagem do sistema...'
+              !canSendMessage() ? 'Você não pode falar neste canal agora' :
+                activeTab === 'public' ? 'Digite sua mensagem...' :
+                  activeTab === 'werewolf' ? 'Coordenem seus ataques...' :
+                    activeTab === 'dead' ? 'Fale com outros mortos...' :
+                      'Mensagem do sistema...'
             }
-            disabled={
-              (gameState?.phase === 'NIGHT' && activeTab === 'public' && me?.role !== 'WEREWOLF' && me?.role !== 'WEREWOLF_KING') ||
-              (activeTab === 'werewolf' && me?.role !== 'WEREWOLF' && me?.role !== 'WEREWOLF_KING') ||
-              (activeTab === 'dead' && me?.isAlive) ||
-              (activeTab === 'system')
-            }
+            disabled={!canSendMessage() || isSubmitting}
             className="flex-1 bg-medieval-700 border border-medieval-600 rounded-lg px-3 py-2 text-white placeholder-white/50 focus:outline-none focus:border-amber-400 disabled:opacity-50 disabled:cursor-not-allowed"
           />
 
           <button
             onClick={handleSendMessage}
-            disabled={
-              !message.trim() ||
-              (gameState?.phase === 'NIGHT' && activeTab === 'public' && me?.role !== 'WEREWOLF' && me?.role !== 'WEREWOLF_KING') ||
-              (activeTab === 'werewolf' && me?.role !== 'WEREWOLF' && me?.role !== 'WEREWOLF_KING') ||
-              (activeTab === 'dead' && me?.isAlive) ||
-              (activeTab === 'system')
-            }
+            disabled={!message.trim() || !canSendMessage() || isSubmitting}
             className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white px-4 py-2 rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
           >
-            Enviar
+            {isSubmitting ? '...' : 'Enviar'}
           </button>
         </div>
 

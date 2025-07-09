@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '@/context/GameContext';
 import { useSocket } from '@/context/SocketContext';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
 // ACTION PANEL COMPONENT - AÇÕES DO JOGADOR POR FASE
@@ -11,12 +12,16 @@ export default function ActionPanel() {
 
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [confirmingAction, setConfirmingAction] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // =============================================================================
+  // LOADING STATE
+  // =============================================================================
   if (!gameState || !me) {
     return (
       <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg p-4">
         <div className="flex items-center justify-center h-full">
-          <div className="text-white/50">Carregando ações...</div>
+          <LoadingSpinner text="Carregando ações..." />
         </div>
       </div>
     );
@@ -25,35 +30,56 @@ export default function ActionPanel() {
   // =============================================================================
   // ACTION HANDLERS
   // =============================================================================
-  const handleNightAction = () => {
-    if (!selectedTarget || !me.role) return;
+  const handleNightAction = async () => {
+    if (!selectedTarget || !me.role || isSubmitting) return;
 
     const actionType = me.role === 'SHERIFF' ? 'INVESTIGATE' :
       me.role === 'DOCTOR' ? 'PROTECT' :
         me.role === 'VIGILANTE' ? 'SHOOT' :
           me.role === 'WEREWOLF' ? 'KILL' :
-            me.role === 'WEREWOLF_KING' ? 'KILL' : null;
+            me.role === 'WEREWOLF_KING' ? 'KILL' :
+              me.role === 'SERIAL_KILLER' ? 'KILL' : null;
 
     if (actionType) {
+      setIsSubmitting(true);
+
       sendMessage('game-action', {
         type: actionType,
         targetId: selectedTarget,
       });
 
-      setSelectedTarget(null);
-      setConfirmingAction(false);
+      // Reset state after sending
+      setTimeout(() => {
+        setSelectedTarget(null);
+        setConfirmingAction(false);
+        setIsSubmitting(false);
+      }, 500);
     }
   };
 
-  const handleVote = () => {
-    if (!selectedTarget) return;
+  const handleVote = async () => {
+    if (!selectedTarget || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     sendMessage('vote', { targetId: selectedTarget });
-    setSelectedTarget(null);
+
+    setTimeout(() => {
+      setSelectedTarget(null);
+      setIsSubmitting(false);
+    }, 500);
   };
 
-  const handleUnvote = () => {
+  const handleUnvote = async () => {
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+
     sendMessage('unvote', {});
+
+    setTimeout(() => {
+      setIsSubmitting(false);
+    }, 500);
   };
 
   // =============================================================================
@@ -68,6 +94,7 @@ export default function ActionPanel() {
       switch (me.role) {
         case 'SHERIFF':
         case 'VIGILANTE':
+        case 'SERIAL_KILLER':
           return alivePlayers.filter(p => p.id !== me.id);
         case 'DOCTOR':
           return alivePlayers; // Doctor can protect themselves
@@ -116,9 +143,9 @@ export default function ActionPanel() {
         case 'VIGILANTE':
           return {
             title: '🔫 Vigilância',
-            description: 'Elimine um suspeito (cuidado com inocentes!)',
+            description: `Elimine um suspeito (${(me.maxActions || 3) - (me.actionsUsed || 0)} balas restantes)`,
             actionText: 'Atirar',
-            canAct: canAct,
+            canAct: canAct && (me.actionsUsed || 0) < (me.maxActions || 3),
           };
         case 'WEREWOLF':
         case 'WEREWOLF_KING':
@@ -126,6 +153,13 @@ export default function ActionPanel() {
             title: '🐺 Ataque',
             description: 'Escolha quem atacar durante a noite',
             actionText: 'Atacar',
+            canAct: canAct,
+          };
+        case 'SERIAL_KILLER':
+          return {
+            title: '🔪 Assassinato',
+            description: 'Elimine um jogador durante a noite',
+            actionText: 'Matar',
             canAct: canAct,
           };
         default:
@@ -150,6 +184,14 @@ export default function ActionPanel() {
           <div className="text-6xl mb-4">👻</div>
           <h3 className="text-lg font-semibold text-white mb-2">Você está morto</h3>
           <p className="text-white/70">Observe em silêncio e torça pelo seu time!</p>
+          {me.eliminationReason && (
+            <p className="text-red-400 text-sm mt-2">
+              Causa: {me.eliminationReason === 'NIGHT_KILL' ? 'Morto à noite' :
+                me.eliminationReason === 'EXECUTION' ? 'Executado pela vila' :
+                  me.eliminationReason === 'VIGILANTE' ? 'Morto por vigilante' :
+                    'Morto por assassino'}
+            </p>
+          )}
         </div>
       </div>
     );
@@ -161,7 +203,7 @@ export default function ActionPanel() {
       <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg p-4">
         <div className="flex flex-col items-center justify-center h-full text-center">
           <div className="text-6xl mb-4">☀️</div>
-          <h3 className="text-lg font-semibold text-white mb-2">Discussão do Dia</h3>
+          <h3 className="text-lg font-semibold text-white mb-2">Discussão do Dia {gameState.day}</h3>
           <p className="text-white/70">Use o chat para discutir e investigar!</p>
           <p className="text-amber-400 text-sm mt-2">
             A votação começará em breve...
@@ -218,9 +260,10 @@ export default function ActionPanel() {
 
           <button
             onClick={handleUnvote}
-            className="bg-gradient-to-r from-red-500 to-red-700 hover:from-red-600 hover:to-red-800 text-white px-4 py-2 rounded-lg transition-all duration-200"
+            disabled={isSubmitting}
+            className="bg-gradient-to-r from-red-500 to-red-700 hover:from-red-600 hover:to-red-800 disabled:from-gray-600 disabled:to-gray-700 text-white px-4 py-2 rounded-lg transition-all duration-200"
           >
-            Remover Voto
+            {isSubmitting ? 'Removendo...' : 'Remover Voto'}
           </button>
         </div>
       </div>
@@ -246,17 +289,23 @@ export default function ActionPanel() {
             <button
               key={player.id}
               onClick={() => setSelectedTarget(player.id)}
+              disabled={isSubmitting}
               className={`
                 w-full p-3 rounded-lg border-2 transition-all duration-200 text-left
                 ${selectedTarget === player.id
                   ? 'border-amber-400 bg-amber-900/30'
                   : 'border-medieval-600 bg-medieval-700/30 hover:border-amber-400/50 hover:bg-medieval-700/50'
                 }
+                ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
               `}
             >
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 rounded-full bg-medieval-600 flex items-center justify-center">
-                  {player.isHost ? '👑' : player.userId === me.userId ? '👤' : '🧑'}
+                  {player.avatar ? (
+                    <img src={player.avatar} alt={player.username} className="w-full h-full rounded-full" />
+                  ) : (
+                    player.isHost ? '👑' : player.userId === me.userId ? '👤' : '🧑'
+                  )}
                 </div>
 
                 <div className="flex-1">
@@ -264,6 +313,7 @@ export default function ActionPanel() {
                   <div className="text-white/50 text-sm">
                     {player.isHost && 'Host • '}
                     {player.isConnected ? 'Conectado' : 'Desconectado'}
+                    {player.isProtected && ' • 🛡️ Protegido'}
                   </div>
                 </div>
 
@@ -289,12 +339,13 @@ export default function ActionPanel() {
           {!confirmingAction ? (
             <button
               onClick={() => setConfirmingAction(true)}
-              disabled={!selectedTarget}
+              disabled={!selectedTarget || isSubmitting}
               className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
             >
-              {selectedTarget
-                ? `${actionInfo.actionText} ${validTargets.find(p => p.id === selectedTarget)?.username}`
-                : 'Selecione um alvo'
+              {isSubmitting ? 'Enviando...' :
+                selectedTarget
+                  ? `${actionInfo.actionText} ${validTargets.find(p => p.id === selectedTarget)?.username}`
+                  : 'Selecione um alvo'
               }
             </button>
           ) : (
@@ -306,9 +357,10 @@ export default function ActionPanel() {
               <div className="flex space-x-2">
                 <button
                   onClick={gameState.phase === 'VOTING' ? handleVote : handleNightAction}
-                  className="flex-1 bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200"
                 >
-                  ✓ Confirmar
+                  {isSubmitting ? 'Enviando...' : '✓ Confirmar'}
                 </button>
 
                 <button
@@ -316,7 +368,8 @@ export default function ActionPanel() {
                     setConfirmingAction(false);
                     setSelectedTarget(null);
                   }}
-                  className="flex-1 bg-gradient-to-r from-red-500 to-red-700 hover:from-red-600 hover:to-red-800 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-700 hover:from-red-600 hover:to-red-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200"
                 >
                   ✗ Cancelar
                 </button>

@@ -1,14 +1,15 @@
+// 🐺 LOBISOMEM ONLINE - App.ts (CORREÇÃO DA INICIALIZAÇÃO)
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import http from 'http'; // ✅ NOVO: Importar http
+import http from 'http';
 import { config } from '@/config/environment';
 import { checkDatabaseHealth } from '@/config/database';
 import { checkRedisHealth } from '@/config/redis';
 import { ServiceFactory } from '@/websocket/ServiceFactory';
-import { WebSocketManager } from '@/websocket/WebSocketManager'; // ✅ NOVO: Importar WebSocketManager
+import { WebSocketManager } from '@/websocket/WebSocketManager';
 import authRoutes from '@/routes/auth';
 import roomRoutes from '@/routes/rooms';
 
@@ -70,8 +71,7 @@ if (config.IS_DEVELOPMENT) {
   app.use(morgan('combined'));
 }
 
-// ✅✅✅ LÓGICA CRÍTICA MOVIDA PARA AQUI ✅✅✅
-// Criar servidor HTTP e WebSocket ANTES das rotas
+// ✅✅✅ CORREÇÃO CRÍTICA DA INICIALIZAÇÃO ✅✅✅
 const httpServer = http.createServer(app);
 let wsManager: WebSocketManager;
 
@@ -80,10 +80,14 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
     const gameStateService = ServiceFactory.getGameStateService();
     const eventBus = ServiceFactory.getEventBus();
 
-    wsManager = new WebSocketManager(gameStateService, eventBus, config);
+    // ❌ ERRO ANTERIOR:
+    // wsManager = new WebSocketManager(gameStateService, eventBus, config);
+
+    // ✅ CORREÇÃO: Ordem correta dos parâmetros
+    wsManager = new WebSocketManager(eventBus, config);
     wsManager.setupWebSocketServer(httpServer);
 
-    // ✅ CORREÇÃO CRÍTICA: Injeção acontece ANTES das rotas
+    // ✅ CORREÇÃO: Injeção do channelManager
     app.locals.channelManager = wsManager.channelManager;
     console.log('✅ ChannelManager successfully injected into app.locals');
 
@@ -97,9 +101,8 @@ if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
 } else {
   console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
 }
-// ✅✅✅ FIM DA LÓGICA MOVIDA ✅✅✅
 
-// ✅ ROTAS SÃO CARREGADAS DEPOIS (channelManager já existe)
+// ✅ ROTAS SÃO CARREGADAS DEPOIS
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 
@@ -125,7 +128,6 @@ app.get('/health', async (req, res) => {
       stats: servicesStats,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      // ✅ NOVO: Adicionar status do WebSocket
       websocket: {
         initialized: !!wsManager,
         channelManagerInjected: !!app.locals.channelManager,
@@ -272,5 +274,32 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   });
 });
 
-// ✅ EXPORTAR O HTTP SERVER (não mais o app)
+app.use('/api/rooms', (req, res, next) => {
+  console.log('\n🔍 DEBUG MIDDLEWARE - ROTA /api/rooms');
+  console.log('📍 Timestamp:', new Date().toISOString());
+  console.log('📍 Method:', req.method);
+  console.log('📍 URL:', req.url);
+  console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('📍 Body:', JSON.stringify(req.body, null, 2));
+  console.log('📍 ChannelManager Available:', !!req.app.locals.channelManager);
+
+  // Timeout de segurança para detectar travamentos
+  const timeout = setTimeout(() => {
+    console.log('❌ TIMEOUT: Middleware ou rota travou após 10 segundos');
+    console.log('❌ Request ainda processando:', req.method, req.url);
+  }, 10000);
+
+  // Interceptar a resposta para saber quando terminou
+  const originalSend = res.send;
+  res.send = function (data) {
+    clearTimeout(timeout);
+    console.log('✅ RESPONSE SENT - Status:', res.statusCode);
+    console.log('✅ Response Data Length:', JSON.stringify(data).length);
+    return originalSend.call(this, data);
+  };
+
+  console.log('🔄 Passando para próximo middleware...\n');
+  next();
+});
+
 export default httpServer;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useGame } from '@/context/GameContext';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
 // PLAYER CIRCLE COMPONENT - PLAYERS AO REDOR DA FORCA
@@ -7,14 +8,20 @@ import { useGame } from '@/context/GameContext';
 export default function PlayerCircle() {
   const { gameState, me } = useGame();
 
+  // =============================================================================
+  // LOADING STATE
+  // =============================================================================
   if (!gameState) {
     return (
       <div className="w-full h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex items-center justify-center">
-        <div className="text-white/50">Carregando jogadores...</div>
+        <LoadingSpinner text="Carregando jogadores..." />
       </div>
     );
   }
 
+  // =============================================================================
+  // FILTER PLAYERS
+  // =============================================================================
   const alivePlayers = gameState.players.filter(p => p.isAlive && !p.isSpectator);
   const deadPlayers = gameState.players.filter(p => !p.isAlive && !p.isSpectator);
 
@@ -80,7 +87,11 @@ export default function PlayerCircle() {
 
               {/* Avatar */}
               <div className="w-full h-full rounded-full flex items-center justify-center text-2xl">
-                {player.isHost ? '👑' : isMe ? '👤' : '🧑'}
+                {player.avatar ? (
+                  <img src={player.avatar} alt={player.username} className="w-full h-full rounded-full" />
+                ) : (
+                  player.isHost ? '👑' : isMe ? '👤' : '🧑'
+                )}
               </div>
 
               {/* Connection Status Dot */}
@@ -100,6 +111,13 @@ export default function PlayerCircle() {
               {hasVoted && gameState.phase === 'VOTING' && (
                 <div className="absolute -top-2 -left-2 text-green-400 text-lg">
                   ✓
+                </div>
+              )}
+
+              {/* Protected Shield */}
+              {player.isProtected && (
+                <div className="absolute -bottom-2 -right-2 text-blue-400 text-lg">
+                  🛡️
                 </div>
               )}
 

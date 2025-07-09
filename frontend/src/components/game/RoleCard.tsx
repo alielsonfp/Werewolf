@@ -29,7 +29,7 @@ const ROLE_INFO: Record<Role, {
     name: 'Sheriff',
     icon: '🕵️',
     description: 'Investigador da vila',
-    abilities: ['Investigar um jogador por noite'],
+    abilities: ['Investigar um jogador por noite', 'Descobre se é SUSPEITO ou NÃO SUSPEITO'],
     goal: 'Encontrar e eliminar todos os Lobisomens',
     tips: [
       'Investigue jogadores suspeitos',
@@ -41,7 +41,7 @@ const ROLE_INFO: Record<Role, {
     name: 'Médico',
     icon: '⚕️',
     description: 'Protetor da vila',
-    abilities: ['Proteger um jogador por noite'],
+    abilities: ['Proteger um jogador por noite', 'Não pode proteger a mesma pessoa duas noites seguidas'],
     goal: 'Manter a vila viva eliminando Lobisomens',
     tips: [
       'Proteja jogadores importantes',
@@ -89,7 +89,7 @@ const ROLE_INFO: Record<Role, {
     name: 'Bobo da Corte',
     icon: '🤡',
     description: 'Personagem caótico',
-    abilities: ['Vencer se for executado durante o dia'],
+    abilities: ['Vencer se for executado durante o dia', 'Imune a ataques noturnos'],
     goal: 'Ser executado pela vila (NÃO morto à noite)',
     tips: [
       'Pareça suspeito sem ser óbvio',
@@ -101,48 +101,12 @@ const ROLE_INFO: Record<Role, {
     name: 'Assassino em Série',
     icon: '🔪',
     description: 'Matador solitário',
-    abilities: ['Matar um jogador por noite'],
+    abilities: ['Matar um jogador por noite', 'Imune a investigação na primeira noite'],
     goal: 'Ser o último sobrevivente',
     tips: [
       'Elimine todos os outros',
       'Finja ser da vila',
       'Mate ameaças e suspeitos'
-    ],
-  },
-  SURVIVOR: {
-    name: 'Sobrevivente',
-    icon: '🛡️',
-    description: 'Neutro pacífico',
-    abilities: ['Sobreviver até o final'],
-    goal: 'Estar vivo quando o jogo terminar',
-    tips: [
-      'Mantenha-se neutro',
-      'Não seja uma ameaça',
-      'Adapte-se à situação'
-    ],
-  },
-  MAYOR: {
-    name: 'Prefeito',
-    icon: '🏛️',
-    description: 'Líder da vila',
-    abilities: ['Voto duplo', 'Revelado publicamente'],
-    goal: 'Liderar a vila até a vitória',
-    tips: [
-      'Use seu voto duplo estrategicamente',
-      'Lidere as discussões',
-      'Todos sabem sua identidade'
-    ],
-  },
-  ALPHA_WOLF: {
-    name: 'Lobo Alpha',
-    icon: '🌙',
-    description: 'Lobisomem superior',
-    abilities: ['Matar um jogador por noite', 'Habilidades especiais', 'Chat privado com lobisomens'],
-    goal: 'Liderar os lobisomens à vitória',
-    tips: [
-      'Use suas habilidades especiais',
-      'Coordene a alcateia',
-      'Seja estratégico nos ataques'
     ],
   },
 };
@@ -180,7 +144,7 @@ export default function RoleCard() {
   const { me, gameState } = useGame();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  if (!me || !me.role || !me.faction) {
+  if (!me || !me.role || !me.faction || !gameState) {
     return (
       <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg p-4">
         <div className="flex flex-col items-center justify-center h-full text-center">
@@ -194,6 +158,18 @@ export default function RoleCard() {
 
   const roleInfo = ROLE_INFO[me.role];
   const factionInfo = FACTION_INFO[me.faction];
+
+  if (!roleInfo || !factionInfo) {
+    return (
+      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg p-4">
+        <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="text-6xl mb-4">❓</div>
+          <h3 className="text-white font-semibold mb-2">Role Desconhecida</h3>
+          <p className="text-white/50 text-sm">Role: {me.role}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
@@ -358,6 +334,18 @@ export default function RoleCard() {
                   <span className="text-amber-400">{me.maxActions - me.actionsUsed}/{me.maxActions}</span>
                 </div>
               )}
+
+              {me.eliminationReason && (
+                <div className="flex justify-between p-2 bg-red-900/30 rounded border border-red-600">
+                  <span className="text-white/70">Causa da Morte:</span>
+                  <span className="text-red-400">
+                    {me.eliminationReason === 'NIGHT_KILL' ? '🌙 Morto à noite' :
+                      me.eliminationReason === 'EXECUTION' ? '🗳️ Executado' :
+                        me.eliminationReason === 'VIGILANTE' ? '🔫 Vigilante' :
+                          '🔪 Assassino'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -367,7 +355,10 @@ export default function RoleCard() {
       {!isExpanded && gameState && (
         <div className="flex-shrink-0 border-t border-medieval-600 p-3 bg-medieval-900/30">
           <div className="text-xs text-center text-white/50">
-            Dia {gameState.day} • {gameState.phase}
+            Dia {gameState.day} • {gameState.phase === 'NIGHT' ? '🌙 Noite' :
+              gameState.phase === 'DAY' ? '☀️ Dia' :
+                gameState.phase === 'VOTING' ? '🗳️ Votação' :
+                  gameState.phase}
           </div>
         </div>
       )}

@@ -896,3 +896,4 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   customRoles: [],
   bannedPlayers: [],
 };
+

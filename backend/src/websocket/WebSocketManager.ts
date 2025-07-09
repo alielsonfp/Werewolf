@@ -1,262 +1,328 @@
-// 🐺 LOBISOMEM ONLINE - WebSocket Manager (CORREÇÃO DEFINITIVA)
-
-import { Server as HttpServer, IncomingMessage } from 'http';
-// Importa 'WebSocket' COMO VALOR para acessar WebSocket.OPEN, além do servidor.
-import WebSocket, { WebSocketServer } from 'ws';
-
+// 🐺 LOBISOMEM ONLINE - WebSocket Manager (VERSÃO FINAL CORRIGIDA)
+import http from 'http';
+import { WebSocketServer } from 'ws';
+import { verifyAccessToken, extractTokenFromWebSocketRequest } from '@/config/jwt';
+import { parseWebSocketURL, extractConnectionMetadata } from '@/config/websocket';
+import { wsLogger } from '@/utils/logger';
 import { ConnectionManager } from './ConnectionManager';
 import { ChannelManager } from './ChannelManager';
 import { MessageRouter } from './MessageRouter';
+import { GameEngine } from '@/game/GameEngine';
 import { HeartbeatManager } from './HeartbeatManager';
-
-import {
-  extractTokenFromWebSocketRequest,
-  verifyAccessToken,
-} from '@/config/jwt';
-import {
-  wsConfig,
-  parseWebSocketURL,
-  extractConnectionMetadata,
-} from '@/config/websocket';
-import { wsLogger } from '@/utils/logger';
-
-import type { IGameStateService, IEventBus, ConnectionContext } from '@/types';
+import type { IEventBus, ConnectionContext } from '@/types';
 import type { Config } from '@/config/environment';
 
 export class WebSocketManager {
-  /**
-   * Instância do servidor WS (pública para exibir stats se necessário)
-   */
   public wss: WebSocketServer | null = null;
+  private connectionManager: ConnectionManager;
 
-  public connectionManager: ConnectionManager;
+  // ✅ EXPOSIÇÃO PÚBLICA DO CHANNELMANAGER
   public channelManager: ChannelManager;
-  public heartbeatManager: HeartbeatManager;
 
   private messageRouter: MessageRouter;
-  private isShuttingDown = false;
+  private gameEngine: GameEngine;
+  private heartbeatManager: HeartbeatManager;
 
   constructor(
-    gameStateService: IGameStateService,
-    eventBus: IEventBus,
-    private config: Config,
+    private eventBus: IEventBus,
+    private config: Config
   ) {
     this.connectionManager = new ConnectionManager();
     this.channelManager = new ChannelManager(this.connectionManager);
     this.heartbeatManager = new HeartbeatManager(this.connectionManager);
+    this.gameEngine = new GameEngine();
 
     this.messageRouter = new MessageRouter(
       this.connectionManager,
       this.channelManager,
-      gameStateService,
-      eventBus,
+      this.gameEngine,
+      this.eventBus
     );
 
     this.messageRouter.setBroadcastMethods(
       this.broadcastToRoom.bind(this),
-      this.sendToUser.bind(this),
+      this.sendToUser.bind(this)
     );
+    this.gameEngine.setSendToUserMethod(this.sendToUser.bind(this));
+
+    wsLogger.info('WebSocketManager initialized with GameEngine integration');
   }
 
-  /**
-   * Inicializa o WebSocketServer acoplado ao httpServer, interceptando o
-   * evento 'upgrade' para permitir rotas dinâmicas como /ws/:roomId.
-   */
-  public setupWebSocketServer(httpServer: HttpServer): void {
-    // 1. Cria o WSS sem servidor HTTP direto nem path fixo.
-    this.wss = new WebSocketServer({ noServer: true, ...wsConfig.server });
+  public setupWebSocketServer(server: http.Server): void {
+    this.wss = new WebSocketServer({ noServer: true });
 
-    // 2. Intercepta cada tentativa de upgrade (HTTP ➜ WS).
-    httpServer.on('upgrade', (request, socket, head) => {
-      // Usa a URL para checar se começa com o path base (ex: /ws)
-      const pathname = new URL(request.url || '/', `http://${request.headers.host}`).pathname;
-
-      if (!pathname.startsWith(wsConfig.path)) {
-        // Caminho não permitido → derruba a conexão.
-        wsLogger.warn('Upgrade recusado – caminho inválido', { pathname });
+    server.on('upgrade', (request, socket, head) => {
+      // ✅ ACEITA QUALQUER CAMINHO QUE COMECE COM /ws
+      if (request.url?.startsWith('/ws')) {
+        this.wss!.handleUpgrade(request, socket, head, (ws) => {
+          this.wss!.emit('connection', ws, request);
+        });
+      } else {
+        wsLogger.warn('WebSocket upgrade rejected for invalid path', { path: request.url });
         socket.destroy();
-        return;
       }
-
-      // 3. Aceita o upgrade; delega para o WSS processar.
-      this.wss!.handleUpgrade(request, socket, head, (ws) => {
-        this.wss!.emit('connection', ws, request);
-      });
     });
 
-    // Listener de novas conexões WebSocket.
     this.wss.on('connection', this.handleConnection.bind(this));
-
-    // Inicia batimentos cardíacos.
     this.heartbeatManager.start();
-
     wsLogger.info('WebSocket server attached to HTTP upgrade event.');
   }
 
-  /**
-   * Processo de handshake, autenticação e atribuição da conexão.
-   */
-  private async handleConnection(ws: WebSocket, request: IncomingMessage): Promise<void> {
+  private async handleConnection(ws: any, request: any): Promise<void> {
     let connectionId: string | undefined;
 
     try {
-      // 1. Valida token JWT.
-      const token = extractTokenFromWebSocketRequest(request);
-      if (!token) {
-        return ws.close(1008, 'Authentication required');
-      }
-
-      const payload = verifyAccessToken(token);
-
-      // 2. Extrai e valida o roomId da URL.
       const urlInfo = parseWebSocketURL(request.url || '');
-      if (!urlInfo.isValid) {
-        return ws.close(1008, 'Invalid WebSocket URL');
+      const token = extractTokenFromWebSocketRequest(request);
+
+      if (!token) {
+        wsLogger.warn('Connection rejected: No authentication token', {
+          url: request.url,
+          userAgent: request.headers['user-agent'],
+        });
+        return ws.close(1008, 'Authentication token required');
       }
 
-      // 3. Monta contexto da conexão.
+      const jwtPayload = verifyAccessToken(token);
+
       const context: ConnectionContext = {
-        userId: payload.userId,
-        username: payload.username,
+        userId: jwtPayload.userId,
+        username: jwtPayload.username,
         serverId: this.config.SERVICE_ID,
         isSpectator: false,
+        roomId: urlInfo.roomId,
       };
-      if (urlInfo.roomId) context.roomId = urlInfo.roomId;
 
       const metadata = extractConnectionMetadata(request);
+      connectionId = `${context.userId}-${Date.now()}`;
 
-      // 4. Registra conexão.
-      connectionId = this.connectionManager.addConnection(ws, context, metadata);
-      wsLogger.info('WebSocket connection established', {
-        connectionId,
-        userId: context.userId,
-        roomId: context.roomId,
+      this.connectionManager.addConnection(connectionId, ws, context, metadata);
+
+      // Setup event handlers
+      ws.on('message', (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString());
+          this.messageRouter.handleMessage(connectionId!, message);
+        } catch (error) {
+          wsLogger.error('Failed to parse message', error as Error, { connectionId });
+        }
       });
 
-      // 5. Configura handlers de mensagem / ping / close / error.
-      this.setupConnectionHandlers(ws, connectionId);
+      ws.on('pong', () => this.heartbeatManager.handlePong(connectionId!));
 
-      // 6. Confirma conexão ao cliente.
-      this.sendToConnection(connectionId, 'connected', { userId: context.userId });
+      ws.on('close', (code: number, reason: Buffer) => {
+        this.handleDisconnection(connectionId!, code, reason.toString());
+      });
 
-      // 7. Auto‑join se veio com roomId.
+      ws.on('error', (error: Error) => {
+        wsLogger.error('WS Connection Error', error, { connectionId });
+      });
+
+      // Send connection confirmation
+      this.sendToConnection(connectionId, 'connected', {
+        userId: context.userId,
+        username: context.username,
+        serverId: context.serverId,
+      });
+
+      // Auto-join room if specified in URL
       if (context.roomId) {
         await this.messageRouter.handleMessage(connectionId, {
           type: 'join-room',
-          data: { roomId: context.roomId },
-          timestamp: new Date().toISOString(),
+          data: { roomId: context.roomId }
         });
       }
+
+      wsLogger.info('WebSocket connection established', {
+        connectionId,
+        userId: context.userId,
+        username: context.username,
+        roomId: context.roomId,
+        userAgent: metadata.userAgent,
+        ip: metadata.ip,
+      });
+
     } catch (error) {
-      wsLogger.error('Connection failed', error instanceof Error ? error : new Error('Unknown error'));
+      wsLogger.error('Connection failed during handshake', error as Error, {
+        url: request.url,
+        connectionId,
+      });
       ws.close(1008, 'Authentication failed');
     }
   }
 
-  /**
-   * Define handlers para mensagens, pong, close, error.
-   */
-  private setupConnectionHandlers(ws: WebSocket, connectionId: string): void {
-    ws.on('message', async (data: Buffer) => {
-      try {
-        const message = JSON.parse(data.toString());
-        await this.messageRouter.handleMessage(connectionId, message);
-      } catch {
-        // Ignora mensagens mal‑formadas
-      }
-    });
-
-    ws.on('pong', () => this.heartbeatManager.handlePong(connectionId));
-
-    ws.on('close', (code, reason) =>
-      this.handleDisconnection(connectionId, code, reason.toString()),
-    );
-
-    ws.on('error', (error) =>
-      wsLogger.error('WS Connection Error', error, { connectionId }),
-    );
-  }
-
-  /**
-   * Limpeza ao desconectar.
-   */
   private handleDisconnection(connectionId: string, code: number, reason: string): void {
-    const conn = this.connectionManager.getConnection(connectionId);
-    if (!conn) return;
+    const connection = this.connectionManager.getConnection(connectionId);
 
-    wsLogger.info('Disconnected', {
-      connectionId,
-      userId: conn.context.userId,
-      code,
-      reason,
-    });
-
-    if (conn.context.roomId) {
-      this.broadcastToRoom(
-        conn.context.roomId,
-        'player-left',
-        {
-          userId: conn.context.userId,
-          username: conn.context.username,
-        },
+    if (connection) {
+      wsLogger.info('WebSocket connection closed', {
         connectionId,
-      );
+        userId: connection.context.userId,
+        username: connection.context.username,
+        roomId: connection.context.roomId,
+        code,
+        reason,
+      });
+
+      // Leave room if connected
+      if (connection.context.roomId) {
+        this.channelManager.leaveRoom(connection.context.roomId, connectionId);
+      }
+
+      // ✅ VERIFICAÇÃO DE SEGURANÇA ANTES DE USAR O EVENTBUS
+      if (this.eventBus && typeof this.eventBus.publish === 'function') {
+        this.eventBus.publish('connection:disconnected', {
+          connectionId,
+          userId: connection.context.userId,
+          username: connection.context.username,
+          roomId: connection.context.roomId,
+          code,
+          reason,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        wsLogger.warn('EventBus not available for disconnection event', { connectionId });
+      }
     }
 
-    this.channelManager.removeConnectionFromAllRooms(connectionId);
     this.connectionManager.removeConnection(connectionId);
   }
 
-  /* -------------------------------------------------------------------- */
-  /*                          Métodos utilitários                         */
-  /* -------------------------------------------------------------------- */
-
-  private sendToConnection(id: string, type: string, data?: any): boolean {
-    const conn = this.connectionManager.getConnection(id);
-    if (conn && conn.ws.readyState === WebSocket.OPEN) {
-      conn.ws.send(JSON.stringify({ type, data }));
-      return true;
+  public sendToConnection = (connectionId: string, type: string, data?: any): boolean => {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection || connection.ws.readyState !== connection.ws.OPEN) {
+      return false;
     }
-    return false;
-  }
 
-  private broadcastToRoom(
-    roomId: string,
-    type: string,
-    data?: any,
-    excludeConnectionId?: string,
-  ): number {
-    return this.channelManager.broadcastToRoom(roomId, type, data, excludeConnectionId);
-  }
+    try {
+      const message = {
+        type,
+        data,
+        timestamp: new Date().toISOString(),
+      };
 
-  private sendToUser(userId: string, type: string, data?: any): boolean {
-    const connId = this.connectionManager.getUserConnection(userId);
-    return connId ? this.sendToConnection(connId, type, data) : false;
-  }
+      connection.ws.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      wsLogger.error('Failed to send message to connection', error as Error, {
+        connectionId,
+        type,
+      });
+      return false;
+    }
+  };
 
-  /* -------------------------------------------------------------------- */
-  /*                          Métodos de manutenção                        */
-  /* -------------------------------------------------------------------- */
+  public sendToUser = (userId: string, type: string, data?: any): boolean => {
+    const connection = this.connectionManager.findConnectionByUserId(userId);
+    if (!connection) {
+      wsLogger.debug('No active connection found for user', { userId, type });
+      return false;
+    }
 
-  public getStats() {
+    return this.sendToConnection(connection.id, type, data);
+  };
+
+  public broadcastToRoom = (roomId: string, type: string, data?: any, excludeConnectionId?: string): number => {
+    const roomConnections = this.channelManager.getRoomConnections(roomId);
+    let sentCount = 0;
+
+    for (const connectionId of roomConnections) {
+      if (excludeConnectionId && connectionId === excludeConnectionId) {
+        continue;
+      }
+
+      if (this.sendToConnection(connectionId, type, data)) {
+        sentCount++;
+      }
+    }
+
+    wsLogger.debug('Broadcast to room completed', {
+      roomId,
+      type,
+      totalConnections: roomConnections.size,
+      sentCount,
+      excludedConnection: excludeConnectionId,
+    });
+
+    return sentCount;
+  };
+
+  public broadcastToAll = (type: string, data?: any): number => {
+    const allConnections = this.connectionManager.getAllConnections();
+    let sentCount = 0;
+
+    for (const [connectionId] of allConnections) {
+      if (this.sendToConnection(connectionId, type, data)) {
+        sentCount++;
+      }
+    }
+
+    wsLogger.debug('Broadcast to all completed', {
+      type,
+      totalConnections: allConnections.size,
+      sentCount,
+    });
+
+    return sentCount;
+  };
+
+  public getStats(): any {
+    const connectionStats = this.connectionManager.getStats();
+    const channelStats = this.channelManager.getStats();
+
     return {
-      totalConnections: this.connectionManager.getConnectionCount(),
-      activeRooms: this.channelManager.getActiveRoomsCount(),
-      heartbeat: this.heartbeatManager.getStats(),
+      connections: connectionStats,
+      channels: channelStats,
+      games: {
+        activeGames: this.gameEngine.getActiveGamesCount(),
+        totalGames: this.gameEngine.getAllGames().length,
+      },
+      server: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        serverId: this.config.SERVICE_ID,
+      },
     };
   }
 
-  public async shutdown(): Promise<void> {
-    if (this.isShuttingDown) return;
-    this.isShuttingDown = true;
+  public async forceDisconnectUser(userId: string): Promise<boolean> {
+    const connection = this.connectionManager.findConnectionByUserId(userId);
+    if (!connection) {
+      return false;
+    }
 
-    wsLogger.info('Shutting down WebSocket server...');
+    try {
+      connection.ws.close(1000, 'Forced disconnect by admin');
+      return true;
+    } catch (error) {
+      wsLogger.error('Failed to force disconnect user', error as Error, { userId });
+      return false;
+    }
+  }
+
+  public async cleanup(): Promise<void> {
+    wsLogger.info('Starting WebSocket cleanup...');
 
     this.heartbeatManager.stop();
-    this.wss?.close();
-    this.connectionManager.clear();
-    this.channelManager.clear();
 
-    wsLogger.info('WebSocket server shutdown complete.');
+    const allConnections = this.connectionManager.getAllConnections();
+    for (const [connectionId, connection] of allConnections) {
+      try {
+        connection.ws.close(1001, 'Server shutdown');
+      } catch (error) {
+        wsLogger.error('Error closing connection during cleanup', error as Error, { connectionId });
+      }
+    }
+
+    this.connectionManager.cleanup();
+    this.channelManager.cleanup();
+    await this.gameEngine.cleanup();
+
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+    }
+
+    wsLogger.info('WebSocket cleanup completed');
   }
 }
