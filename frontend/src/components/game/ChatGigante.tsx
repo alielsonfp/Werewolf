@@ -19,7 +19,7 @@ interface ChatMessage {
 type ChatTab = 'public' | 'werewolf' | 'dead' | 'system';
 
 // =============================================================================
-// CHAT GIGANTE COMPONENT - CORAÇÃO DO JOGO
+// CHAT GIGANTE COMPONENT - VERSÃO CORRIGIDA COM LOGS DE DEBUG
 // =============================================================================
 export default function ChatGigante() {
   const { gameState, me } = useGame();
@@ -43,54 +43,189 @@ export default function ChatGigante() {
   }, [messages]);
 
   // =============================================================================
-  // LISTEN FOR CHAT MESSAGES
+  // ✅ CORRIGIDO: LISTEN FOR CHAT MESSAGES COM LOGS DETALHADOS
   // =============================================================================
   useEffect(() => {
     const handleChatMessage = (event: CustomEvent) => {
       const data = event.detail;
 
-      if (data.type === 'chat-message') {
-        const newMessage: ChatMessage = {
-          id: data.data.message?.id || Date.now().toString(),
-          userId: data.data.message?.userId || data.data.userId,
-          username: data.data.message?.username || data.data.username,
-          message: data.data.message?.message || data.data.message,
-          channel: data.data.message?.channel || data.data.channel || 'public',
-          timestamp: data.data.message?.timestamp || data.data.timestamp || new Date().toISOString(),
-          filtered: data.data.message?.filtered,
-        };
+      // ✅ LOG DETALHADO: Ver todas as mensagens WebSocket que chegam
+      console.log('🎮 ChatGigante received WebSocket message:', {
+        type: data?.type,
+        data: data?.data,
+        hasMessage: !!data?.data?.message,
+        timestamp: new Date().toISOString()
+      });
 
-        setMessages(prev => [...prev, newMessage]);
+      if (!data?.type) {
+        console.warn('❌ ChatGigante: Message without type received', data);
+        return;
       }
 
-      // System messages from game events
-      if (data.type === 'phase-changed') {
-        const systemMessage: ChatMessage = {
-          id: `system-${Date.now()}`,
-          userId: 'system',
-          username: 'Sistema',
-          message: `Fase mudou para ${data.data.phase}`,
-          channel: 'system',
-          timestamp: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, systemMessage]);
-      }
+      try {
+        switch (data.type) {
+          case 'chat-message':
+            // ✅ LOG DETALHADO: Processamento de mensagens de chat
+            if (data.data?.message) {
+              const receivedMessage = data.data.message;
+              console.log('📬 ChatGigante: Processing chat message:', {
+                messageId: receivedMessage.id,
+                username: receivedMessage.username,
+                channel: receivedMessage.channel,
+                messagePreview: receivedMessage.message?.substring(0, 50),
+                fullMessage: receivedMessage
+              });
 
-      if (data.type === 'player-died') {
-        const systemMessage: ChatMessage = {
-          id: `system-${Date.now()}`,
-          userId: 'system',
-          username: 'Sistema',
-          message: `${data.data.playerName || 'Um jogador'} foi eliminado!`,
-          channel: 'system',
-          timestamp: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, systemMessage]);
+              const newMessage: ChatMessage = {
+                id: receivedMessage.id || `msg-${Date.now()}`,
+                userId: receivedMessage.userId || 'unknown',
+                username: receivedMessage.username || 'Usuário',
+                message: receivedMessage.message || '',
+                channel: receivedMessage.channel || 'public',
+                timestamp: receivedMessage.timestamp || new Date().toISOString(),
+                filtered: receivedMessage.filtered || false,
+              };
+
+              setMessages(prev => {
+                console.log('💾 ChatGigante: Adding message to state:', {
+                  newMessageId: newMessage.id,
+                  previousCount: prev.length,
+                  newCount: prev.length + 1
+                });
+                return [...prev, newMessage];
+              });
+            } else {
+              console.warn('❌ ChatGigante: chat-message without message data', data);
+            }
+            break;
+
+          case 'phase-changed':
+            // ✅ NOVO: Mensagens de sistema para mudança de fase
+            if (data.data?.gameId && data.data?.phase) {
+              console.log('🔄 ChatGigante: Phase changed, adding system message:', data.data);
+
+              let phaseMessage = '';
+              switch (data.data.phase) {
+                case 'DAY':
+                  phaseMessage = `🌅 Dia ${data.data.day || '?'} começou! Hora de discutir.`;
+                  break;
+                case 'VOTING':
+                  phaseMessage = `🗳️ Hora da votação! Escolham quem será executado.`;
+                  break;
+                case 'NIGHT':
+                  phaseMessage = `🌙 Noite chegou... Os poderes especiais acordam.`;
+                  break;
+                default:
+                  phaseMessage = `⏰ Fase mudou para ${data.data.phase}`;
+              }
+
+              const systemMessage: ChatMessage = {
+                id: `system-phase-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: phaseMessage,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              setMessages(prev => [...prev, systemMessage]);
+            }
+            break;
+
+          case 'player-died':
+          case 'night-results':
+            // ✅ NOVO: Mensagens de sistema para mortes
+            if (data.data) {
+              console.log('💀 ChatGigante: Death event received:', data.data);
+
+              let deathMessage = '';
+              if (data.data.playerName) {
+                deathMessage = `💀 ${data.data.playerName} foi eliminado!`;
+              } else if (data.data.deaths && Array.isArray(data.data.deaths)) {
+                const deathNames = data.data.deaths.map((d: any) => d.playerName || 'Alguém').join(', ');
+                deathMessage = `💀 ${deathNames} foram eliminados!`;
+              } else {
+                deathMessage = '💀 Alguém foi eliminado!';
+              }
+
+              const systemMessage: ChatMessage = {
+                id: `system-death-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: deathMessage,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              setMessages(prev => [...prev, systemMessage]);
+            }
+            break;
+
+          case 'game-ended':
+            // ✅ NOVO: Mensagem de fim de jogo
+            if (data.data?.winningFaction) {
+              console.log('🏆 ChatGigante: Game ended:', data.data);
+
+              let winMessage = '';
+              switch (data.data.winningFaction) {
+                case 'TOWN':
+                  winMessage = '🏆 A VILA VENCEU! Todos os lobisomens foram eliminados!';
+                  break;
+                case 'WEREWOLF':
+                  winMessage = '🐺 OS LOBISOMENS VENCERAM! Eles dominaram a vila!';
+                  break;
+                default:
+                  winMessage = '🎭 VITÓRIA ESPECIAL! Jogo finalizado!';
+              }
+
+              const systemMessage: ChatMessage = {
+                id: `system-victory-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: winMessage,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              setMessages(prev => [...prev, systemMessage]);
+            }
+            break;
+
+          case 'error':
+            // ✅ NOVO: Mostrar erros como mensagens de sistema
+            if (data.data?.message) {
+              console.log('❌ ChatGigante: Error message received:', data.data);
+
+              const errorMessage: ChatMessage = {
+                id: `system-error-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: `❌ Erro: ${data.data.message}`,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              setMessages(prev => [...prev, errorMessage]);
+            }
+            break;
+
+          default:
+            // ✅ LOG para tipos desconhecidos (debug)
+            console.log('🔍 ChatGigante: Unknown message type (not chat-related):', data.type);
+        }
+      } catch (error) {
+        console.error('❌ ChatGigante: Error handling WebSocket message:', error, data);
       }
     };
 
+    // ✅ LOG: Confirmar que o listener foi registrado
+    console.log('📡 ChatGigante: Registering WebSocket message listener');
     window.addEventListener('websocket-message', handleChatMessage as EventListener);
-    return () => window.removeEventListener('websocket-message', handleChatMessage as EventListener);
+
+    return () => {
+      console.log('📡 ChatGigante: Unregistering WebSocket message listener');
+      window.removeEventListener('websocket-message', handleChatMessage as EventListener);
+    };
   }, []);
 
   // =============================================================================
@@ -129,7 +264,7 @@ export default function ChatGigante() {
   // FILTER MESSAGES BY TAB
   // =============================================================================
   const getMessagesForTab = (tab: ChatTab): ChatMessage[] => {
-    return messages.filter(msg => {
+    const filteredMessages = messages.filter(msg => {
       switch (tab) {
         case 'public':
           return msg.channel === 'public';
@@ -143,28 +278,129 @@ export default function ChatGigante() {
           return false;
       }
     });
+
+    // ✅ LOG DETALHADO: Quantas mensagens temos por aba
+    console.log(`📊 ChatGigante: Messages for tab "${tab}":`, {
+      total: filteredMessages.length,
+      messageIds: filteredMessages.map(m => m.id),
+      channels: filteredMessages.map(m => m.channel)
+    });
+
+    return filteredMessages;
   };
 
   // =============================================================================
-  // SEND MESSAGE
+  // ✅ BUG FIX: CHECK CHAT RESTRICTIONS MELHORADO COM LOGS
+  // =============================================================================
+  const canSendMessage = () => {
+    // Se está morto, só pode falar no chat dos mortos
+    if (!me.isAlive && activeTab !== 'dead') {
+      console.log('🚫 ChatGigante: Dead player can only use dead chat', {
+        userAlive: me.isAlive,
+        activeTab
+      });
+      return false;
+    }
+
+    // Não pode enviar no canal do sistema
+    if (activeTab === 'system') {
+      console.log('🚫 ChatGigante: Cannot send to system channel');
+      return false;
+    }
+
+    // Chat de lobisomens só para lobisomens
+    if (activeTab === 'werewolf' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') {
+      console.log('🚫 ChatGigante: Not a werewolf - cannot use werewolf chat', {
+        userRole: me.role,
+        activeTab
+      });
+      return false;
+    }
+
+    // ✅ BUG FIX: Durante a noite, só lobisomens podem falar no público
+    if (gameState.phase === 'NIGHT' && activeTab === 'public' &&
+      me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') {
+      console.log('🚫 ChatGigante: Night phase - only werewolves can use public chat', {
+        gamePhase: gameState.phase,
+        userRole: me.role,
+        activeTab
+      });
+      return false;
+    }
+
+    console.log('✅ ChatGigante: Can send message', {
+      activeTab,
+      userAlive: me.isAlive,
+      userRole: me.role,
+      gamePhase: gameState?.phase
+    });
+    return true;
+  };
+
+  // =============================================================================
+  // ✅ BUG FIX: SEND MESSAGE COM DEBUG DETALHADO E VERIFICAÇÕES
   // =============================================================================
   const handleSendMessage = async () => {
-    if (!message.trim() || !gameState || isSubmitting) return;
+    if (!message.trim() || !gameState || isSubmitting) {
+      console.log('❌ ChatGigante: Cannot send message:', {
+        hasMessage: !!message.trim(),
+        hasGameState: !!gameState,
+        isSubmitting,
+        messageLength: message.length
+      });
+      return;
+    }
+
+    // ✅ VERIFICAR RESTRIÇÕES ANTES DE ENVIAR
+    if (!canSendMessage()) {
+      console.log('❌ ChatGigante: Cannot send message - restrictions apply:', {
+        activeTab,
+        userAlive: me?.isAlive,
+        userRole: me?.role,
+        gamePhase: gameState?.phase
+      });
+      return;
+    }
 
     setIsSubmitting(true);
 
-    const success = sendMessage('chat-message', {
+    // ✅ LOG DETALHADO: Tentativa de envio
+    console.log('📤 ChatGigante: Attempting to send message:', {
       message: message.trim(),
       channel: activeTab,
+      gameState: !!gameState,
+      userId: me?.userId,
+      username: me?.username,
+      gamePhase: gameState?.phase,
+      timestamp: new Date().toISOString()
     });
 
-    if (success) {
-      setMessage('');
-    }
+    try {
+      const success = sendMessage('chat-message', {
+        message: message.trim(),
+        channel: activeTab,
+      });
 
-    setTimeout(() => {
-      setIsSubmitting(false);
-    }, 200);
+      console.log('📤 ChatGigante: Message send result:', {
+        success,
+        message: message.trim(),
+        channel: activeTab,
+        socketConnected: !!sendMessage
+      });
+
+      if (success) {
+        setMessage('');
+        console.log('✅ ChatGigante: Message sent successfully, input cleared');
+      } else {
+        console.error('❌ ChatGigante: Failed to send message - sendMessage returned false');
+      }
+    } catch (error) {
+      console.error('❌ ChatGigante: Error sending message:', error);
+    } finally {
+      setTimeout(() => {
+        setIsSubmitting(false);
+      }, 200);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -215,17 +451,6 @@ export default function ChatGigante() {
   };
 
   // =============================================================================
-  // CHECK CHAT RESTRICTIONS
-  // =============================================================================
-  const canSendMessage = () => {
-    if (!me.isAlive && activeTab !== 'dead') return false;
-    if (activeTab === 'system') return false;
-    if (activeTab === 'werewolf' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') return false;
-    if (gameState.phase === 'NIGHT' && activeTab === 'public' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') return false;
-    return true;
-  };
-
-  // =============================================================================
   // MESSAGE COMPONENT
   // =============================================================================
   const ChatMessageComponent = ({ msg }: { msg: ChatMessage }) => {
@@ -243,7 +468,7 @@ export default function ChatGigante() {
           {/* Message Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-1">
-              <span className={`font-semibold text-sm ${isMe ? 'text-blue-300' : 'text-white'}`}>
+              <span className={`font-semibold text-sm ${isMe ? 'text-blue-300' : isSystem ? 'text-amber-300' : 'text-white'}`}>
                 {msg.username}
               </span>
               <span className="text-xs text-white/50">
@@ -252,9 +477,14 @@ export default function ChatGigante() {
                   minute: '2-digit'
                 })}
               </span>
+              {isSystem && (
+                <span className="text-xs bg-amber-600 text-white px-1 rounded">
+                  SISTEMA
+                </span>
+              )}
             </div>
 
-            <div className="text-white/90 text-sm break-words">
+            <div className={`text-sm break-words ${isSystem ? 'text-amber-100' : 'text-white/90'}`}>
               {msg.message}
             </div>
           </div>
@@ -262,6 +492,18 @@ export default function ChatGigante() {
       </div>
     );
   };
+
+  // ✅ LOG do estado atual do chat
+  useEffect(() => {
+    console.log('📊 ChatGigante: Current state summary:', {
+      totalMessages: messages.length,
+      activeTab,
+      gamePhase: gameState?.phase,
+      userAlive: me?.isAlive,
+      availableTabs,
+      canSend: canSendMessage()
+    });
+  }, [messages.length, activeTab, gameState?.phase, me?.isAlive]);
 
   return (
     <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
@@ -286,7 +528,7 @@ export default function ChatGigante() {
           {availableTabs.map((tab) => {
             const config = getTabConfig(tab);
             const tabMessages = getMessagesForTab(tab);
-            const unreadCount = tabMessages.length; // Simplified unread logic
+            const unreadCount = tab !== activeTab ? tabMessages.length : 0;
 
             return (
               <button
@@ -303,6 +545,7 @@ export default function ChatGigante() {
                 <div className="flex items-center space-x-1">
                   <span>{config.icon}</span>
                   <span>{config.name}</span>
+                  <span className="text-xs">({tabMessages.length})</span>
                 </div>
 
                 {/* Unread Badge */}
@@ -329,6 +572,10 @@ export default function ChatGigante() {
                 {activeTab === 'werewolf' && 'Coordenem seus ataques...'}
                 {activeTab === 'dead' && 'O além está silencioso...'}
                 {activeTab === 'system' && 'Aguardando eventos...'}
+              </p>
+              {/* ✅ DEBUG: Mostrar contador total de mensagens */}
+              <p className="text-xs mt-2 text-white/30">
+                Debug: {messages.length} mensagens total
               </p>
             </div>
           </div>
@@ -381,6 +628,14 @@ export default function ChatGigante() {
         <div className="mt-2 text-xs text-white/50 text-center">
           💡 Use Enter para enviar • Shift+Enter para quebrar linha
         </div>
+
+        {/* ✅ DEBUG INFO */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-2 text-xs text-white/30 text-center">
+            Debug: {messages.length} msgs total | Aba: {activeTab} ({getMessagesForTab(activeTab).length}) |
+            Pode enviar: {canSendMessage() ? 'Sim' : 'Não'} | Fase: {gameState?.phase}
+          </div>
+        )}
       </div>
     </div>
   );

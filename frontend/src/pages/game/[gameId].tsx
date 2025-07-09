@@ -14,7 +14,7 @@ export default function GamePage() {
   const router = useRouter();
   const { gameId } = router.query;
   const { user, isAuthenticated, getToken } = useAuth();
-  const { isConnected, connect, sendMessage } = useSocket();
+  const { isConnected, connect, disconnect, sendMessage } = useSocket();
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,10 +41,10 @@ export default function GamePage() {
   }, [router.isReady, isAuthenticated, gameId, router]);
 
   // =============================================================================
-  // WEBSOCKET CONNECTION - NOVA CONEXÃO PARA O JOGO
+  // WEBSOCKET CONNECTION - CONEXÃO PARA O JOGO (CORRIGIDA)
   // =============================================================================
   useEffect(() => {
-    if (!router.isReady || !isAuthenticated || !gameId) return;
+    if (!router.isReady || !isAuthenticated || !gameId || typeof gameId !== 'string') return;
 
     const token = getToken();
     if (!token) {
@@ -60,24 +60,39 @@ export default function GamePage() {
       console.log('🔌 Connecting to game WebSocket:', wsUrl);
       connect(wsUrl);
     }
-  }, [router.isReady, gameId, isAuthenticated, isConnected, connect, getToken, router]);
+
+    // Cleanup na desmontagem do componente
+    return () => {
+      if (isConnected) {
+        console.log('🔌 Disconnecting from game WebSocket');
+        disconnect();
+      }
+    };
+  }, [router.isReady, gameId, isAuthenticated, isConnected, connect, disconnect, getToken, router]);
 
   // =============================================================================
-  // REQUEST INITIAL GAME STATE
+  // REQUEST INITIAL GAME STATE (CORRIGIDO)
   // =============================================================================
   useEffect(() => {
     if (!isConnected || !gameId || hasRequestedGameState) return;
 
     // ✅ Assim que estiver conectado, pede o estado do jogo
     console.log(`🚀 Requesting initial game state for game: ${gameId}`);
-    sendMessage('get-game-state', { gameId });
-    setHasRequestedGameState(true);
+
+    const success = sendMessage('get-game-state', { gameId });
+    if (success) {
+      setHasRequestedGameState(true);
+    }
   }, [isConnected, gameId, hasRequestedGameState, sendMessage]);
 
   // =============================================================================
   // ERROR HANDLING
   // =============================================================================
   const handleBackToLobby = () => {
+    // Desconecta antes de voltar ao lobby
+    if (isConnected) {
+      disconnect();
+    }
     router.push('/lobby');
   };
 

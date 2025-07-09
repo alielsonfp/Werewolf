@@ -1,5 +1,5 @@
-// 🐺 LOBISOMEM ONLINE - Game Core Classes (FASE 1 - CORREÇÃO CRÍTICA)
-import { Role, Faction, GamePhase } from '@/utils/constants';
+// 🐺 LOBISOMEM ONLINE - Game Core Classes (FASE 1 - CORREÇÃO CRÍTICA + DEBUG MODE)
+import { Role, Faction, GamePhase, GAME_LIMITS } from '@/utils/constants';
 import type { GameConfig, GameEvent, NightAction, GameStatus } from '@/types';
 import { RoleRevealManager, WinConditionCalculator, ROLE_CONFIGURATIONS } from './RoleSystem';
 
@@ -293,7 +293,7 @@ export class GameState {
     return Array.from(this.playersMap.values()).filter(p => !p.isAlive && !p.isSpectator);
   }
 
-  // ✅ FASE 1 - CANSTART() MELHORADO E MAIS ROBUSTO
+  // ✅ FASE 1 - CANSTART() MELHORADO E MAIS ROBUSTO COM GAME_LIMITS
   canStart(): boolean {
     // ✅ Verificações básicas primeiro
     if (this.status !== 'WAITING') {
@@ -302,8 +302,8 @@ export class GameState {
 
     const alivePlayers = this.getAlivePlayers();
 
-    // ✅ Verificar quantidade de jogadores (6 a 15)
-    if (alivePlayers.length < 6 || alivePlayers.length > 15) {
+    // ✅ Verificar quantidade de jogadores usando constante
+    if (alivePlayers.length < GAME_LIMITS.MIN_PLAYERS || alivePlayers.length > GAME_LIMITS.MAX_PLAYERS) {
       return false;
     }
 
@@ -320,7 +320,7 @@ export class GameState {
     return allNonHostPlayersReady;
   }
 
-  // ✅ FASE 1 - MÉTODO AUXILIAR PARA DEBUG E VALIDAÇÃO
+  // ✅ FASE 1 - MÉTODO AUXILIAR PARA DEBUG E VALIDAÇÃO COM GAME_LIMITS
   getStartRequirements(): {
     canStart: boolean;
     reasons: string[];
@@ -340,12 +340,12 @@ export class GameState {
       reasons.push(`Game status is ${this.status}, must be WAITING`);
     }
 
-    if (alivePlayers.length < 6) {
-      reasons.push(`Only ${alivePlayers.length} players, minimum is 6`);
+    if (alivePlayers.length < GAME_LIMITS.MIN_PLAYERS) {
+      reasons.push(`Only ${alivePlayers.length} players, minimum is ${GAME_LIMITS.MIN_PLAYERS}`);
     }
 
-    if (alivePlayers.length > 15) {
-      reasons.push(`${alivePlayers.length} players, maximum is 15`);
+    if (alivePlayers.length > GAME_LIMITS.MAX_PLAYERS) {
+      reasons.push(`${alivePlayers.length} players, maximum is ${GAME_LIMITS.MAX_PLAYERS}`);
     }
 
     if (!hostPlayer) {

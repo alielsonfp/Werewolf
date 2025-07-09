@@ -1,7 +1,9 @@
-// 🐺 LOBISOMEM ONLINE - Message Router (FASE 1 - CORREÇÃO CRÍTICA)
+// 🐺 LOBISOMEM ONLINE - Message Router (CORRIGIDO - CHAT + AÇÕES + LOGS)
 import { wsLogger } from '@/utils/logger';
 import { validateWebSocketMessage } from '@/config/websocket';
 import { pool } from '@/config/database';
+import { GAME_LIMITS } from '@/utils/constants';
+//import { getGameDurations } from '@/utils/constants';
 import type { ConnectionManager } from './ConnectionManager';
 import type { ChannelManager } from './ChannelManager';
 import type { GameEngine } from '@/game/GameEngine';
@@ -14,7 +16,7 @@ import { Player } from '@/game/Game';
 type MessageHandler = (connectionId: string, data: any) => Promise<void>;
 
 //====================================================================
-// MESSAGE ROUTER CLASS - FASE 1
+// MESSAGE ROUTER CLASS - VERSÃO CORRIGIDA
 //====================================================================
 export class MessageRouter {
   private handlers = new Map<string, MessageHandler>();
@@ -76,7 +78,7 @@ export class MessageRouter {
   }
 
   //====================================================================
-  // MAIN MESSAGE HANDLER
+  // MAIN MESSAGE HANDLER - CORRIGIDO
   //====================================================================
   async handleMessage(connectionId: string, message: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
@@ -88,12 +90,12 @@ export class MessageRouter {
     try {
       // Validate message format
       const validation = validateWebSocketMessage(message);
-      if (!validation.isValid) {
+      if (!validation.isValid || !validation.message) {
         await this.sendError(connectionId, 'INVALID_MESSAGE', validation.error || 'Invalid message format');
         return;
       }
 
-      const validMessage = validation.message!;
+      const validMessage = validation.message;
 
       wsLogger.debug('Message received', {
         connectionId,
@@ -253,7 +255,7 @@ export class MessageRouter {
         }
       }
 
-      // ✅ CORREÇÃO CRÍTICA: Criar objeto para o jogador que está entrando
+      // Criar objeto para o jogador que está entrando
       const playerForSelf = {
         id: `${roomId}-${connection.context.userId}`,
         userId: connection.context.userId,
@@ -440,7 +442,7 @@ export class MessageRouter {
     }
   }
 
-  // ✅ FASE 1 - CORREÇÃO CRÍTICA: handleStartGame com gameId padronizado
+  // ✅ CORREÇÃO: handleStartGame usando configurações centralizadas
   private async handleStartGame(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection || !connection.context.roomId) {
@@ -449,17 +451,14 @@ export class MessageRouter {
     }
 
     const roomId = connection.context.roomId;
-    // ✅ FASE 1 - CORREÇÃO CRÍTICA: gameId padronizado e consistente
     const gameId = `game-${roomId}`;
 
     try {
-      // ✅ FASE 1 - LOG MELHORADO: Estado inicial do processo
-      wsLogger.info('Starting game process - Phase 1', {
+      wsLogger.info('Starting game process', {
         connectionId,
         roomId,
         gameId,
-        hostId: connection.context.userId,
-        pattern: 'game-${roomId}'
+        hostId: connection.context.userId
       });
 
       // Verificar se é o host
@@ -475,55 +474,44 @@ export class MessageRouter {
         return;
       }
 
-      // ✅ FASE 1 - IMPORTANTE: Verificar se jogo já existe com o gameId CORRETO
+      // Verificar se jogo já existe
       let gameState = await this.gameEngine.getGameState(gameId);
 
       if (!gameState) {
-        wsLogger.info('Game does not exist, creating new game with standardized ID', {
+        wsLogger.info('Creating game with centralized configuration', {
           gameId,
-          roomId,
-          pattern: 'game-${roomId}'
+          roomId
         });
 
+        // ✅ CORREÇÃO: Usar configurações centralizadas do constants.ts
+        // O GameEngine vai ler as durações do constants.ts automaticamente
         const gameConfig = {
           roomId: roomId,
           maxPlayers: roomData.maxPlayers,
           maxSpectators: roomData.maxSpectators,
-          nightDuration: 60000,
-          dayDuration: 120000,
-          votingDuration: 60000,
+          // ✅ Importar durações do constants.ts
+          nightDuration: GAME_LIMITS.NIGHT_DURATION,
+          dayDuration: GAME_LIMITS.DAY_DURATION,
+          votingDuration: GAME_LIMITS.VOTING_DURATION,
           allowReconnection: true,
           reconnectionTimeout: 120000,
         };
 
-        // ✅ FASE 1 - AGORA o GameEngine criará o jogo com gameId = `game-${roomId}`
         gameState = await this.gameEngine.createGame(connection.context.userId, gameConfig);
 
-        wsLogger.info('Game created successfully with standardized ID', {
+        wsLogger.info('Game created with centralized durations', {
           gameId: gameState.gameId,
           roomId,
           hostId: connection.context.userId,
-          expectedGameId: gameId,
-          actualGameId: gameState.gameId,
-          idsMatch: gameState.gameId === gameId
-        });
-      } else {
-        wsLogger.info('Game already exists, using existing game', {
-          gameId,
-          status: gameState.status,
-          playerCount: gameState.players.length
+          nightDuration: `${gameConfig.nightDuration / 1000}s`,
+          dayDuration: `${gameConfig.dayDuration / 1000}s`,
+          votingDuration: `${gameConfig.votingDuration / 1000}s`
         });
       }
 
-      // ✅ FASE 1 - LOG MELHORADO: Players being added
+      // Adicionar jogadores...
       const roomConnections = this.channelManager.getRoomPlayerConnections(roomId);
-      wsLogger.info('Adding players to game', {
-        gameId,
-        roomConnectionCount: roomConnections.size,
-        existingPlayerCount: gameState.players.length
-      });
 
-      // ✅ FASE 1 - Adicionar jogadores usando o gameId CORRETO
       for (const connId of roomConnections) {
         const conn = this.connectionManager.getConnection(connId);
         if (conn && !conn.context.isSpectator) {
@@ -540,48 +528,14 @@ export class MessageRouter {
             lastSeen: new Date(),
           });
 
-          // ✅ FASE 1 - USAR o gameId CORRETO para adicionar o jogador
-          const addResult = await this.gameEngine.addPlayer(gameId, player);
-
-          wsLogger.debug('Player added to game', {
-            gameId,
-            playerId: player.id,
-            userId: player.userId,
-            username: player.username,
-            isHost: player.isHost,
-            isReady: player.isReady,
-            addResult
-          });
+          await this.gameEngine.addPlayer(gameId, player);
         }
       }
 
-      // ✅ FASE 1 - LOG ANTES DE TENTAR INICIAR: Verificar estado final
-      const finalGameState = await this.gameEngine.getGameState(gameId);
-      if (finalGameState) {
-        const alivePlayers = finalGameState.getAlivePlayers();
-        const hostPlayer = alivePlayers.find(p => p.isHost);
-        const nonHostPlayers = alivePlayers.filter(p => !p.isHost);
-        const readyNonHostPlayers = nonHostPlayers.filter(p => p.isReady);
-
-        wsLogger.info('Attempting to start game - Final validation', {
-          gameId,
-          canStart: finalGameState.canStart(),
-          totalPlayers: alivePlayers.length,
-          hostFound: !!hostPlayer,
-          hostUsername: hostPlayer?.username,
-          hostReady: hostPlayer?.isReady,
-          nonHostPlayers: nonHostPlayers.length,
-          readyNonHostPlayers: readyNonHostPlayers.length,
-          playersNotReady: nonHostPlayers.filter(p => !p.isReady).map(p => p.username),
-          gameStatus: finalGameState.status
-        });
-      }
-
-      // ✅ FASE 1 - Iniciar o jogo com o gameId CORRETO
+      // Iniciar o jogo
       const success = await this.gameEngine.startGame(gameId);
 
       if (!success) {
-        // ✅ FASE 1 - LOG DETALHADO do erro
         const currentState = await this.gameEngine.getGameState(gameId);
         let errorDetails = 'Unknown error';
 
@@ -594,7 +548,7 @@ export class MessageRouter {
           errorDetails = `Status: ${currentState.status}, Players: ${alivePlayers.length}, Host: ${hostPlayer ? 'Found' : 'Missing'}, Not Ready: ${notReadyPlayers.map(p => p.username).join(', ')}`;
         }
 
-        wsLogger.error('Failed to start game - Phase 1', {
+        wsLogger.error('Failed to start game', {
           gameId,
           roomId,
           errorDetails
@@ -606,14 +560,14 @@ export class MessageRouter {
         return;
       }
 
-      wsLogger.info('Game started successfully - Phase 1 implementation', {
+      wsLogger.info('Game started successfully with centralized configuration', {
         gameId,
         roomId,
-        hostId: connection.context.userId,
+        hostId: connection.context.userId
       });
 
     } catch (error) {
-      wsLogger.error('Error starting game - Phase 1', error instanceof Error ? error : new Error('Unknown start game error'), {
+      wsLogger.error('Error starting game', error instanceof Error ? error : new Error('Unknown start game error'), {
         connectionId,
         gameId,
         roomId,
@@ -664,6 +618,7 @@ export class MessageRouter {
     }
   }
 
+  // ✅ CORRIGIDO: handleGameAction com logs detalhados
   private async handleGameAction(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection || !connection.context.roomId) {
@@ -674,7 +629,39 @@ export class MessageRouter {
     const { type, targetId } = data;
     const gameId = `game-${connection.context.roomId}`;
 
+    // ✅ LOGS DETALHADOS para debug das ações
+    wsLogger.info('Handling game action - DETAILED', {
+      connectionId,
+      userId: connection.context.userId,
+      username: connection.context.username,
+      roomId: connection.context.roomId,
+      gameId,
+      actionType: type,
+      targetId,
+      timestamp: new Date().toISOString()
+    });
+
     try {
+      const gameState = await this.gameEngine.getGameState(gameId);
+      if (!gameState) {
+        wsLogger.warn('Game action on non-existent game', {
+          gameId,
+          userId: connection.context.userId,
+          actionType: type
+        });
+        await this.sendError(connectionId, 'GAME_NOT_FOUND', 'Jogo não encontrado');
+        return;
+      }
+
+      // ✅ LOG do estado do jogo antes da ação
+      wsLogger.info('Game state before action', {
+        gameId,
+        phase: gameState.phase,
+        day: gameState.day,
+        playersCount: gameState.players.length,
+        nightActionsCount: gameState.nightActions.length
+      });
+
       const success = await this.gameEngine.performPlayerAction(
         gameId,
         connection.context.userId,
@@ -682,12 +669,28 @@ export class MessageRouter {
       );
 
       if (success) {
-        await this.sendToConnection(connectionId, 'action-confirmed', {
+        wsLogger.info('Game action processed successfully', {
+          connectionId,
+          gameId,
+          userId: connection.context.userId,
           actionType: type,
-          message: 'Ação registrada com sucesso'
+          targetId,
+          result: 'SUCCESS'
         });
       } else {
-        await this.sendError(connectionId, 'ACTION_FAILED', 'Falha ao executar ação');
+        wsLogger.warn('Game action failed in GameEngine', {
+          connectionId,
+          gameId,
+          userId: connection.context.userId,
+          actionType: type,
+          targetId,
+          result: 'FAILED'
+        });
+
+        await this.sendToConnection(connectionId, 'action-failed', {
+          actionType: type,
+          error: 'Falha ao executar ação'
+        });
       }
 
     } catch (error) {
@@ -695,6 +698,7 @@ export class MessageRouter {
         connectionId,
         action: type,
         targetId,
+        gameId
       });
       await this.sendError(connectionId, 'ACTION_FAILED', 'Erro interno ao executar ação');
     }
@@ -711,6 +715,17 @@ export class MessageRouter {
     const gameId = `game-${connection.context.roomId}`;
 
     try {
+      const gameState = await this.gameEngine.getGameState(gameId);
+      if (!gameState) {
+        await this.sendError(connectionId, 'GAME_NOT_FOUND', 'Jogo não encontrado');
+        return;
+      }
+
+      if (gameState.phase !== 'VOTING') {
+        await this.sendError(connectionId, 'INVALID_PHASE', 'Votação só é permitida durante a fase de votação');
+        return;
+      }
+
       const success = await this.gameEngine.castVote(
         gameId,
         connection.context.userId,
@@ -719,8 +734,18 @@ export class MessageRouter {
 
       if (success) {
         await this.sendToConnection(connectionId, 'vote-confirmed', {
-          message: 'Voto registrado'
+          message: 'Voto registrado',
+          targetId
         });
+
+        // Broadcast vote update to all players in room
+        if (this.broadcastToRoom) {
+          const voteCounts = Object.fromEntries(gameState.getVoteCounts());
+          this.broadcastToRoom(connection.context.roomId, 'voting-update', {
+            votes: gameState.votes,
+            counts: voteCounts
+          });
+        }
       } else {
         await this.sendError(connectionId, 'VOTE_FAILED', 'Falha ao registrar voto');
       }
@@ -729,6 +754,7 @@ export class MessageRouter {
       wsLogger.error('Error casting vote', error instanceof Error ? error : new Error('Unknown vote error'), {
         connectionId,
         targetId,
+        gameId
       });
       await this.sendError(connectionId, 'VOTE_FAILED', 'Erro interno ao votar');
     }
@@ -878,24 +904,38 @@ export class MessageRouter {
     await this.sendError(connectionId, 'NOT_IMPLEMENTED', 'Kick player not yet implemented');
   }
 
+  // ✅ CORRIGIDO: handleChatMessage com logs detalhados e verificação de contexto
   private async handleChatMessage(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection) return;
 
     const { message, channel = 'public' } = data;
+    const roomId = connection.context.roomId;
+
+    // ✅ LOGS DETALHADOS para debug do chat
+    wsLogger.info('Handling chat message - DETAILED', {
+      connectionId,
+      userId: connection.context.userId,
+      username: connection.context.username,
+      roomId,
+      messageLength: message?.length || 0,
+      channel,
+      hasRoomId: !!roomId,
+      hasBroadcastMethod: !!this.broadcastToRoom,
+      timestamp: new Date().toISOString()
+    });
 
     if (!message || typeof message !== 'string') {
       await this.sendError(connectionId, 'INVALID_MESSAGE', 'Message is required and must be a string');
       return;
     }
 
-    try {
-      const roomId = connection.context.roomId;
-      if (!roomId) {
-        await this.sendError(connectionId, 'NOT_IN_ROOM', 'Must be in a room to send chat messages');
-        return;
-      }
+    if (!roomId) {
+      await this.sendError(connectionId, 'NOT_IN_ROOM', 'Must be in a room to send chat messages');
+      return;
+    }
 
+    try {
       const chatMessage = {
         id: Date.now().toString(),
         userId: connection.context.userId,
@@ -905,11 +945,33 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       };
 
+      // ✅ LOG da mensagem criada
+      wsLogger.info('Chat message created', {
+        messageId: chatMessage.id,
+        fromUser: chatMessage.username,
+        toRoom: roomId,
+        channel: chatMessage.channel,
+        messagePreview: chatMessage.message.substring(0, 50)
+      });
+
       if (this.broadcastToRoom) {
-        this.broadcastToRoom(roomId, 'chat-message', { message: chatMessage });
+        const broadcastCount = this.broadcastToRoom(roomId, 'chat-message', { message: chatMessage });
+
+        wsLogger.info('Chat message broadcast completed', {
+          messageId: chatMessage.id,
+          roomId,
+          recipientCount: broadcastCount,
+          broadcastSuccess: broadcastCount > 0
+        });
+      } else {
+        wsLogger.error('Cannot broadcast chat message - broadcastToRoom method not available', {
+          connectionId,
+          roomId,
+          messageId: chatMessage.id
+        });
       }
 
-      wsLogger.info('Chat message sent', {
+      wsLogger.info('Chat message processed successfully', {
         connectionId,
         userId: connection.context.userId,
         username: connection.context.username,
@@ -921,6 +983,7 @@ export class MessageRouter {
     } catch (error) {
       wsLogger.error('Error sending chat message', error instanceof Error ? error : new Error('Unknown chat error'), {
         connectionId,
+        roomId,
         message: message.substring(0, 50),
       });
 

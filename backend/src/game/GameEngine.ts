@@ -1,4 +1,4 @@
-// 🐺 LOBISOMEM ONLINE - Game Engine (FASE 1 - CORREÇÃO CRÍTICA)
+// 🐺 LOBISOMEM ONLINE - Game Engine (VERSÃO FINAL LIMPA - SEM DUPLICAÇÃO)
 import { GameState, Player } from './Game';
 import { RoleDistributor, WinConditionCalculator } from './RoleSystem';
 import { Role, Faction, GamePhase } from '@/utils/constants';
@@ -6,7 +6,7 @@ import type { GameConfig, IGameEngine, GameResults, GameStatus } from '@/types';
 import { logger } from '@/utils/logger';
 
 //====================================================================
-// GAME ENGINE IMPLEMENTATION - FASE 1 CORRIGIDA
+// GAME ENGINE IMPLEMENTATION - VERSÃO FINAL LIMPA
 //====================================================================
 export class GameEngine implements IGameEngine {
   private games = new Map<string, GameState>();
@@ -27,23 +27,127 @@ export class GameEngine implements IGameEngine {
   }
 
   //====================================================================
+  // ✅ PONTE SISTEMA → CHAT
+  //====================================================================
+  private broadcastSystemMessage(gameId: string, text: string, channel: 'system' | 'public' = 'system'): void {
+    const gameState = this.games.get(gameId);
+    if (!gameState || !this.sendToUser) {
+      logger.warn('Cannot broadcast system message - game or sendToUser not available', { gameId });
+      return;
+    }
+
+    const systemMessage = {
+      id: `system-${Date.now()}`,
+      userId: 'system',
+      username: 'Sistema',
+      message: text,
+      channel: channel,
+      timestamp: new Date().toISOString(),
+    };
+
+    const allPlayers = gameState.players;
+    let sentCount = 0;
+
+    allPlayers.forEach(player => {
+      if (this.sendToUser!(player.userId, 'chat-message', { message: systemMessage })) {
+        sentCount++;
+      }
+    });
+
+    logger.info('System message broadcast completed', {
+      gameId,
+      message: text,
+      totalPlayers: allPlayers.length,
+      sentCount
+    });
+  }
+
+  //====================================================================
+  // ✅ FEEDBACK INDIVIDUAL PARA AÇÕES
+  //====================================================================
+  private sendActionResult(gameId: string, playerId: string, actionType: string, result: string): void {
+    const gameState = this.games.get(gameId);
+    if (!gameState || !this.sendToUser) return;
+
+    const player = gameState.players.find(p => p.id === playerId);
+    if (!player) return;
+
+    const resultMessage = {
+      id: `result-${Date.now()}`,
+      userId: 'system',
+      username: 'Sistema',
+      message: result,
+      channel: 'system',
+      timestamp: new Date().toISOString(),
+    };
+
+    this.sendToUser(player.userId, 'chat-message', { message: resultMessage });
+
+    logger.info('Action result sent to player', {
+      gameId,
+      playerId,
+      actionType,
+      result
+    });
+  }
+
+  //====================================================================
+  // BROADCAST GAME STATE TO ALL PLAYERS
+  //====================================================================
+  private async broadcastGameState(gameId: string): Promise<void> {
+    const gameState = this.games.get(gameId);
+    if (!gameState || !this.sendToUser) return;
+
+    const players = gameState.getAlivePlayers();
+
+    logger.info('Broadcasting game state to all players', {
+      gameId,
+      playerCount: players.length,
+      phase: gameState.phase,
+      day: gameState.day
+    });
+
+    for (const player of players) {
+      try {
+        const personalizedState = this.getPersonalizedGameState(gameState, player.userId);
+        const success = this.sendToUser(player.userId, 'game-state', personalizedState);
+
+        if (!success) {
+          logger.warn('Failed to send game state to player', {
+            gameId,
+            playerId: player.id,
+            userId: player.userId
+          });
+        }
+      } catch (error) {
+        logger.error('Error broadcasting to player',
+          error instanceof Error ? error : new Error('Unknown broadcast error'),
+          { gameId, playerId: player.id, userId: player.userId }
+        );
+      }
+    }
+  }
+
+  //====================================================================
   // GAME LIFECYCLE
   //====================================================================
   async createGame(hostId: string, config: GameConfig): Promise<GameState> {
-    // ✅ FASE 1 - CORREÇÃO CRÍTICA: gameId padronizado e previsível
     const gameId = `game-${config.roomId}`;
 
     try {
+      // ✅ CORREÇÃO: Usar configuração recebida (sem hardcoded durations)
       const gameState = new GameState(gameId, config, hostId);
 
       this.games.set(gameId, gameState);
       this.eventHandlers.set(gameId, new Map());
 
-      logger.info('Game created with standardized gameId', {
+      logger.info('Game created with provided configuration', {
         gameId,
         roomId: config.roomId,
         hostId,
-        pattern: 'game-${roomId}'
+        nightDuration: `${config.nightDuration / 1000}s`,
+        dayDuration: `${config.dayDuration / 1000}s`,
+        votingDuration: `${config.votingDuration / 1000}s`
       });
 
       this.emitGameEvent(gameId, 'game:created', {
@@ -60,23 +164,20 @@ export class GameEngine implements IGameEngine {
     }
   }
 
-  // ✅ FASE 1 - MELHORADO: startGame com logs estruturados para debugging
+  // ✅ startGame começa no DIA
   async startGame(gameId: string): Promise<boolean> {
     const gameState = this.games.get(gameId);
 
     if (!gameState) {
-      // ✅ FASE 1 - LOG MELHORADO: Mostrar gameIds disponíveis para debug
       const availableGameIds = Array.from(this.games.keys());
       logger.warn('Attempted to start non-existent game', {
         requestedGameId: gameId,
         availableGameIds,
-        totalGames: this.games.size,
-        pattern: 'Expected: game-${roomId}'
+        totalGames: this.games.size
       });
       return false;
     }
 
-    // ✅ FASE 1 - VALIDAÇÃO MELHORADA: Usar novo canStart() mais robusto
     if (!gameState.canStart()) {
       const alivePlayers = gameState.getAlivePlayers();
       const hostPlayer = alivePlayers.find(p => p.isHost);
@@ -116,17 +217,24 @@ export class GameEngine implements IGameEngine {
 
       gameState.status = 'PLAYING';
 
-      await this.startFirstNight(gameState);
+      // Começar no DIA
+      await this.changePhase(gameState, GamePhase.DAY, gameState.config.dayDuration);
 
-      // Enviar estado inicial para cada jogador INDIVIDUALMENTE
       await this.sendInitialGameStateToAllPlayers(gameId);
 
-      logger.info('Game started successfully - Phase 1 implementation', {
+      this.broadcastSystemMessage(gameId,
+        `🎮 O jogo começou! Dia ${gameState.day} - Discutam e tentem descobrir quem são os lobisomens! (${gameState.config.dayDuration / 1000}s)`,
+        'system'
+      );
+
+      logger.info('Game started successfully - begins with DAY phase', {
         gameId,
         roomId: gameState.roomId,
         playerCount: players.length,
         distribution,
         hostId: gameState.hostId,
+        startPhase: 'DAY',
+        dayDuration: `${gameState.config.dayDuration / 1000}s`
       });
 
       this.emitGameEvent(gameId, 'game:started', {
@@ -146,7 +254,6 @@ export class GameEngine implements IGameEngine {
     }
   }
 
-  // ENVIAR ESTADO INICIAL PERSONALIZADO PARA CADA JOGADOR
   private async sendInitialGameStateToAllPlayers(gameId: string): Promise<void> {
     if (!this.sendToUser) {
       logger.error('SendToUser method not available - cannot send initial game state');
@@ -192,7 +299,6 @@ export class GameEngine implements IGameEngine {
     }
   }
 
-  // PERSONALIZAR ESTADO DO JOGO PARA JOGADOR ESPECÍFICO
   private getPersonalizedGameState(gameState: GameState, userId: string): any {
     const fullState = gameState.toJSON();
     const currentPlayer = fullState.players.find((p: any) => p.userId === userId);
@@ -241,6 +347,14 @@ export class GameEngine implements IGameEngine {
       );
 
       gameState.endGame(winCondition.winningFaction, winCondition.winningPlayers);
+
+      const winMessage = winCondition.winningFaction === Faction.TOWN
+        ? '🏆 A VILA VENCEU! Todos os lobisomens foram eliminados!'
+        : winCondition.winningFaction === Faction.WEREWOLF
+          ? '🐺 OS LOBISOMENS VENCERAM! Eles dominaram a vila!'
+          : '🎭 VITÓRIA ESPECIAL! Condição de vitória alternativa atingida!';
+
+      this.broadcastSystemMessage(gameId, winMessage, 'system');
 
       logger.info('Game ended', {
         gameId,
@@ -343,40 +457,151 @@ export class GameEngine implements IGameEngine {
   }
 
   //====================================================================
-  // PLAYER ACTIONS
+  // PLAYER ACTIONS - ✅ COM ANTI-SPAM E FEEDBACK
   //====================================================================
-  async performPlayerAction(gameId: string, playerId: string, action: any): Promise<boolean> {
+  async performPlayerAction(gameId: string, userId: string, action: any): Promise<boolean> {
     const gameState = this.games.get(gameId);
-    if (!gameState) return false;
-
-    const player = gameState.getPlayer(playerId);
-    if (!player || !player.isAlive) return false;
-
-    if (gameState.phase === GamePhase.NIGHT && player.canAct()) {
-      return player.performAction(action.type, action.targetId);
+    if (!gameState) {
+      logger.warn('Action on non-existent game', { gameId, userId, action });
+      return false;
     }
 
-    return false;
+    try {
+      const player = gameState.players.find(p => p.userId === userId);
+      if (!player || !player.isAlive) {
+        logger.warn('Action attempt by invalid player', {
+          gameId,
+          userId,
+          playerFound: !!player,
+          isAlive: player?.isAlive,
+          actionType: action.type
+        });
+        return false;
+      }
+
+      // ✅ ANTI-SPAM: Verificar se já agiu
+      if (player.hasActed && gameState.phase === GamePhase.NIGHT) {
+        logger.warn('Player already acted this night - blocking spam', {
+          gameId,
+          playerId: player.id,
+          actionType: action.type,
+          hasActed: player.hasActed
+        });
+
+        if (this.sendToUser) {
+          this.sendToUser(player.userId, 'action-failed', {
+            actionType: action.type,
+            error: 'Você já realizou sua ação nesta noite'
+          });
+        }
+        return false;
+      }
+
+      logger.info('Processing player action', {
+        gameId,
+        userId,
+        playerId: player.id,
+        username: player.username,
+        actionType: action.type,
+        targetId: action.targetId,
+        gamePhase: gameState.phase,
+        gameDay: gameState.day,
+        playerRole: player.role,
+        playerHasActed: player.hasActed,
+        nightActionsCount: gameState.nightActions.length
+      });
+
+      const ActionManager = (await import('./ActionManager')).ActionManager;
+      const actionManager = new ActionManager(gameState);
+
+      const result = await actionManager.performAction(player.id, action);
+
+      if (result.success) {
+        logger.info('Player action processed successfully', {
+          gameId,
+          playerId: player.id,
+          userId: player.userId,
+          actionType: action.type,
+          targetId: action.targetId,
+          result,
+          nightActionsAfter: gameState.nightActions.length
+        });
+
+        if (this.sendToUser) {
+          this.sendToUser(player.userId, 'action-confirmed', {
+            actionType: action.type,
+            message: result.message || 'Ação registrada com sucesso',
+            data: result.data
+          });
+        }
+
+        if (gameState.phase === GamePhase.NIGHT) {
+          await this.broadcastGameState(gameId);
+        }
+
+        return true;
+      } else {
+        logger.warn('Player action failed validation', {
+          gameId,
+          playerId: player.id,
+          actionType: action.type,
+          errors: result.errors,
+          message: result.message
+        });
+
+        if (this.sendToUser) {
+          this.sendToUser(player.userId, 'action-failed', {
+            actionType: action.type,
+            error: result.message || 'Falha ao processar ação',
+            errors: result.errors
+          });
+        }
+
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error performing player action',
+        error instanceof Error ? error : new Error('Unknown action error'),
+        { gameId, userId, action }
+      );
+
+      const player = gameState.players.find(p => p.userId === userId);
+      if (player && this.sendToUser) {
+        this.sendToUser(player.userId, 'action-failed', {
+          actionType: action.type,
+          error: 'Erro interno ao processar ação'
+        });
+      }
+
+      return false;
+    }
   }
 
   //====================================================================
-  // PHASE MANAGEMENT
+  // PHASE MANAGEMENT - ✅ FLUXO CORRETO (DIA 1 SEM VOTAÇÃO)
   //====================================================================
   async nextPhase(gameId: string): Promise<void> {
     const gameState = this.games.get(gameId);
     if (!gameState) return;
 
     const currentPhase = gameState.phase;
+    const currentDay = gameState.day;
 
     try {
       switch (currentPhase) {
+        case GamePhase.DAY:
+          // ✅ PRIMEIRO DIA: vai direto para noite (sem votação)
+          if (currentDay === 1) {
+            await this.changePhase(gameState, GamePhase.NIGHT, gameState.config.nightDuration);
+          } else {
+            // Dias subsequentes: vai para votação
+            await this.changePhase(gameState, GamePhase.VOTING, gameState.config.votingDuration);
+          }
+          break;
+
         case GamePhase.NIGHT:
           await this.processNightResults(gameState);
           await this.changePhase(gameState, GamePhase.DAY, gameState.config.dayDuration);
-          break;
-
-        case GamePhase.DAY:
-          await this.changePhase(gameState, GamePhase.VOTING, gameState.config.votingDuration);
           break;
 
         case GamePhase.VOTING:
@@ -390,6 +615,7 @@ export class GameEngine implements IGameEngine {
           break;
       }
 
+      await this.broadcastGameState(gameId);
       await this.checkWinCondition(gameId);
     } catch (error) {
       logger.error('Error during phase transition', error instanceof Error ? error : new Error('Unknown phase error'), {
@@ -402,16 +628,28 @@ export class GameEngine implements IGameEngine {
   //====================================================================
   // PHASE TRANSITION HELPERS
   //====================================================================
-  private async startFirstNight(gameState: GameState): Promise<void> {
-    await this.changePhase(gameState, GamePhase.NIGHT, gameState.config.nightDuration);
-
-    gameState.addEvent('FIRST_NIGHT_STARTED', {
-      message: 'A primeira noite chegou à vila. Os poderes especiais acordam...',
-    });
-  }
-
   private async changePhase(gameState: GameState, newPhase: GamePhase, duration: number): Promise<void> {
+    const oldPhase = gameState.phase;
     gameState.changePhase(newPhase, duration);
+
+    let phaseMessage = '';
+    const durationText = `(${duration / 1000}s)`;
+
+    switch (newPhase) {
+      case GamePhase.DAY:
+        phaseMessage = `🌅 Dia ${gameState.day} começou! Hora de discutir e investigar. ${durationText}`;
+        break;
+      case GamePhase.VOTING:
+        phaseMessage = `🗳️ Hora da votação! Escolham quem será executado. ${durationText}`;
+        break;
+      case GamePhase.NIGHT:
+        phaseMessage = `🌙 Noite ${gameState.day} chegou... Os poderes especiais acordam. ${durationText}`;
+        break;
+    }
+
+    if (phaseMessage) {
+      this.broadcastSystemMessage(gameState.gameId, phaseMessage, 'system');
+    }
 
     setTimeout(() => {
       this.nextPhase(gameState.gameId);
@@ -422,40 +660,135 @@ export class GameEngine implements IGameEngine {
       phase: newPhase,
       duration,
       timeLeft: duration,
+      day: gameState.day,
+    });
+
+    logger.info('Phase changed with system message', {
+      gameId: gameState.gameId,
+      from: oldPhase,
+      to: newPhase,
+      day: gameState.day,
+      duration: `${duration / 1000}s`
     });
   }
 
+  // ✅ CORRIGIDO: processNightResults com FEEDBACK DAS AÇÕES
   private async processNightResults(gameState: GameState): Promise<void> {
-    const deaths: string[] = [];
+    logger.info('Processing night results with feedback', {
+      gameId: gameState.gameId,
+      nightActionsCount: gameState.nightActions.length,
+      nightActions: gameState.nightActions.map(a => ({
+        type: a.type,
+        playerId: a.playerId,
+        targetId: a.targetId
+      }))
+    });
 
+    const deaths: string[] = [];
+    const protections: string[] = [];
+
+    // Primeiro, aplicar proteções
     gameState.nightActions.forEach(action => {
-      if (action.type === 'WEREWOLF_KILL' && action.targetId) {
+      if (action.type === 'PROTECT' && action.targetId) {
         const target = gameState.getPlayer(action.targetId);
-        if (target && target.isAlive && !target.isProtected) {
-          target.kill('NIGHT_KILL');
-          deaths.push(action.targetId);
+        if (target) {
+          target.protect();
+          protections.push(action.targetId);
+
+          // ✅ FEEDBACK para o Doctor
+          this.sendActionResult(gameState.gameId, action.playerId, 'PROTECT',
+            `🛡️ Você protegeu ${target.username} com sucesso!`);
+
+          logger.info('Protection applied with feedback', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username
+          });
         }
       }
     });
 
-    gameState.nightActions = [];
+    // Segundo, processar investigações
+    gameState.nightActions.forEach(action => {
+      if (action.type === 'INVESTIGATE' && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        if (target && target.role) {
+          // ✅ LÓGICA DE INVESTIGAÇÃO
+          const isSuspicious = target.role === 'WEREWOLF' || target.role === 'WEREWOLF_KING' || target.role === 'SERIAL_KILLER';
+          const result = isSuspicious ? 'SUSPEITO' : 'INOCENTE';
 
+          // ✅ FEEDBACK para o Sheriff
+          this.sendActionResult(gameState.gameId, action.playerId, 'INVESTIGATE',
+            `🔍 Investigação de ${target.username}: ${result} ${isSuspicious ? '⚠️' : '✅'}`);
+
+          logger.info('Investigation completed with feedback', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username,
+            result
+          });
+        }
+      }
+    });
+
+    // Terceiro, processar ataques
+    gameState.nightActions.forEach(action => {
+      if ((action.type === 'WEREWOLF_KILL' || action.type === 'KILL') && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        if (target && target.isAlive && !target.isProtected) {
+          target.kill('NIGHT_KILL');
+          deaths.push(action.targetId);
+
+          logger.info('Night kill applied', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username,
+            killerType: action.type
+          });
+        } else if (target && target.isProtected) {
+          logger.info('Attack blocked by protection', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username
+          });
+        }
+      }
+    });
+
+    // Enviar mensagens de sistema sobre os resultados
     if (deaths.length > 0) {
       deaths.forEach(playerId => {
         const player = gameState.getPlayer(playerId);
         if (player) {
-          gameState.addEvent('PLAYER_DIED', {
-            playerId,
-            playerName: player.username,
-            cause: 'NIGHT_KILL',
-          });
+          this.broadcastSystemMessage(gameState.gameId,
+            `💀 ${player.username} foi encontrado morto pela manhã!`,
+            'system'
+          );
         }
       });
     } else {
-      gameState.addEvent('NO_DEATHS', {
-        message: 'Ninguém morreu durante a noite.',
-      });
+      this.broadcastSystemMessage(gameState.gameId,
+        "🌅 Ninguém morreu durante a noite. A vila teve uma noite tranquila.",
+        'system'
+      );
     }
+
+    // Limpar ações da noite
+    gameState.nightActions = [];
+
+    // Remover proteções (elas duram apenas uma noite)
+    gameState.players.forEach(player => {
+      if (player.isProtected) {
+        player.removeProtection();
+      }
+    });
+
+    logger.info('Night results processed completely with feedback', {
+      gameId: gameState.gameId,
+      deathsCount: deaths.length,
+      protectionsCount: protections.length,
+      remainingActions: gameState.nightActions.length
+    });
   }
 
   private async processVotingResults(gameState: GameState): Promise<void> {
@@ -466,6 +799,11 @@ export class GameEngine implements IGameEngine {
       if (player && player.role) {
         if (player.role === Role.JESTER) {
           gameState.endGame(Faction.NEUTRAL, [player.id]);
+
+          this.broadcastSystemMessage(gameState.gameId,
+            `🎭 ${player.username} era o BOBO DA CORTE e venceu ao ser executado!`,
+            'system'
+          );
 
           this.emitGameEvent(gameState.gameId, 'jester:wins', {
             gameId: gameState.gameId,
@@ -479,16 +817,39 @@ export class GameEngine implements IGameEngine {
 
         player.kill('EXECUTION');
 
+        this.broadcastSystemMessage(gameState.gameId,
+          `⚖️ ${player.username} foi executado pela vila! Ele era: ${player.role}`,
+          'system'
+        );
+
         gameState.addEvent('PLAYER_EXECUTED', {
           playerId: player.id,
           playerName: player.username,
           role: player.role,
           votes: result.votes,
         });
+
+        logger.info('Player executed with role reveal', {
+          gameId: gameState.gameId,
+          playerId: player.id,
+          playerName: player.username,
+          role: player.role,
+          votes: result.votes
+        });
       }
     } else {
+      this.broadcastSystemMessage(gameState.gameId,
+        "🤝 Empate na votação! Ninguém foi executado hoje.",
+        'system'
+      );
+
       gameState.addEvent('NO_EXECUTION', {
         reason: 'No majority or tie vote',
+      });
+
+      logger.info('No execution - tie vote', {
+        gameId: gameState.gameId,
+        voteCounts: Object.fromEntries(gameState.getVoteCounts())
       });
     }
   }
@@ -517,35 +878,80 @@ export class GameEngine implements IGameEngine {
     const gameState = this.games.get(gameId);
     if (!gameState) return false;
 
-    const success = gameState.addVote(voterId, targetId);
+    try {
+      const voter = gameState.players.find(p => p.userId === voterId);
+      if (!voter) {
+        logger.warn('Vote attempt by non-existent player', { gameId, voterId });
+        return false;
+      }
 
-    if (success) {
-      this.emitGameEvent(gameId, 'vote:cast', {
-        gameId,
-        voterId,
-        targetId,
-        voteCounts: Object.fromEntries(gameState.getVoteCounts()),
-      });
+      const success = gameState.addVote(voter.id, targetId);
+
+      if (success) {
+        this.emitGameEvent(gameId, 'vote:cast', {
+          gameId,
+          voterId: voter.id,
+          targetId,
+          voteCounts: Object.fromEntries(gameState.getVoteCounts()),
+        });
+
+        await this.broadcastGameState(gameId);
+
+        logger.info('Vote cast successfully', {
+          gameId,
+          voterId: voter.id,
+          voterName: voter.username,
+          targetId
+        });
+      }
+
+      return success;
+    } catch (error) {
+      logger.error('Error casting vote',
+        error instanceof Error ? error : new Error('Unknown vote error'),
+        { gameId, voterId, targetId }
+      );
+      return false;
     }
-
-    return success;
   }
 
   async removeVote(gameId: string, voterId: string): Promise<boolean> {
     const gameState = this.games.get(gameId);
     if (!gameState) return false;
 
-    const success = gameState.removeVote(voterId);
+    try {
+      const voter = gameState.players.find(p => p.userId === voterId);
+      if (!voter) {
+        logger.warn('Unvote attempt by non-existent player', { gameId, voterId });
+        return false;
+      }
 
-    if (success) {
-      this.emitGameEvent(gameId, 'vote:removed', {
-        gameId,
-        voterId,
-        voteCounts: Object.fromEntries(gameState.getVoteCounts()),
-      });
+      const success = gameState.removeVote(voter.id);
+
+      if (success) {
+        this.emitGameEvent(gameId, 'vote:removed', {
+          gameId,
+          voterId: voter.id,
+          voteCounts: Object.fromEntries(gameState.getVoteCounts()),
+        });
+
+        await this.broadcastGameState(gameId);
+
+        logger.info('Vote removed successfully', {
+          gameId,
+          voterId: voter.id,
+          voterName: voter.username
+        });
+      }
+
+      return success;
+    } catch (error) {
+      logger.error('Error removing vote',
+        error instanceof Error ? error : new Error('Unknown unvote error'),
+        { gameId, voterId }
+      );
+      return false;
     }
-
-    return success;
   }
 
   //====================================================================

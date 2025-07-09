@@ -85,12 +85,22 @@ export class WebSocketManager {
 
       const jwtPayload = verifyAccessToken(token);
 
+      // ✅ LÓGICA DE DIFERENCIAÇÃO SALA vs JOGO
+      let roomIdFromUrl = urlInfo.roomId;
+      let isGameConnection = false;
+
+      if (roomIdFromUrl && roomIdFromUrl.startsWith('game-')) {
+        isGameConnection = true;
+        // Extrai o roomId real de um gameId, ex: "game-abc" -> "abc"
+        roomIdFromUrl = roomIdFromUrl.substring(5);
+      }
+
       const context: ConnectionContext = {
         userId: jwtPayload.userId,
         username: jwtPayload.username,
         serverId: this.config.SERVICE_ID,
         isSpectator: false,
-        roomId: urlInfo.roomId,
+        roomId: roomIdFromUrl, // Armazena o roomId limpo
       };
 
       const metadata = extractConnectionMetadata(request);
@@ -125,8 +135,17 @@ export class WebSocketManager {
         serverId: context.serverId,
       });
 
-      // Auto-join room if specified in URL
-      if (context.roomId) {
+      // ✅ AQUI ESTÁ A MUDANÇA CRÍTICA DE FLUXO
+      if (isGameConnection) {
+        // Se é uma conexão de JOGO, apenas peça o estado do jogo.
+        // O frontend na página do jogo é quem vai enviar esta mensagem.
+        wsLogger.info('Game connection established, waiting for get-game-state', {
+          connectionId,
+          gameId: urlInfo.roomId,
+          roomId: roomIdFromUrl
+        });
+      } else if (context.roomId) {
+        // Se é uma conexão de SALA, acione o `join-room`.
         await this.messageRouter.handleMessage(connectionId, {
           type: 'join-room',
           data: { roomId: context.roomId }
@@ -138,6 +157,8 @@ export class WebSocketManager {
         userId: context.userId,
         username: context.username,
         roomId: context.roomId,
+        isGameConnection,
+        originalUrl: urlInfo.roomId,
         userAgent: metadata.userAgent,
         ip: metadata.ip,
       });

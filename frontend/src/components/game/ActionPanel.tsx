@@ -4,7 +4,7 @@ import { useSocket } from '@/context/SocketContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
-// ACTION PANEL COMPONENT - AÇÕES DO JOGADOR POR FASE
+// ACTION PANEL COMPONENT - VERSÃO CORRIGIDA COM LOGS DE DEBUG
 // =============================================================================
 export default function ActionPanel() {
   const { gameState, me, alivePlayers, canVote, canAct } = useGame();
@@ -13,6 +13,23 @@ export default function ActionPanel() {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [confirmingAction, setConfirmingAction] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ✅ LOG do estado atual do painel
+  React.useEffect(() => {
+    console.log('🎯 ActionPanel: Current state:', {
+      gamePhase: gameState?.phase,
+      gameDay: gameState?.day,
+      userRole: me?.role,
+      userAlive: me?.isAlive,
+      userHasActed: me?.hasActed,
+      userHasVoted: me?.hasVoted,
+      canVote,
+      canAct,
+      selectedTarget,
+      alivePlayers: alivePlayers.length,
+      timestamp: new Date().toISOString()
+    });
+  }, [gameState?.phase, me?.hasActed, me?.hasVoted, canVote, canAct, selectedTarget]);
 
   // =============================================================================
   // LOADING STATE
@@ -28,7 +45,7 @@ export default function ActionPanel() {
   }
 
   // =============================================================================
-  // ACTION HANDLERS
+  // ✅ CORRIGIDO: ACTION HANDLERS COM LOGS DETALHADOS
   // =============================================================================
   const handleNightAction = async () => {
     if (!selectedTarget || !me.role || isSubmitting) return;
@@ -43,10 +60,37 @@ export default function ActionPanel() {
     if (actionType) {
       setIsSubmitting(true);
 
-      sendMessage('game-action', {
-        type: actionType,
+      // ✅ LOG DETALHADO: Tentativa de ação noturna
+      console.log('🌙 ActionPanel: Attempting night action:', {
+        actionType,
         targetId: selectedTarget,
+        userRole: me.role,
+        userId: me.userId,
+        gamePhase: gameState.phase,
+        gameId: gameState.gameId,
+        timestamp: new Date().toISOString()
       });
+
+      try {
+        const success = sendMessage('game-action', {
+          type: actionType,
+          targetId: selectedTarget,
+        });
+
+        console.log('🌙 ActionPanel: Night action send result:', {
+          success,
+          actionType,
+          targetId: selectedTarget
+        });
+
+        if (success) {
+          console.log('✅ ActionPanel: Night action sent successfully');
+        } else {
+          console.error('❌ ActionPanel: Failed to send night action');
+        }
+      } catch (error) {
+        console.error('❌ ActionPanel: Error sending night action:', error);
+      }
 
       // Reset state after sending
       setTimeout(() => {
@@ -54,6 +98,8 @@ export default function ActionPanel() {
         setConfirmingAction(false);
         setIsSubmitting(false);
       }, 500);
+    } else {
+      console.warn('⚠️ ActionPanel: No valid action type for role:', me.role);
     }
   };
 
@@ -62,7 +108,31 @@ export default function ActionPanel() {
 
     setIsSubmitting(true);
 
-    sendMessage('vote', { targetId: selectedTarget });
+    // ✅ LOG DETALHADO: Tentativa de voto
+    console.log('🗳️ ActionPanel: Attempting vote:', {
+      targetId: selectedTarget,
+      userId: me.userId,
+      gamePhase: gameState.phase,
+      gameId: gameState.gameId,
+      timestamp: new Date().toISOString()
+    });
+
+    try {
+      const success = sendMessage('vote', { targetId: selectedTarget });
+
+      console.log('🗳️ ActionPanel: Vote send result:', {
+        success,
+        targetId: selectedTarget
+      });
+
+      if (success) {
+        console.log('✅ ActionPanel: Vote sent successfully');
+      } else {
+        console.error('❌ ActionPanel: Failed to send vote');
+      }
+    } catch (error) {
+      console.error('❌ ActionPanel: Error sending vote:', error);
+    }
 
     setTimeout(() => {
       setSelectedTarget(null);
@@ -75,7 +145,26 @@ export default function ActionPanel() {
 
     setIsSubmitting(true);
 
-    sendMessage('unvote', {});
+    // ✅ LOG DETALHADO: Tentativa de remover voto
+    console.log('🗳️ ActionPanel: Attempting unvote:', {
+      userId: me.userId,
+      gamePhase: gameState.phase,
+      timestamp: new Date().toISOString()
+    });
+
+    try {
+      const success = sendMessage('unvote', {});
+
+      console.log('🗳️ ActionPanel: Unvote send result:', { success });
+
+      if (success) {
+        console.log('✅ ActionPanel: Unvote sent successfully');
+      } else {
+        console.error('❌ ActionPanel: Failed to send unvote');
+      }
+    } catch (error) {
+      console.error('❌ ActionPanel: Error sending unvote:', error);
+    }
 
     setTimeout(() => {
       setIsSubmitting(false);
@@ -110,6 +199,16 @@ export default function ActionPanel() {
   };
 
   const validTargets = getValidTargets();
+
+  // ✅ LOG dos alvos válidos
+  React.useEffect(() => {
+    console.log('🎯 ActionPanel: Valid targets updated:', {
+      count: validTargets.length,
+      targets: validTargets.map(t => ({ id: t.id, username: t.username })),
+      gamePhase: gameState?.phase,
+      userRole: me?.role
+    });
+  }, [validTargets.length, gameState?.phase, me?.role]);
 
   // =============================================================================
   // GET ACTION INFO
@@ -192,6 +291,12 @@ export default function ActionPanel() {
                     'Morto por assassino'}
             </p>
           )}
+          {/* ✅ DEBUG: Info do jogador morto */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/30">
+              Debug: Role: {me.role} | Faction: {me.faction}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -208,6 +313,12 @@ export default function ActionPanel() {
           <p className="text-amber-400 text-sm mt-2">
             A votação começará em breve...
           </p>
+          {/* ✅ DEBUG: Info da fase do dia */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/30">
+              Debug: Role: {me.role} | Time left: {gameState.timeLeft}ms
+            </div>
+          )}
         </div>
       </div>
     );
@@ -221,6 +332,12 @@ export default function ActionPanel() {
           <div className="text-6xl mb-4">😴</div>
           <h3 className="text-lg font-semibold text-white mb-2">Sem Ações</h3>
           <p className="text-white/70">Você não possui ações disponíveis nesta fase.</p>
+          {/* ✅ DEBUG: Info de por que não há ações */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/30">
+              Debug: Phase: {gameState.phase} | Role: {me.role} | Has acted: {me.hasActed}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -237,6 +354,12 @@ export default function ActionPanel() {
           <p className="text-amber-400 text-sm mt-2">
             Aguardando outros jogadores...
           </p>
+          {/* ✅ DEBUG: Info da ação já realizada */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/30">
+              Debug: Has acted: {me.hasActed} | Actions used: {me.actionsUsed}/{me.maxActions}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -265,6 +388,13 @@ export default function ActionPanel() {
           >
             {isSubmitting ? 'Removendo...' : 'Remover Voto'}
           </button>
+
+          {/* ✅ DEBUG: Info do voto */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/30">
+              Debug: Voted for: {myVote} | Has voted: {me.hasVoted}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -278,6 +408,13 @@ export default function ActionPanel() {
       <div className="flex-shrink-0 border-b border-medieval-600 p-4">
         <h3 className="text-lg font-bold text-white mb-2">{actionInfo.title}</h3>
         <p className="text-white/70 text-sm">{actionInfo.description}</p>
+
+        {/* ✅ DEBUG: Info da ação disponível */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-2 text-xs text-white/30">
+            Debug: Can act: {actionInfo.canAct} | Valid targets: {validTargets.length}
+          </div>
+        )}
       </div>
 
       {/* Target Selection */}
@@ -288,7 +425,14 @@ export default function ActionPanel() {
           {validTargets.map((player) => (
             <button
               key={player.id}
-              onClick={() => setSelectedTarget(player.id)}
+              onClick={() => {
+                console.log('🎯 ActionPanel: Target selected:', {
+                  playerId: player.id,
+                  username: player.username,
+                  previousTarget: selectedTarget
+                });
+                setSelectedTarget(player.id);
+              }}
               disabled={isSubmitting}
               className={`
                 w-full p-3 rounded-lg border-2 transition-all duration-200 text-left
@@ -329,6 +473,12 @@ export default function ActionPanel() {
           <div className="text-center text-white/50 py-8">
             <div className="text-4xl mb-2">🚫</div>
             <p>Nenhum alvo válido disponível</p>
+            {/* ✅ DEBUG: Por que não há alvos */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-2 text-xs text-white/30">
+                Debug: Alive players: {alivePlayers.length} | Phase: {gameState.phase} | Role: {me.role}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -338,7 +488,13 @@ export default function ActionPanel() {
         <div className="flex-shrink-0 border-t border-medieval-600 p-4">
           {!confirmingAction ? (
             <button
-              onClick={() => setConfirmingAction(true)}
+              onClick={() => {
+                console.log('🎯 ActionPanel: Confirming action:', {
+                  selectedTarget,
+                  actionType: actionInfo.title
+                });
+                setConfirmingAction(true);
+              }}
               disabled={!selectedTarget || isSubmitting}
               className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
             >
@@ -356,7 +512,10 @@ export default function ActionPanel() {
 
               <div className="flex space-x-2">
                 <button
-                  onClick={gameState.phase === 'VOTING' ? handleVote : handleNightAction}
+                  onClick={() => {
+                    console.log('🎯 ActionPanel: Action confirmed, executing...');
+                    gameState.phase === 'VOTING' ? handleVote() : handleNightAction();
+                  }}
                   disabled={isSubmitting}
                   className="flex-1 bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200"
                 >
@@ -365,6 +524,7 @@ export default function ActionPanel() {
 
                 <button
                   onClick={() => {
+                    console.log('🎯 ActionPanel: Action cancelled');
                     setConfirmingAction(false);
                     setSelectedTarget(null);
                   }}
