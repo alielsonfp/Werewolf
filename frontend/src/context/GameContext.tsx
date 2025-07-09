@@ -7,11 +7,22 @@ import type { GameState, Player, GamePhase } from '@/types';
 // =============================================================================
 // TYPES & INTERFACES
 // =============================================================================
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
+  channel: 'public' | 'werewolf' | 'dead' | 'system';
+  timestamp: string;
+  filtered?: boolean;
+}
+
 interface GameContextState {
   gameState: GameState | null;
   isLoading: boolean;
   error: string | null;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+  chatMessages: ChatMessage[]; // ✅ ADICIONADO: Estado do chat
 }
 
 interface GameContextValue extends GameContextState {
@@ -39,6 +50,7 @@ type GameAction =
   | { type: 'UPDATE_PHASE'; payload: { phase: GamePhase; timeLeft: number; day: number } }
   | { type: 'UPDATE_VOTING'; payload: { votes: Record<string, string>; counts: Record<string, number> } }
   | { type: 'PLAYER_DIED'; payload: { playerId: string; role?: string; cause: string } }
+  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage } // ✅ ADICIONADO: Ação para chat
   | { type: 'CLEAR_GAME' };
 
 const initialState: GameContextState = {
@@ -46,6 +58,7 @@ const initialState: GameContextState = {
   isLoading: false,
   error: null,
   connectionStatus: 'disconnected',
+  chatMessages: [], // ✅ ADICIONADO: Inicializar array do chat
 };
 
 function gameReducer(state: GameContextState, action: GameAction): GameContextState {
@@ -99,6 +112,17 @@ function gameReducer(state: GameContextState, action: GameAction): GameContextSt
               : player
           ),
         } : null,
+      };
+
+    // ✅ ADICIONADO: Case para processar mensagens de chat
+    case 'ADD_CHAT_MESSAGE':
+      // Evitar duplicatas
+      if (state.chatMessages.some(msg => msg.id === action.payload.id)) {
+        return state;
+      }
+      return {
+        ...state,
+        chatMessages: [...state.chatMessages, action.payload],
       };
 
     case 'CLEAR_GAME':
@@ -155,6 +179,33 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
                   day: message.data.day,
                 },
               });
+
+              // ✅ ADICIONADO: Mensagem de sistema para mudança de fase
+              let phaseMessage = '';
+              switch (message.data.phase) {
+                case 'DAY':
+                  phaseMessage = `🌅 Dia ${message.data.day || '?'} começou! Hora de discutir.`;
+                  break;
+                case 'VOTING':
+                  phaseMessage = `🗳️ Hora da votação! Escolham quem será executado.`;
+                  break;
+                case 'NIGHT':
+                  phaseMessage = `🌙 Noite chegou... Os poderes especiais acordam.`;
+                  break;
+                default:
+                  phaseMessage = `⏰ Fase mudou para ${message.data.phase}`;
+              }
+
+              const systemMessage: ChatMessage = {
+                id: `system-phase-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: phaseMessage,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              dispatch({ type: 'ADD_CHAT_MESSAGE', payload: systemMessage });
             }
             break;
 
@@ -188,17 +239,113 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
                   });
                 });
               }
+
+              // ✅ ADICIONADO: Mensagem de sistema para mortes
+              let deathMessage = '';
+              if (message.data.playerName) {
+                deathMessage = `💀 ${message.data.playerName} foi eliminado!`;
+              } else if (message.data.deaths && Array.isArray(message.data.deaths)) {
+                const deathNames = message.data.deaths.map((d: any) => d.playerName || 'Alguém').join(', ');
+                deathMessage = `💀 ${deathNames} foram eliminados!`;
+              } else {
+                deathMessage = '💀 Alguém foi eliminado!';
+              }
+
+              const systemMessage: ChatMessage = {
+                id: `system-death-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: deathMessage,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              dispatch({ type: 'ADD_CHAT_MESSAGE', payload: systemMessage });
             }
             break;
 
           case 'game-ended':
             if (message.data?.gameId === gameId) {
               dispatch({ type: 'SET_GAME_STATE', payload: message.data });
+
+              // ✅ ADICIONADO: Mensagem de fim de jogo
+              if (message.data?.winningFaction) {
+                let winMessage = '';
+                switch (message.data.winningFaction) {
+                  case 'TOWN':
+                    winMessage = '🏆 A VILA VENCEU! Todos os lobisomens foram eliminados!';
+                    break;
+                  case 'WEREWOLF':
+                    winMessage = '🐺 OS LOBISOMENS VENCERAM! Eles dominaram a vila!';
+                    break;
+                  default:
+                    winMessage = '🎭 VITÓRIA ESPECIAL! Jogo finalizado!';
+                }
+
+                const systemMessage: ChatMessage = {
+                  id: `system-victory-${Date.now()}`,
+                  userId: 'system',
+                  username: 'Sistema',
+                  message: winMessage,
+                  channel: 'system',
+                  timestamp: new Date().toISOString(),
+                };
+
+                dispatch({ type: 'ADD_CHAT_MESSAGE', payload: systemMessage });
+              }
+            }
+            break;
+
+          // ✅ ADICIONADO: Processar mensagens de chat
+          case 'chat-message':
+            if (message.data?.message) {
+              const receivedMessage = message.data.message;
+              console.log('📬 GameContext: Processing chat message:', {
+                messageId: receivedMessage.id,
+                username: receivedMessage.username,
+                channel: receivedMessage.channel,
+                messagePreview: receivedMessage.message?.substring(0, 50),
+              });
+
+              const newMessage: ChatMessage = {
+                id: receivedMessage.id || `msg-${Date.now()}`,
+                userId: receivedMessage.userId || 'unknown',
+                username: receivedMessage.username || 'Usuário',
+                message: receivedMessage.message || '',
+                channel: receivedMessage.channel || 'public',
+                timestamp: receivedMessage.timestamp || new Date().toISOString(),
+                filtered: receivedMessage.filtered || false,
+              };
+
+              dispatch({ type: 'ADD_CHAT_MESSAGE', payload: newMessage });
+            }
+            break;
+
+          // ✅ ADICIONADO: Feedback de ações
+          case 'action-feedback':
+            if (message.data?.message) {
+              console.log('ℹ️ GameContext: Action feedback received:', message.data.message);
+              // Aqui você pode adicionar um toast/notificação se quiser
+              // toast.info(message.data.message, { icon: 'ℹ️' });
             }
             break;
 
           case 'error':
             dispatch({ type: 'SET_ERROR', payload: message.data?.message || 'Erro desconhecido' });
+
+            // ✅ ADICIONADO: Mostrar erros como mensagens de sistema
+            if (message.data?.message) {
+              const errorMessage: ChatMessage = {
+                id: `system-error-${Date.now()}`,
+                userId: 'system',
+                username: 'Sistema',
+                message: `❌ Erro: ${message.data.message}`,
+                channel: 'system',
+                timestamp: new Date().toISOString(),
+              };
+
+              dispatch({ type: 'ADD_CHAT_MESSAGE', payload: errorMessage });
+            }
             break;
 
           default:

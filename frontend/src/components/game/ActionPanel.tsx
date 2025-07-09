@@ -45,17 +45,33 @@ export default function ActionPanel() {
   }
 
   // =============================================================================
-  // ✅ CORRIGIDO: ACTION HANDLERS COM LOGS DETALHADOS
+  // ✅ CORRIGIDO: ACTION HANDLERS COM LOGS DETALHADOS E TIPOS CORRETOS
   // =============================================================================
   const handleNightAction = async () => {
     if (!selectedTarget || !me.role || isSubmitting) return;
 
-    const actionType = me.role === 'SHERIFF' ? 'INVESTIGATE' :
-      me.role === 'DOCTOR' ? 'PROTECT' :
-        me.role === 'VIGILANTE' ? 'SHOOT' :
-          me.role === 'WEREWOLF' ? 'KILL' :
-            me.role === 'WEREWOLF_KING' ? 'KILL' :
-              me.role === 'SERIAL_KILLER' ? 'KILL' : null;
+    // ✅ CORREÇÃO PRINCIPAL: Mapear role para tipo de ação exato que o backend espera
+    let actionType: string | null = null;
+    switch (me.role) {
+      case 'SHERIFF':
+        actionType = 'INVESTIGATE';
+        break;
+      case 'DOCTOR':
+        actionType = 'PROTECT';
+        break;
+      case 'WEREWOLF':
+      case 'WEREWOLF_KING':
+        actionType = 'WEREWOLF_KILL'; // ✅ Esta é a correção principal
+        break;
+      case 'VIGILANTE':
+        actionType = 'VIGILANTE_KILL';
+        break;
+      case 'SERIAL_KILLER':
+        actionType = 'SERIAL_KILL';
+        break;
+      default:
+        actionType = null;
+    }
 
     if (actionType) {
       setIsSubmitting(true);
@@ -73,7 +89,7 @@ export default function ActionPanel() {
 
       try {
         const success = sendMessage('game-action', {
-          type: actionType,
+          type: actionType, // ✅ Enviar o tipo correto
           targetId: selectedTarget,
         });
 

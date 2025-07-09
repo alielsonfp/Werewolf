@@ -19,15 +19,14 @@ interface ChatMessage {
 type ChatTab = 'public' | 'werewolf' | 'dead' | 'system';
 
 // =============================================================================
-// CHAT GIGANTE COMPONENT - VERSÃO CORRIGIDA COM LOGS DE DEBUG
+// CHAT GIGANTE COMPONENT - VERSÃO CORRIGIDA USANDO ESTADO CENTRAL
 // =============================================================================
 export default function ChatGigante() {
-  const { gameState, me } = useGame();
+  const { gameState, me, chatMessages } = useGame(); // ✅ CORRIGIDO: Usar chatMessages do estado central
   const { sendMessage } = useSocket();
 
   const [activeTab, setActiveTab] = useState<ChatTab>('public');
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -40,193 +39,10 @@ export default function ChatGigante() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [chatMessages]); // ✅ CORRIGIDO: Usar chatMessages do estado central
 
-  // =============================================================================
-  // ✅ CORRIGIDO: LISTEN FOR CHAT MESSAGES COM LOGS DETALHADOS
-  // =============================================================================
-  useEffect(() => {
-    const handleChatMessage = (event: CustomEvent) => {
-      const data = event.detail;
-
-      // ✅ LOG DETALHADO: Ver todas as mensagens WebSocket que chegam
-      console.log('🎮 ChatGigante received WebSocket message:', {
-        type: data?.type,
-        data: data?.data,
-        hasMessage: !!data?.data?.message,
-        timestamp: new Date().toISOString()
-      });
-
-      if (!data?.type) {
-        console.warn('❌ ChatGigante: Message without type received', data);
-        return;
-      }
-
-      try {
-        switch (data.type) {
-          case 'chat-message':
-            // ✅ LOG DETALHADO: Processamento de mensagens de chat
-            if (data.data?.message) {
-              const receivedMessage = data.data.message;
-              console.log('📬 ChatGigante: Processing chat message:', {
-                messageId: receivedMessage.id,
-                username: receivedMessage.username,
-                channel: receivedMessage.channel,
-                messagePreview: receivedMessage.message?.substring(0, 50),
-                fullMessage: receivedMessage
-              });
-
-              const newMessage: ChatMessage = {
-                id: receivedMessage.id || `msg-${Date.now()}`,
-                userId: receivedMessage.userId || 'unknown',
-                username: receivedMessage.username || 'Usuário',
-                message: receivedMessage.message || '',
-                channel: receivedMessage.channel || 'public',
-                timestamp: receivedMessage.timestamp || new Date().toISOString(),
-                filtered: receivedMessage.filtered || false,
-              };
-
-              setMessages(prev => {
-                console.log('💾 ChatGigante: Adding message to state:', {
-                  newMessageId: newMessage.id,
-                  previousCount: prev.length,
-                  newCount: prev.length + 1
-                });
-                return [...prev, newMessage];
-              });
-            } else {
-              console.warn('❌ ChatGigante: chat-message without message data', data);
-            }
-            break;
-
-          case 'phase-changed':
-            // ✅ NOVO: Mensagens de sistema para mudança de fase
-            if (data.data?.gameId && data.data?.phase) {
-              console.log('🔄 ChatGigante: Phase changed, adding system message:', data.data);
-
-              let phaseMessage = '';
-              switch (data.data.phase) {
-                case 'DAY':
-                  phaseMessage = `🌅 Dia ${data.data.day || '?'} começou! Hora de discutir.`;
-                  break;
-                case 'VOTING':
-                  phaseMessage = `🗳️ Hora da votação! Escolham quem será executado.`;
-                  break;
-                case 'NIGHT':
-                  phaseMessage = `🌙 Noite chegou... Os poderes especiais acordam.`;
-                  break;
-                default:
-                  phaseMessage = `⏰ Fase mudou para ${data.data.phase}`;
-              }
-
-              const systemMessage: ChatMessage = {
-                id: `system-phase-${Date.now()}`,
-                userId: 'system',
-                username: 'Sistema',
-                message: phaseMessage,
-                channel: 'system',
-                timestamp: new Date().toISOString(),
-              };
-
-              setMessages(prev => [...prev, systemMessage]);
-            }
-            break;
-
-          case 'player-died':
-          case 'night-results':
-            // ✅ NOVO: Mensagens de sistema para mortes
-            if (data.data) {
-              console.log('💀 ChatGigante: Death event received:', data.data);
-
-              let deathMessage = '';
-              if (data.data.playerName) {
-                deathMessage = `💀 ${data.data.playerName} foi eliminado!`;
-              } else if (data.data.deaths && Array.isArray(data.data.deaths)) {
-                const deathNames = data.data.deaths.map((d: any) => d.playerName || 'Alguém').join(', ');
-                deathMessage = `💀 ${deathNames} foram eliminados!`;
-              } else {
-                deathMessage = '💀 Alguém foi eliminado!';
-              }
-
-              const systemMessage: ChatMessage = {
-                id: `system-death-${Date.now()}`,
-                userId: 'system',
-                username: 'Sistema',
-                message: deathMessage,
-                channel: 'system',
-                timestamp: new Date().toISOString(),
-              };
-
-              setMessages(prev => [...prev, systemMessage]);
-            }
-            break;
-
-          case 'game-ended':
-            // ✅ NOVO: Mensagem de fim de jogo
-            if (data.data?.winningFaction) {
-              console.log('🏆 ChatGigante: Game ended:', data.data);
-
-              let winMessage = '';
-              switch (data.data.winningFaction) {
-                case 'TOWN':
-                  winMessage = '🏆 A VILA VENCEU! Todos os lobisomens foram eliminados!';
-                  break;
-                case 'WEREWOLF':
-                  winMessage = '🐺 OS LOBISOMENS VENCERAM! Eles dominaram a vila!';
-                  break;
-                default:
-                  winMessage = '🎭 VITÓRIA ESPECIAL! Jogo finalizado!';
-              }
-
-              const systemMessage: ChatMessage = {
-                id: `system-victory-${Date.now()}`,
-                userId: 'system',
-                username: 'Sistema',
-                message: winMessage,
-                channel: 'system',
-                timestamp: new Date().toISOString(),
-              };
-
-              setMessages(prev => [...prev, systemMessage]);
-            }
-            break;
-
-          case 'error':
-            // ✅ NOVO: Mostrar erros como mensagens de sistema
-            if (data.data?.message) {
-              console.log('❌ ChatGigante: Error message received:', data.data);
-
-              const errorMessage: ChatMessage = {
-                id: `system-error-${Date.now()}`,
-                userId: 'system',
-                username: 'Sistema',
-                message: `❌ Erro: ${data.data.message}`,
-                channel: 'system',
-                timestamp: new Date().toISOString(),
-              };
-
-              setMessages(prev => [...prev, errorMessage]);
-            }
-            break;
-
-          default:
-            // ✅ LOG para tipos desconhecidos (debug)
-            console.log('🔍 ChatGigante: Unknown message type (not chat-related):', data.type);
-        }
-      } catch (error) {
-        console.error('❌ ChatGigante: Error handling WebSocket message:', error, data);
-      }
-    };
-
-    // ✅ LOG: Confirmar que o listener foi registrado
-    console.log('📡 ChatGigante: Registering WebSocket message listener');
-    window.addEventListener('websocket-message', handleChatMessage as EventListener);
-
-    return () => {
-      console.log('📡 ChatGigante: Unregistering WebSocket message listener');
-      window.removeEventListener('websocket-message', handleChatMessage as EventListener);
-    };
-  }, []);
+  // ✅ REMOVIDO: O useEffect que ouvia websocket-message foi removido
+  // O GameContext agora é o único responsável por processar mensagens
 
   // =============================================================================
   // LOADING STATE
@@ -264,7 +80,7 @@ export default function ChatGigante() {
   // FILTER MESSAGES BY TAB
   // =============================================================================
   const getMessagesForTab = (tab: ChatTab): ChatMessage[] => {
-    const filteredMessages = messages.filter(msg => {
+    const filteredMessages = chatMessages.filter(msg => { // ✅ CORRIGIDO: Usar chatMessages do estado central
       switch (tab) {
         case 'public':
           return msg.channel === 'public';
@@ -496,14 +312,14 @@ export default function ChatGigante() {
   // ✅ LOG do estado atual do chat
   useEffect(() => {
     console.log('📊 ChatGigante: Current state summary:', {
-      totalMessages: messages.length,
+      totalMessages: chatMessages.length, // ✅ CORRIGIDO: Usar chatMessages do estado central
       activeTab,
       gamePhase: gameState?.phase,
       userAlive: me?.isAlive,
       availableTabs,
       canSend: canSendMessage()
     });
-  }, [messages.length, activeTab, gameState?.phase, me?.isAlive]);
+  }, [chatMessages.length, activeTab, gameState?.phase, me?.isAlive]); // ✅ CORRIGIDO: Usar chatMessages
 
   return (
     <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
@@ -575,7 +391,7 @@ export default function ChatGigante() {
               </p>
               {/* ✅ DEBUG: Mostrar contador total de mensagens */}
               <p className="text-xs mt-2 text-white/30">
-                Debug: {messages.length} mensagens total
+                Debug: {chatMessages.length} mensagens total {/* ✅ CORRIGIDO */}
               </p>
             </div>
           </div>
@@ -632,7 +448,7 @@ export default function ChatGigante() {
         {/* ✅ DEBUG INFO */}
         {process.env.NODE_ENV === 'development' && (
           <div className="mt-2 text-xs text-white/30 text-center">
-            Debug: {messages.length} msgs total | Aba: {activeTab} ({getMessagesForTab(activeTab).length}) |
+            Debug: {chatMessages.length} msgs total | Aba: {activeTab} ({getMessagesForTab(activeTab).length}) | {/* ✅ CORRIGIDO */}
             Pode enviar: {canSendMessage() ? 'Sim' : 'Não'} | Fase: {gameState?.phase}
           </div>
         )}
