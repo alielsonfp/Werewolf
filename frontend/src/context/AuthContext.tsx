@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
-import { User, AuthTokens, LoginRequest, RegisterRequest } from '@/types';
+import { createContext, useContext, useEffect, useState, ReactNode, useMemo, useCallback } from 'react';
+import { User, AuthTokens, LoginRequest, RegisterRequest, AuthResponse } from '@/types';
 import { authService } from '@/services/auth';
 import { toast } from 'react-hot-toast';
 import Cookies from 'js-cookie';
@@ -18,6 +18,7 @@ interface AuthContextType {
   // Actions
   login: (credentials: LoginRequest) => Promise<boolean>;
   register: (data: RegisterRequest) => Promise<boolean>;
+  handleAuthentication: (authData: AuthResponse['data']) => void;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   updateUser: (updates: Partial<User>) => void;
@@ -94,51 +95,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  const handleAuthentication = (authData: AuthResponse['data']) => {
+    if (authData?.user && authData?.tokens) {
+      setUser(authData.user);
+      setTokens(authData.tokens);
+      toast.success(`Bem-vindo, ${authData.user.username}! 🐺`);
+      // O redirecionamento será feito na página de login/registro
+    } else {
+      toast.error("Ocorreu um erro ao processar a autenticação.");
+    }
+  };
+
   // =============================================================================
   // ✅ AUTHENTICATION ACTIONS - CORRIGIDO CONFORME O GUIA
   // =============================================================================
+
   const login = async (credentials: LoginRequest): Promise<boolean> => {
     setIsLoading(true);
-
-    // ✅ CORRIGIDO: A chamada de serviço agora NUNCA vai dar "throw" por um erro 401
     const response = await authService.login(credentials);
-
     setIsLoading(false);
 
     if (response.success && response.data) {
-      // Lógica de sucesso...
-      setUser(response.data.user);
-      setTokens(response.data.tokens);
-      toast.success(`Bem-vindo de volta, ${response.data.user.username}! 🐺`);
+      handleAuthentication(response.data); // <-- Usar a função auxiliar
       return true;
     } else {
-      // Lógica de falha...
-      // A mensagem de erro vem direto do backend!
-      const errorMessage = response.message || response.error || 'Ocorreu uma falha.';
-      toast.error(errorMessage); // Isso vai mostrar "Email ou senha incorretos"
+      toast.error(response.message || 'Falha no login');
       return false;
     }
   };
 
   const register = async (data: RegisterRequest): Promise<boolean> => {
     setIsLoading(true);
-
-    // ✅ CORRIGIDO: A chamada de serviço agora NUNCA vai dar "throw" por um erro 409
     const response = await authService.register(data);
-
     setIsLoading(false);
 
     if (response.success && response.data) {
-      // Lógica de sucesso...
-      setUser(response.data.user);
-      setTokens(response.data.tokens);
-      toast.success(`Conta criada com sucesso! Bem-vindo, ${data.username}! 🎮`);
+      handleAuthentication(response.data); // <-- Usar a função auxiliar
       return true;
     } else {
-      // Lógica de falha...
-      // A mensagem de erro vem direto do backend!
-      const errorMessage = response.message || response.error || 'Erro ao criar conta';
-      toast.error(errorMessage); // Isso vai mostrar "Email já está em uso"
+      toast.error(response.message || 'Falha no registro');
       return false;
     }
   };
@@ -247,6 +242,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Actions
     login,
     register,
+    handleAuthentication,
     logout,
     refreshToken,
     updateUser,

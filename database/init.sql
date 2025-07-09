@@ -84,5 +84,6 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_rooms_code ON rooms(code);
 CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
 
+ALTER TABLE users ALTER COLUMN "passwordHash" DROP NOT NULL;
 
 SELECT 'Database initialized successfully!' as status;

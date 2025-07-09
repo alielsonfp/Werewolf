@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(50) UNIQUE NOT NULL,
-    "passwordHash" TEXT NOT NULL, -- "passwordHash" entre aspas por causa do case
+    "passwordHash" TEXT, -- "passwordHash" entre aspas por causa do case
     avatar TEXT,
     level INTEGER DEFAULT 1 NOT NULL,
     "totalGames" INTEGER DEFAULT 0 NOT NULL,

@@ -68,6 +68,27 @@ class AuthService {
     }
   }
 
+  async loginWithGoogle(code: string): Promise<ApiResponse<AuthResponse>> {
+    try {
+      // ✅ A rota que criamos no backend
+      const response = await apiClient.post<ApiResponse<AuthResponse>>(
+        '/api/auth/google',
+        { code }
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        return error.response.data;
+      }
+      return {
+        success: false,
+        error: 'NETWORK_ERROR',
+        message: 'Erro de comunicação com o servidor durante o login com Google.',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
   /**
    * Logout user (server-side cleanup)
    */

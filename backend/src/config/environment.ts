@@ -44,6 +44,11 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   // Architecture mode (CRÍTICO para migração)
+
+  // ✅ ADICIONAR AS VARIÁVEIS DO GOOGLE AO SCHEMA DE VALIDAÇÃO
+  GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
+  GOOGLE_CLIENT_SECRET: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url('GOOGLE_OAUTH_REDIRECT_URI must be a valid URL'),
   
   DISTRIBUTED_MODE: z.coerce.boolean().default(false),
   STORAGE_TYPE: z.enum(['memory', 'redis']).default('memory'),
@@ -102,6 +107,11 @@ export const config = {
   // WebSocket routing (Fase 2)
   WS_BASE_PATH: envVars.WS_BASE_PATH,
   WS_PORT: envVars.WS_PORT,
+
+  GOOGLE_CLIENT_ID: envVars.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: envVars.GOOGLE_CLIENT_SECRET,
+  GOOGLE_OAUTH_REDIRECT_URI: envVars.GOOGLE_OAUTH_REDIRECT_URI,
+
 
   // Game settings
   GAME: {

@@ -1,15 +1,25 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
 import { pool } from '@/config/database';
 import { generateTokenPair, generatePasswordResetToken, verifyPasswordResetToken } from '@/config/jwt';
 import { authLogger } from '@/utils/logger';
 import { ERROR_MESSAGES } from '@/utils/constants';
+import { config } from '@/config/environment';
 import {
   validateRegisterRequest,
   validateLoginRequest,
   validateEmail
 } from '@/utils/simpleValidators';
 import type { ApiResponse } from '@/types';
+
+// Instanciar o cliente OAuth fora das funções
+const oAuth2Client = new OAuth2Client(
+  config.GOOGLE_CLIENT_ID,
+  config.GOOGLE_CLIENT_SECRET,
+  config.GOOGLE_OAUTH_REDIRECT_URI,
+);
+
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -199,6 +209,79 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       message: 'Erro interno do servidor',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
+  }
+};
+
+// ✅ NOVA FUNÇÃO PARA LOGIN COM GOOGLE
+export const googleLogin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      // ✅ CORREÇÃO: Remover 'return' onde a função espera 'void'. O Express lida com o fim da execução.
+      res.status(400).json({ success: false, message: 'Authorization code not provided.' });
+      return;
+    }
+
+    const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
+
+    const ticket = await oAuth2Client.verifyIdToken({
+      idToken: tokens.id_token!,
+      audience: config.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email || !payload.name) {
+      res.status(400).json({ success: false, message: 'Failed to retrieve user info from Google.' });
+      return;
+    }
+
+    const { email, name, picture: avatar } = payload;
+
+    let userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    let user = userResult.rows[0];
+
+    if (!user) {
+      authLogger.info('Google user not found, creating new user', { email });
+      const username = name.replace(/\s/g, '').toLowerCase() + Math.floor(Math.random() * 1000);
+
+      const insertQuery = `
+        INSERT INTO users (email, username, avatar, "passwordHash")
+        VALUES ($1, $2, $3, NULL)
+        RETURNING *
+      `;
+      userResult = await pool.query(insertQuery, [email, username, avatar]);
+      user = userResult.rows[0];
+    } else {
+      if (!user.avatar && avatar) {
+        await pool.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, user.id]);
+        user.avatar = avatar;
+      }
+    }
+
+    const appTokens = generateTokenPair({
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+    });
+
+    const { passwordHash, ...userWithoutPassword } = user;
+
+    authLogger.info('User logged in successfully via Google', { userId: user.id, email });
+
+    res.json({
+      success: true,
+      data: {
+        user: userWithoutPassword,
+        tokens: appTokens,
+      },
+      message: 'Login com Google realizado com sucesso',
+      timestamp: new Date().toISOString(),
+    } as ApiResponse);
+
+  } catch (error) {
+    authLogger.error('Google login error', error as Error);
+    res.status(500).json({ success: false, message: 'Internal server error during Google authentication.' });
   }
 };
 
