@@ -44,8 +44,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   // Architecture mode (CRÍTICO para migração)
-  
-  DISTRIBUTED_MODE: z.coerce.boolean().default(false),
+
+  DISTRIBUTED_MODE: z.string().transform(val => val === 'true').default('false'),
   STORAGE_TYPE: z.enum(['memory', 'redis']).default('memory'),
 
   // Service discovery (Fase 2)
