@@ -904,7 +904,7 @@ export class MessageRouter {
     await this.sendError(connectionId, 'NOT_IMPLEMENTED', 'Kick player not yet implemented');
   }
 
-  // ✅ CORRIGIDO: handleChatMessage com logs detalhados e verificação de contexto
+  // ✅ CORREÇÃO FINAL DO CHAT: handleChatMessage com solução cirúrgica
   private async handleChatMessage(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection) return;
@@ -912,7 +912,6 @@ export class MessageRouter {
     const { message, channel = 'public' } = data;
     const roomId = connection.context.roomId;
 
-    // ✅ LOGS DETALHADOS para debug do chat
     wsLogger.info('Handling chat message - DETAILED', {
       connectionId,
       userId: connection.context.userId,
@@ -921,7 +920,6 @@ export class MessageRouter {
       messageLength: message?.length || 0,
       channel,
       hasRoomId: !!roomId,
-      hasBroadcastMethod: !!this.broadcastToRoom,
       timestamp: new Date().toISOString()
     });
 
@@ -945,7 +943,6 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       };
 
-      // ✅ LOG da mensagem criada
       wsLogger.info('Chat message created', {
         messageId: chatMessage.id,
         fromUser: chatMessage.username,
@@ -954,20 +951,33 @@ export class MessageRouter {
         messagePreview: chatMessage.message.substring(0, 50)
       });
 
-      if (this.broadcastToRoom) {
-        const broadcastCount = this.broadcastToRoom(roomId, 'chat-message', { message: chatMessage });
+      // ✅ CORREÇÃO CIRÚRGICA: Verificar se é um jogo em andamento
+      const gameId = `game-${roomId}`;
+      const gameState = await this.gameEngine.getGameState(gameId);
 
-        wsLogger.info('Chat message broadcast completed', {
-          messageId: chatMessage.id,
-          roomId,
-          recipientCount: broadcastCount,
-          broadcastSuccess: broadcastCount > 0
-        });
+      if (!gameState) {
+        // ✅ SALA DE ESPERA: Usa broadcast normal (JÁ FUNCIONA)
+        if (this.broadcastToRoom) {
+          const broadcastCount = this.broadcastToRoom(roomId, 'chat-message', { message: chatMessage });
+          wsLogger.info('Chat message broadcast to room', {
+            messageId: chatMessage.id,
+            roomId,
+            recipientCount: broadcastCount
+          });
+        }
       } else {
-        wsLogger.error('Cannot broadcast chat message - broadcastToRoom method not available', {
-          connectionId,
-          roomId,
-          messageId: chatMessage.id
+        // ✅ DURANTE O JOGO: Usa sendToUser para cada jogador (JÁ FUNCIONA)
+        let sentCount = 0;
+        for (const player of gameState.players) {
+          if (this.sendToUser && this.sendToUser(player.userId, 'chat-message', { message: chatMessage })) {
+            sentCount++;
+          }
+        }
+        wsLogger.info('Chat message sent to game players', {
+          messageId: chatMessage.id,
+          gameId,
+          sentCount,
+          totalPlayers: gameState.players.length
         });
       }
 

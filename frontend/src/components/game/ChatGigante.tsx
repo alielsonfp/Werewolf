@@ -25,6 +25,15 @@ export default function ChatGigante() {
   const { gameState, me, chatMessages } = useGame(); // ✅ CORRIGIDO: Usar chatMessages do estado central
   const { sendMessage } = useSocket();
 
+
+  console.log('🎯 CHAT RENDER TRIGGERED:', {
+    timestamp: Date.now(),
+    chatMessagesLength: chatMessages.length,
+    chatMessagesRef: chatMessages
+  });
+  console.log('🎯 CHAT RENDER: chatMessages count:', chatMessages.length);
+  console.log('🎯 CHAT RENDER: last 3 messages:', chatMessages.slice(-3).map(m => `${m.username}: ${m.message}`));
+
   const [activeTab, setActiveTab] = useState<ChatTab>('public');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -243,19 +243,54 @@ export class WebSocketManager {
     return this.sendToConnection(connection.id, type, data);
   };
 
+  // ✅ MÉTODO COM LOGS DETALHADOS PARA DEBUG
   public broadcastToRoom = (roomId: string, type: string, data?: any, excludeConnectionId?: string): number => {
+    console.log('🔥 BROADCAST: Tentando fazer broadcast', {
+      roomId,
+      type,
+      hasData: !!data,
+      excludeConnectionId,
+      timestamp: new Date().toISOString()
+    });
+
     const roomConnections = this.channelManager.getRoomConnections(roomId);
+
+    console.log('🔥 BROADCAST: Conexões na sala', {
+      roomId,
+      totalConnections: roomConnections.size,
+      connections: Array.from(roomConnections),
+      timestamp: new Date().toISOString()
+    });
+
     let sentCount = 0;
 
     for (const connectionId of roomConnections) {
       if (excludeConnectionId && connectionId === excludeConnectionId) {
+        console.log('🔥 BROADCAST: Pulando conexão excluída', { connectionId });
         continue;
       }
 
-      if (this.sendToConnection(connectionId, type, data)) {
+      const success = this.sendToConnection(connectionId, type, data);
+
+      console.log('🔥 BROADCAST: Tentativa de envio', {
+        connectionId,
+        success,
+        type,
+        timestamp: new Date().toISOString()
+      });
+
+      if (success) {
         sentCount++;
       }
     }
+
+    console.log('🔥 BROADCAST: Broadcast realizado', {
+      roomId,
+      type,
+      totalConnections: roomConnections.size,
+      sentCount,
+      timestamp: new Date().toISOString()
+    });
 
     wsLogger.debug('Broadcast to room completed', {
       roomId,

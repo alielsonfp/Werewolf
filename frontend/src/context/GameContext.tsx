@@ -22,7 +22,7 @@ interface GameContextState {
   isLoading: boolean;
   error: string | null;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
-  chatMessages: ChatMessage[]; // ✅ ADICIONADO: Estado do chat
+  chatMessages: ChatMessage[];
 }
 
 interface GameContextValue extends GameContextState {
@@ -50,7 +50,7 @@ type GameAction =
   | { type: 'UPDATE_PHASE'; payload: { phase: GamePhase; timeLeft: number; day: number } }
   | { type: 'UPDATE_VOTING'; payload: { votes: Record<string, string>; counts: Record<string, number> } }
   | { type: 'PLAYER_DIED'; payload: { playerId: string; role?: string; cause: string } }
-  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage } // ✅ ADICIONADO: Ação para chat
+  | { type: 'ADD_CHAT_MESSAGE'; payload: ChatMessage }
   | { type: 'CLEAR_GAME' };
 
 const initialState: GameContextState = {
@@ -58,9 +58,10 @@ const initialState: GameContextState = {
   isLoading: false,
   error: null,
   connectionStatus: 'disconnected',
-  chatMessages: [], // ✅ ADICIONADO: Inicializar array do chat
+  chatMessages: [],
 };
 
+// ✅ REDUCER CORRIGIDO - Versão Segura e Funcional
 function gameReducer(state: GameContextState, action: GameAction): GameContextState {
   switch (action.type) {
     case 'SET_LOADING':
@@ -81,49 +82,58 @@ function gameReducer(state: GameContextState, action: GameAction): GameContextSt
         connectionStatus: 'connected',
       };
 
+    // ✅ CORREÇÃO: Agrupamento seguro dos cases que dependem de gameState
     case 'UPDATE_PHASE':
-      return {
-        ...state,
-        gameState: state.gameState ? {
-          ...state.gameState,
-          phase: action.payload.phase,
-          timeLeft: action.payload.timeLeft,
-          day: action.payload.day,
-        } : null,
-      };
-
     case 'UPDATE_VOTING':
-      return {
-        ...state,
-        gameState: state.gameState ? {
-          ...state.gameState,
-          votes: action.payload.votes,
-        } : null,
-      };
-
-    case 'PLAYER_DIED':
-      return {
-        ...state,
-        gameState: state.gameState ? {
-          ...state.gameState,
-          players: state.gameState.players.map(player =>
-            player.id === action.payload.playerId
-              ? { ...player, isAlive: false, eliminationReason: action.payload.cause as any }
-              : player
-          ),
-        } : null,
-      };
-
-    // ✅ ADICIONADO: Case para processar mensagens de chat
-    case 'ADD_CHAT_MESSAGE':
-      // Evitar duplicatas
-      if (state.chatMessages.some(msg => msg.id === action.payload.id)) {
+    case 'PLAYER_DIED': {
+      // Se não há estado de jogo, não faz nada
+      if (!state.gameState) {
         return state;
       }
-      return {
+
+      // Cria uma cópia do estado do jogo
+      let newGameState = { ...state.gameState };
+
+      // Aplica as mudanças baseadas no tipo da ação
+      if (action.type === 'UPDATE_PHASE') {
+        newGameState.phase = action.payload.phase;
+        newGameState.timeLeft = action.payload.timeLeft;
+        newGameState.day = action.payload.day;
+      }
+
+      if (action.type === 'UPDATE_VOTING') {
+        newGameState.votes = action.payload.votes;
+      }
+
+      if (action.type === 'PLAYER_DIED') {
+        newGameState.players = newGameState.players.map(p =>
+          p.id === action.payload.playerId
+            ? { ...p, isAlive: false, eliminationReason: action.payload.cause as any }
+            : p
+        );
+      }
+
+      // Retorna o novo estado
+      return { ...state, gameState: newGameState };
+    }
+
+    case 'ADD_CHAT_MESSAGE':
+      console.log('🔥 REDUCER: Before add:', state.chatMessages.length);
+      console.log('🔥 REDUCER: Adding message:', action.payload.message);
+
+      // Evitar duplicatas
+      if (state.chatMessages.some(msg => msg.id === action.payload.id)) {
+        console.log('🔥 REDUCER: Duplicate found, returning same state');
+        return state;
+      }
+
+      const newState = {
         ...state,
         chatMessages: [...state.chatMessages, action.payload],
       };
+
+      console.log('🔥 REDUCER: After add:', newState.chatMessages.length);
+      return newState;
 
     case 'CLEAR_GAME':
       return initialState;
@@ -156,6 +166,12 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
   useEffect(() => {
     const handleWebSocketMessage = (event: CustomEvent) => {
       const message = event.detail;
+      console.log('🔥 FRONTEND: WebSocket message received!', {
+        type: event.detail?.type,
+        hasData: !!event.detail?.data,
+        timestamp: new Date().toISOString()
+      });
+
 
       if (!message?.type) return;
 
@@ -180,7 +196,7 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
                 },
               });
 
-              // ✅ ADICIONADO: Mensagem de sistema para mudança de fase
+              // Mensagem de sistema para mudança de fase
               let phaseMessage = '';
               switch (message.data.phase) {
                 case 'DAY':
@@ -240,7 +256,7 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
                 });
               }
 
-              // ✅ ADICIONADO: Mensagem de sistema para mortes
+              // Mensagem de sistema para mortes
               let deathMessage = '';
               if (message.data.playerName) {
                 deathMessage = `💀 ${message.data.playerName} foi eliminado!`;
@@ -268,7 +284,7 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
             if (message.data?.gameId === gameId) {
               dispatch({ type: 'SET_GAME_STATE', payload: message.data });
 
-              // ✅ ADICIONADO: Mensagem de fim de jogo
+              // Mensagem de fim de jogo
               if (message.data?.winningFaction) {
                 let winMessage = '';
                 switch (message.data.winningFaction) {
@@ -296,7 +312,6 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
             }
             break;
 
-          // ✅ ADICIONADO: Processar mensagens de chat
           case 'chat-message':
             if (message.data?.message) {
               const receivedMessage = message.data.message;
@@ -321,7 +336,6 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
             }
             break;
 
-          // ✅ ADICIONADO: Feedback de ações
           case 'action-feedback':
             if (message.data?.message) {
               console.log('ℹ️ GameContext: Action feedback received:', message.data.message);
@@ -333,7 +347,7 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
           case 'error':
             dispatch({ type: 'SET_ERROR', payload: message.data?.message || 'Erro desconhecido' });
 
-            // ✅ ADICIONADO: Mostrar erros como mensagens de sistema
+            // Mostrar erros como mensagens de sistema
             if (message.data?.message) {
               const errorMessage: ChatMessage = {
                 id: `system-error-${Date.now()}`,
@@ -438,9 +452,9 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
   };
 
   // =============================================================================
-  // CONTEXT VALUE
+  // CONTEXT VALUE - ✅ CORREÇÃO: Dependencies do useMemo CORRIGIDAS
   // =============================================================================
-  const contextValue: GameContextValue = {
+  const contextValue: GameContextValue = useMemo(() => ({
     // State
     ...state,
 
@@ -455,7 +469,19 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
     // Actions
     refreshGame,
     clearError,
-  };
+  }), [
+    state.gameState,
+    state.isLoading,
+    state.error,
+    state.connectionStatus,
+    state.chatMessages, // ✅ MUDANÇA CRÍTICA: array completo, não só o length
+    me,
+    alivePlayers,
+    deadPlayers,
+    isMyTurn,
+    canVote,
+    canAct,
+  ]);
 
   return (
     <GameContext.Provider value={contextValue}>
