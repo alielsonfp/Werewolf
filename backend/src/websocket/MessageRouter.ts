@@ -214,6 +214,9 @@ export class MessageRouter {
         isSpectator: asSpectator,
       });
 
+      console.log('⏳ Aguardando sincronização do ChannelManager...');
+      await new Promise(resolve => setTimeout(resolve, 150));
+      console.log('✅ Prosseguindo após delay de segurança');
       // Get room connections for player list
       const roomConnections = this.channelManager.getRoomPlayerConnections(roomId);
       const spectatorConnections = this.channelManager.getRoomSpectatorConnections(roomId);

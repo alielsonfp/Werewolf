@@ -60,10 +60,20 @@ function RoomPage() {
   useEffect(() => {
     // Só envia a mensagem se estivermos conectados E ainda não tivermos entrado.
     if (isConnected && !hasJoinedRoom) {
-      const asSpectator = router.query.spectate === 'true';
-      if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
-        setHasJoinedRoom(true); // Marca que já tentamos entrar para não enviar de novo.
-      }
+      // 🚨🚨🚨 SUBSTITUA O CÓDIGO ORIGINAL POR ESTE! 🚨🚨🚨
+      console.log('⏳ Aguardando estabilização da conexão...');
+
+      setTimeout(() => {
+        console.log('📤 Enviando join-room após delay de segurança');
+        const asSpectator = router.query.spectate === 'true';
+
+        if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
+          setHasJoinedRoom(true);
+          console.log('✅ Mensagem join-room enviada com sucesso');
+        } else {
+          console.error('❌ Falha ao enviar join-room');
+        }
+      }, 300); // 300ms de delay para garantir que backend está pronto
     }
   }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
 

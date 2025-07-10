@@ -50,9 +50,14 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       socketRef.current = ws;
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setSocket(ws);
-        setIsConnected(true);
+        // 🚨🚨🚨 ADICIONE ESTE DELAY AQUI TAMBÉM! 🚨🚨🚨
+        console.log('⏳ WebSocket conectado, aguardando estabilização...');
+
+        setTimeout(() => {
+          console.log('✅ WebSocket estabilizado e pronto');
+          setSocket(ws);
+          setIsConnected(true);
+        }, 100); // 100ms de delay para estabilizar
       };
 
       ws.onmessage = (event) => {
