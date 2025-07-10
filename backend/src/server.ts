@@ -1,12 +1,15 @@
-// 🐺 LOBISOMEM ONLINE - Server Entry Point (SIMPLIFICADO)
+// 🐺 LOBISOMEM ONLINE - Server Entry Point (COM LIMPEZA DE SALAS)
 import httpServer from './app'; // ✅ Importar o httpServer já configurado
 import { config, validateConfig } from '@/config/environment';
 import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
 import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
 import { ServiceFactory } from './websocket/ServiceFactory';
+import { RoomCleanupService } from './services/RoomCleanupService'; // ✅ NOVO SERVIÇO
 import { logger } from '@/utils/logger';
 
 // ✅ A instância de wsManager agora vive dentro de app.ts
+// ✅ Instância global do serviço de limpeza
+let roomCleanupService: RoomCleanupService | null = null;
 
 // Função de retry para conexão com o banco
 const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
@@ -49,11 +52,50 @@ async function startServer(): Promise<void> {
       logger.info(`🔗 WebSocket available at ws://localhost:${config.PORT}${config.WS_BASE_PATH}`);
     });
 
+    // 🧹 INICIALIZAR SERVIÇO DE LIMPEZA DE SALAS ÓRFÃS
+    await initializeRoomCleanupService();
+
     setupGracefulShutdown(httpServer);
 
   } catch (error) {
     logger.error('Failed to start server', error instanceof Error ? error : new Error('Unknown server start error'));
     process.exit(1);
+  }
+}
+
+/**
+ * 🧹 Inicializa o serviço de limpeza de salas órfãs
+ */
+async function initializeRoomCleanupService(): Promise<void> {
+  try {
+    // Verificar se o WebSocketManager está disponível
+    if (!(httpServer as any).wsManager) {
+      logger.warn('❌ WebSocketManager not found, room cleanup service will not start');
+      return;
+    }
+
+    const wsManager = (httpServer as any).wsManager;
+
+    // Verificar se os managers estão disponíveis
+    if (!wsManager.channelManager || !wsManager.connectionManager) {
+      logger.warn('❌ Channel or Connection manager not found, room cleanup service will not start');
+      return;
+    }
+
+    // Criar e iniciar o serviço de limpeza
+    roomCleanupService = new RoomCleanupService(
+      wsManager.channelManager,
+      wsManager.connectionManager
+    );
+
+    // Iniciar com intervalo de 30 segundos
+    roomCleanupService.start(30000);
+
+    logger.info('✅ Room cleanup service initialized successfully');
+
+  } catch (error) {
+    logger.error('❌ Failed to initialize room cleanup service', error);
+    // Não falhar o servidor por causa do serviço de limpeza
   }
 }
 
@@ -63,6 +105,16 @@ function setupGracefulShutdown(server: any): void {
 
     server.close(async () => {
       logger.info('HTTP server closed.');
+
+      // 🧹 PARAR SERVIÇO DE LIMPEZA
+      if (roomCleanupService) {
+        try {
+          roomCleanupService.stop();
+          logger.info('Room cleanup service stopped.');
+        } catch (error) {
+          logger.warn('Error stopping room cleanup service', { error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      }
 
       // ✅ Shutdown do WebSocketManager (se existir)
       if (server.wsManager) {
@@ -96,6 +148,11 @@ function setupGracefulShutdown(server: any): void {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+// 🔧 FUNÇÃO DE UTILIDADE PARA OBTER STATS DO CLEANUP (OPCIONAL)
+export function getRoomCleanupStats() {
+  return roomCleanupService?.getStats() || { isRunning: false, intervalMs: null };
 }
 
 // ✅ Iniciar servidor se for executado diretamente
