@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
@@ -13,6 +13,7 @@ import CreateRoomModal from '@/components/lobby/CreateRoomModal';
 import JoinRoomModal from '@/components/lobby/JoinRoomModal';
 
 import { roomService, RoomListItem } from '@/services/roomService';
+import audioService from '@/services/audioService';
 
 // ✅ CORREÇÃO: SafeNumberDisplay à prova de hidratação
 interface SafeNumberDisplayProps {
@@ -137,7 +138,11 @@ function LobbyPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
   const { isConnected } = useSocket();
-  const { playSound, playMusic, stopMusic, getPhaseColors, getThemeClass } = useTheme();
+  const { playSound, getPhaseColors, getThemeClass } = useTheme();
+
+  // ✅ CORREÇÃO: Use ref para controlar se música já foi iniciada
+  const musicInitialized = useRef(false);
+  const currentMusicId = useRef<string | null>(null);
 
   // ✅ Aplicar cores dinâmicas do tema
   const phaseColors = getPhaseColors();
@@ -148,7 +153,6 @@ function LobbyPage() {
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
-  const [musicStarted, setMusicStarted] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
 
   useEffect(() => {
@@ -158,27 +162,42 @@ function LobbyPage() {
     }
   }, [isAuthLoading, isAuthenticated, router]);
 
+  // ✅ CORREÇÃO: Effect para música com controle melhorado
   useEffect(() => {
-    if (!isAuthLoading && isAuthenticated && !musicStarted) {
-      console.log('🎵 Iniciando música do lobby...');
-      const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
-      const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
-      if (randomMusic) {
-        playMusic(randomMusic);
-        setIsMusicPlaying(true);
-      }
-      setMusicStarted(true);
-    }
-  }, [isAuthLoading, isAuthenticated, musicStarted, playMusic]);
+    if (!isAuthLoading && isAuthenticated && !musicInitialized.current) {
+      // Marca como inicializado imediatamente para evitar múltiplas execuções
+      musicInitialized.current = true;
 
+      console.log('🎵 Iniciando música do lobby...');
+
+      // Para qualquer música que possa estar tocando
+      audioService.stopAll();
+
+      // Aguarda um pequeno delay para garantir que parou
+      setTimeout(() => {
+        const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
+        const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
+
+        if (randomMusic) {
+          currentMusicId.current = randomMusic;
+          audioService.playMusic(randomMusic);
+          setIsMusicPlaying(true);
+        }
+      }, 100);
+    }
+  }, [isAuthLoading, isAuthenticated]);
+
+  // ✅ CORREÇÃO: Cleanup effect separado
   useEffect(() => {
     return () => {
-      if (musicStarted) {
+      if (musicInitialized.current) {
         console.log('🎵 Parando música do lobby...');
-        stopMusic();
+        audioService.stopMusic();
+        musicInitialized.current = false;
+        currentMusicId.current = null;
       }
     };
-  }, [musicStarted, stopMusic]);
+  }, []);
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -251,20 +270,29 @@ function LobbyPage() {
     router.push('/auth/login');
   }, [logout, router, playSound]);
 
+  // ✅ CORREÇÃO: Toggle music melhorado
   const toggleMusic = useCallback(() => {
     if (isMusicPlaying) {
-      stopMusic();
+      audioService.stopMusic();
       setIsMusicPlaying(false);
+      currentMusicId.current = null;
     } else {
-      const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
-      const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
-      if (randomMusic) {
-        playMusic(randomMusic);
-        setIsMusicPlaying(true);
-      }
+      // Para qualquer música antes de tocar nova
+      audioService.stopAll();
+
+      setTimeout(() => {
+        const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
+        const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
+
+        if (randomMusic) {
+          currentMusicId.current = randomMusic;
+          audioService.playMusic(randomMusic);
+          setIsMusicPlaying(true);
+        }
+      }, 100);
     }
     playSound('button_click');
-  }, [isMusicPlaying, stopMusic, playMusic, playSound]);
+  }, [isMusicPlaying, playSound]);
 
   if (isAuthLoading) {
     return (
@@ -326,7 +354,6 @@ function LobbyPage() {
                   size="md"
                   onClick={toggleMusic}
                   className="text-white hover:text-salem-400"
-                  title={isMusicPlaying ? 'Desligar música' : 'Ligar música'}
                 >
                   {isMusicPlaying ? <VolumeIcon /> : <VolumeOffIcon />}
                 </Button>

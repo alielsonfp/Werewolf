@@ -16,6 +16,7 @@ class AudioService {
   private sounds: Map<string, Howl> = new Map();
   private music: Map<string, Howl> = new Map();
   private currentMusic: Howl | null = null;
+  private currentMusicId: string | null = null; // NOVO: Rastrear ID da música atual
   private isUnlocked: boolean = false;
   private pendingMusic: string | null = null;
   private musicVolume: number = 0.5;
@@ -66,6 +67,13 @@ class AudioService {
           preload: true,
           onload: () => console.log(`✅ Música carregada: ${id}`),
           onloaderror: (id, error) => console.error(`❌ Erro ao carregar música: ${id}`, error),
+          onend: () => {
+            // Limpar referências quando a música terminar (se não estiver em loop)
+            if (this.currentMusicId === id && !music.loop()) {
+              this.currentMusic = null;
+              this.currentMusicId = null;
+            }
+          }
         });
         this.music.set(id, music);
       } catch (error) {
@@ -153,7 +161,7 @@ class AudioService {
   }
 
   // =============================================================================
-  // PLAY MUSIC
+  // PLAY MUSIC - CORRIGIDO
   // =============================================================================
   playMusic(musicId: string) {
     if (!this.isInitialized) {
@@ -163,15 +171,21 @@ class AudioService {
 
     console.log(`🎵 Tentando tocar música: ${musicId}`);
 
+    // NOVO: Verificar se a música solicitada já está tocando
+    if (this.currentMusicId === musicId && this.currentMusic && this.currentMusic.playing()) {
+      console.log(`🎵 Música ${musicId} já está tocando, ignorando...`);
+      return;
+    }
+
     if (!this.isUnlocked) {
       console.log('🔒 Áudio bloqueado, música será tocada após desbloquear');
       this.pendingMusic = musicId;
       return;
     }
 
-    // Para música atual
-    if (this.currentMusic) {
-      console.log('⏹️ Parando música anterior');
+    // Para música atual apenas se for diferente
+    if (this.currentMusic && this.currentMusicId !== musicId) {
+      console.log('⏹️ Parando música anterior:', this.currentMusicId);
       try {
         this.currentMusic.stop();
       } catch (error) {
@@ -190,20 +204,22 @@ class AudioService {
       music.volume(this.musicVolume);
       music.play();
       this.currentMusic = music;
+      this.currentMusicId = musicId; // NOVO: Salvar ID da música atual
     } catch (error) {
       console.error(`❌ Erro ao tocar música ${musicId}:`, error);
     }
   }
 
   // =============================================================================
-  // STOP MUSIC
+  // STOP MUSIC - CORRIGIDO
   // =============================================================================
   stopMusic() {
     if (this.currentMusic) {
-      console.log('⏹️ Parando música');
+      console.log('⏹️ Parando música:', this.currentMusicId);
       try {
         this.currentMusic.stop();
         this.currentMusic = null;
+        this.currentMusicId = null; // NOVO: Limpar ID da música
       } catch (error) {
         console.error('❌ Erro ao parar música:', error);
       }
@@ -211,11 +227,44 @@ class AudioService {
   }
 
   // =============================================================================
+  // STOP ALL - MELHORADO
+  // =============================================================================
+  stopAll() {
+    console.log('🛑 Parando todos os áudios');
+
+    // Para música atual
+    this.stopMusic();
+
+    // NOVO: Para TODAS as músicas carregadas (caso alguma esteja tocando sem ser rastreada)
+    this.music.forEach((music, id) => {
+      try {
+        if (music.playing()) {
+          console.log(`⏹️ Parando música órfã: ${id}`);
+          music.stop();
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao parar música ${id}:`, error);
+      }
+    });
+
+    // Para todos os sons
+    this.sounds.forEach((sound, id) => {
+      try {
+        if (sound.playing()) {
+          sound.stop();
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao parar som ${id}:`, error);
+      }
+    });
+  }
+
+  // =============================================================================
   // PAUSE/RESUME MUSIC
   // =============================================================================
   pauseMusic() {
     if (this.currentMusic && this.currentMusic.playing()) {
-      console.log('⏸️ Pausando música');
+      console.log('⏸️ Pausando música:', this.currentMusicId);
       try {
         this.currentMusic.pause();
       } catch (error) {
@@ -226,7 +275,7 @@ class AudioService {
 
   resumeMusic() {
     if (this.currentMusic && !this.currentMusic.playing()) {
-      console.log('▶️ Resumindo música');
+      console.log('▶️ Resumindo música:', this.currentMusicId);
       try {
         this.currentMusic.play();
       } catch (error) {
@@ -262,43 +311,37 @@ class AudioService {
   }
 
   // =============================================================================
-  // UTILITY METHODS
+  // CLEANUP - MELHORADO
   // =============================================================================
-
-  /**
-   * Para todos os sons e músicas
-   */
-  stopAll() {
-    console.log('🛑 Parando todos os áudios');
-
-    // Para música atual
-    this.stopMusic();
-
-    // Para todos os sons
-    this.sounds.forEach((sound, id) => {
-      try {
-        if (sound.playing()) {
-          sound.stop();
-        }
-      } catch (error) {
-        console.error(`❌ Erro ao parar som ${id}:`, error);
-      }
-    });
-  }
-
-  /**
-   * Limpa recursos (para usar em cleanup)
-   */
   cleanup() {
     console.log('🧹 Limpando AudioService...');
 
+    // NOVO: Para todas as músicas antes de limpar
     this.stopAll();
+
+    // Unload all sounds and music to free resources
+    this.sounds.forEach((sound, id) => {
+      try {
+        sound.unload();
+      } catch (error) {
+        console.error(`❌ Erro ao descarregar som ${id}:`, error);
+      }
+    });
+
+    this.music.forEach((music, id) => {
+      try {
+        music.unload();
+      } catch (error) {
+        console.error(`❌ Erro ao descarregar música ${id}:`, error);
+      }
+    });
 
     // Limpa mapas
     this.sounds.clear();
     this.music.clear();
 
     this.currentMusic = null;
+    this.currentMusicId = null;
     this.pendingMusic = null;
     this.isInitialized = false;
     this.isUnlocked = false;
@@ -337,6 +380,10 @@ class AudioService {
 
   get availableMusic(): string[] {
     return Array.from(this.music.keys());
+  }
+
+  get playingMusicId(): string | null {
+    return this.currentMusicId;
   }
 }
 

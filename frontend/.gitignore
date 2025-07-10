@@ -108,8 +108,6 @@ temp/
 .husky/_
 
 # Audio and media files (if not needed in repo)
-/public/sounds/
-/public/music/
 /public/images/temp/
 
 # Build artifacts
