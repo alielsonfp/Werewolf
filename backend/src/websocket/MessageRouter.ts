@@ -294,7 +294,7 @@ export class MessageRouter {
 
       // Broadcast player-joined to other room members
       if (this.broadcastToRoom) {
-        this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf }, connectionId);
+        this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf });
       }
 
       // Publish event to event bus
