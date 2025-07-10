@@ -20,6 +20,7 @@ function RoomPage() {
 
   // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  const [connectionConfirmed, setConnectionConfirmed] = useState(false); // 🚨 NOVO: Aguardar confirmação
   const [room, setRoom] = useState<Room | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [spectators, setSpectators] = useState<Player[]>([]);
@@ -64,15 +65,18 @@ function RoomPage() {
     };
   }, [router.isReady, isAuthenticated, roomId]); // 🎯 DEPENDÊNCIAS MÍNIMAS
 
-  // ✅ EFEITO #2: Entrar na sala UMA VEZ APENAS  
+  // 🚨 EFEITO #2: Aguardar confirmação de conexão antes de join-room
   useEffect(() => {
-    if (isConnected && !hasJoinedRoom && roomId) {
+    if (isConnected && connectionConfirmed && !hasJoinedRoom && roomId) {
+      console.log('📤 Sending join-room after connection confirmed');
       const asSpectator = router.query.spectate === 'true';
+
       if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
         setHasJoinedRoom(true);
+        console.log('✅ Join-room sent successfully');
       }
     }
-  }, [isConnected, hasJoinedRoom, roomId]); // 🎯 SEM sendMessage e router.query
+  }, [isConnected, connectionConfirmed, hasJoinedRoom, roomId]); // 🎯 DEPENDÊNCIAS MÍNIMAS
 
   // ✅ EFEITO #3: Apenas para ouvir as mensagens.
   useEffect(() => {
@@ -81,6 +85,11 @@ function RoomPage() {
       console.log('📨 [RoomPage] Received:', type, data);
 
       switch (type) {
+        case 'connected': // 🚨 NOVO: Escutar confirmação de conexão
+          console.log('✅ WebSocket connection confirmed');
+          setConnectionConfirmed(true);
+          break;
+
         case 'room-joined':
           setRoom(data.room);
           setPlayers(Array.isArray(data.players) ? data.players : []);

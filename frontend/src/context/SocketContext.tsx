@@ -53,6 +53,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         console.log('✅ WebSocket connected');
         setSocket(ws);
         setIsConnected(true);
+
+        // 🚨 CORREÇÃO MÍNIMA: Emitir evento 'connected' para aguardar confirmação
+        window.dispatchEvent(new CustomEvent('websocket-message', {
+          detail: { type: 'connected', data: { timestamp: Date.now() } }
+        }));
       };
 
       ws.onmessage = (event) => {
