@@ -131,7 +131,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     // ✅ MELHOR: Log mais informativo sobre o estado atual
     const currentState = socketRef.current?.readyState;
-    const stateNames = {
+    const stateNames: Record<number, string> = {
       [WebSocket.CONNECTING]: 'CONNECTING',
       [WebSocket.OPEN]: 'OPEN',
       [WebSocket.CLOSING]: 'CLOSING',

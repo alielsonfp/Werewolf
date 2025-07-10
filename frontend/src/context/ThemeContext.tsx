@@ -152,7 +152,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     musicVolume: audioConfig.musicVolume,
     soundVolume: audioConfig.sfxVolume,
     isMusicPlaying: audioService.isMusicPlaying,
-    isAudioUnblocked: audioService.isAudioUnblocked,
+    isAudioUnblocked: audioService.isAudioUnlocked, // ✅ CORRIGIDO: nome correto da propriedade
     getPhaseColors,
     getThemeClass,
     audioConfig,

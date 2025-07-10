@@ -403,12 +403,12 @@ export function GameProvider({ children, gameId }: GameProviderProps) {
 
     // Durante a noite, verificar se é a vez da role do jogador agir
     if (state.gameState.phase === 'NIGHT') {
-      return me.isAlive && !me.hasActed && (me.role === 'SHERIFF' || me.role === 'DOCTOR' || me.role === 'VIGILANTE' || me.role === 'WEREWOLF');
+      return Boolean(me?.isAlive && !me?.hasActed && (me.role === 'SHERIFF' || me.role === 'DOCTOR' || me.role === 'VIGILANTE' || me.role === 'WEREWOLF'));
     }
 
     // Durante votação, todos podem votar
     if (state.gameState.phase === 'VOTING') {
-      return me.isAlive && !me.hasVoted;
+      return Boolean(me?.isAlive && !me?.hasVoted);
     }
 
     return false;

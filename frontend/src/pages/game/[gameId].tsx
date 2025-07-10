@@ -116,7 +116,7 @@ export default function GamePage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <LoadingSpinner size="large" />
+          <LoadingSpinner size="xl" />
           <p className="text-gray-300 mt-4">Carregando jogo...</p>
         </div>
       </div>

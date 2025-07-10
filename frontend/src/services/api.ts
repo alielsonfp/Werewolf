@@ -391,7 +391,7 @@ export async function retryRequest<T>(
     } catch (error) {
       lastError = error;
 
-      if (isClientError(error) && ![408, 429].includes(error.response?.status)) {
+      if (isClientError(error) && ![408, 429].includes((error as any).response?.status)) {
         throw error;
       }
 

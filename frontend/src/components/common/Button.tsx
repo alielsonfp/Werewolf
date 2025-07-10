@@ -60,7 +60,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     // =============================================================================
-    // VARIANT STYLES
+    // ✅ VARIANT STYLES - CORRIGIDO: Adicionado 'outline'
     // =============================================================================
     const variantStyles = {
       primary: clsx(
@@ -105,6 +105,13 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         'transition-all duration-200'
       ),
 
+      // ✅ CORRIGIDO: Adicionado variant 'outline' faltando
+      outline: clsx(
+        'bg-transparent border-2 border-current',
+        'hover:bg-current hover:text-white',
+        'transition-all duration-200'
+      ),
+
       werewolf: clsx(
         'bg-gradient-to-b from-red-800 to-red-900',
         'hover:from-red-700 hover:to-red-800',
@@ -123,9 +130,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     // =============================================================================
-    // SIZE STYLES
+    // ✅ SIZE STYLES - CORRIGIDO: Adicionado 'xs'
     // =============================================================================
     const sizeStyles = {
+      xs: 'px-2 py-1 text-xs rounded gap-1', // ✅ CORRIGIDO: Adicionado size 'xs' faltando
       sm: 'px-3 py-1.5 text-sm rounded-md gap-1.5',
       md: 'px-4 py-2 text-base rounded-lg gap-2',
       lg: 'px-6 py-3 text-lg rounded-xl gap-2.5',
@@ -167,9 +175,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     );
 
     // =============================================================================
-    // CLICK HANDLER COM SOM
+    // ✅ CLICK HANDLER COM SOM - CORRIGIDO: Passar evento para onClick
     // =============================================================================
-    const handleClick = () => {
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
       if (disabled || loading) return;
 
       // Escolher som baseado no tipo de botão
@@ -183,8 +191,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
       playSound(soundType);
 
-      // Call onClick if provided
-      onClick?.();
+      // ✅ CORRIGIDO: Passar o evento para onClick
+      onClick?.(event);
     };
 
     // =============================================================================
@@ -276,7 +284,7 @@ export const ButtonGroup = forwardRef<HTMLDivElement, ButtonGroupProps>(
 ButtonGroup.displayName = 'ButtonGroup';
 
 // =============================================================================
-// ICON BUTTON COMPONENT
+// ✅ ICON BUTTON COMPONENT - CORRIGIDO: Adicionado 'xs' no iconSizes
 // =============================================================================
 interface IconButtonProps extends Omit<ButtonProps, 'children'> {
   icon: React.ReactNode;
@@ -293,7 +301,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     },
     ref
   ) {
+    // ✅ CORRIGIDO: Adicionado 'xs' no iconSizes
     const iconSizes = {
+      xs: 'w-3 h-3', // ✅ CORRIGIDO: Adicionado size 'xs' faltando
       sm: 'w-4 h-4',
       md: 'w-5 h-5',
       lg: 'w-6 h-6',

@@ -114,7 +114,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const tokenParts = token.split('.');
+      if (tokenParts.length !== 3) return true; // Token inválido
+      if (!tokenParts[1]) return true; // Token inválido
+      const payload = JSON.parse(atob(tokenParts[1]));
       const isExpired = payload.exp * 1000 < Date.now();
       console.log('🔐 DEBUG isTokenExpired:');
       console.log('🔐 Token exp:', new Date(payload.exp * 1000));

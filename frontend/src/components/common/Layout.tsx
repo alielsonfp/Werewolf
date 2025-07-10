@@ -36,11 +36,11 @@ interface LayoutProps {
 
 // ✅ CORREÇÃO: Componente para tema escuro/claro seguro para hidratação
 interface SafeThemeDisplayProps {
-  isDark: boolean;
+  theme: 'werewolf' | 'medieval' | 'modern';
   onToggle: () => void;
 }
 
-function SafeThemeToggle({ isDark, onToggle }: SafeThemeDisplayProps) {
+function SafeThemeToggle({ theme, onToggle }: SafeThemeDisplayProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -48,7 +48,6 @@ function SafeThemeToggle({ isDark, onToggle }: SafeThemeDisplayProps) {
   }, []);
 
   if (!mounted) {
-    // Renderiza um ícone neutro no servidor
     return (
       <Button
         variant="ghost"
@@ -56,29 +55,30 @@ function SafeThemeToggle({ isDark, onToggle }: SafeThemeDisplayProps) {
         onClick={onToggle}
         aria-label="Alternar tema"
       >
-        <div className="w-5 h-5" /> {/* Placeholder invisível */}
+        <div className="w-5 h-5" />
       </Button>
     );
   }
 
+  // ✅ CORRIGIDO: Usar 'theme' em vez de isDark
   return (
     <Button
       variant="ghost"
       size="sm"
       onClick={onToggle}
-      aria-label={isDark ? 'Tema claro' : 'Tema escuro'}
+      aria-label={`Tema atual: ${theme}`}
     >
-      {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+      {theme === 'werewolf' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
     </Button>
   );
 }
 
 // ✅ CORREÇÃO: Componente para status de conexão seguro para hidratação
 interface SafeConnectionStatusProps {
-  status: string;
+  isConnected: boolean;
 }
 
-function SafeConnectionStatus({ status }: SafeConnectionStatusProps) {
+function SafeConnectionStatus({ isConnected }: SafeConnectionStatusProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -86,7 +86,6 @@ function SafeConnectionStatus({ status }: SafeConnectionStatusProps) {
   }, []);
 
   if (!mounted) {
-    // Renderiza um estado neutro no servidor
     return (
       <div className="w-2 h-2 rounded-full bg-gray-400" />
     );
@@ -95,7 +94,7 @@ function SafeConnectionStatus({ status }: SafeConnectionStatusProps) {
   return (
     <div className={clsx(
       'w-2 h-2 rounded-full',
-      status === 'connected' ? 'bg-green-400' : 'bg-red-400'
+      isConnected ? 'bg-green-400' : 'bg-red-400'
     )} />
   );
 }
@@ -111,8 +110,9 @@ export default function Layout({
   className = '',
   variant = 'default',
 }: LayoutProps) {
-  const { getThemeClass, getPhaseColors } = useTheme();
-  const phaseColors = getPhaseColors();
+  // ✅ CORRIGIDO: Usar apenas as propriedades que realmente existem
+  const { getPhaseColors, getThemeClass } = useTheme();
+  const phaseColors = getPhaseColors(); // ✅ CORRIGIDO: não precisa de parâmetro
 
   // Variant-specific layouts
   if (variant === 'auth') {
@@ -132,7 +132,7 @@ export default function Layout({
     <div className={clsx(
       'min-h-screen',
       `bg-gradient-to-br ${phaseColors.background}`,
-      getThemeClass(),
+      getThemeClass(), // ✅ CORRIGIDO: usar getThemeClass() que existe
       className
     )}>
       {showHeader && <Header />}
@@ -156,16 +156,25 @@ export default function Layout({
 }
 
 // =============================================================================
-// HEADER COMPONENT
+// ✅ HEADER COMPONENT - TOTALMENTE CORRIGIDO
 // =============================================================================
 function Header() {
   const { user, logout } = useAuth();
-  const { isDark, toggleDarkMode, audioConfig, updateAudioConfig } = useTheme();
-  const { status } = useSocket();
+  // ✅ CORRIGIDO: Usar as propriedades reais do ThemeContext
+  const { theme, setTheme, audioConfig, updateAudioConfig } = useTheme();
+  const { isConnected } = useSocket(); // ✅ CORRIGIDO: usar isConnected em vez de status
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  const toggleTheme = () => {
+    // ✅ CORRIGIDO: Rotacionar entre os 3 temas disponíveis
+    const themes: ('werewolf' | 'medieval' | 'modern')[] = ['werewolf', 'medieval', 'modern'];
+    const currentIndex = themes.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    setTheme(themes[nextIndex] || 'werewolf');
+  };
+
   const toggleAudio = () => {
-    updateAudioConfig({ enabled: !audioConfig.enabled });
+    updateAudioConfig({ enabled: !audioConfig.enabled }); // ✅ CORRIGIDO: usar 'enabled'
   };
 
   return (
@@ -182,8 +191,8 @@ function Header() {
             Werewolf
           </h1>
 
-          {/* ✅ CORREÇÃO: Connection status com componente seguro */}
-          <SafeConnectionStatus status={status} />
+          {/* ✅ CORRIGIDO: Connection status */}
+          <SafeConnectionStatus isConnected={isConnected} />
         </div>
 
         {/* Controls */}
@@ -193,16 +202,16 @@ function Header() {
             variant="ghost"
             size="sm"
             onClick={toggleAudio}
-            aria-label={audioConfig.enabled ? 'Desativar som' : 'Ativar som'}
+            aria-label={audioConfig.enabled ? 'Desativar som' : 'Ativar som'} // ✅ CORRIGIDO
           >
-            {audioConfig.enabled ?
+            {audioConfig.enabled ? // ✅ CORRIGIDO
               <Volume2 className="w-5 h-5" /> :
               <VolumeX className="w-5 h-5" />
             }
           </Button>
 
-          {/* ✅ CORREÇÃO: Theme toggle com componente seguro */}
-          <SafeThemeToggle isDark={isDark} onToggle={toggleDarkMode} />
+          {/* ✅ CORRIGIDO: Theme toggle */}
+          <SafeThemeToggle theme={theme} onToggle={toggleTheme} />
 
           {/* User menu */}
           {user && (
@@ -233,8 +242,8 @@ function Header() {
                 >
                   <div className="py-2">
                     <div className="px-4 py-2 border-b border-medieval-600">
-                      <p className="text-sm text-white/70">Nível {user.level}</p>
-                      <p className="text-xs text-white/50">{user.totalGames} jogos</p>
+                      <p className="text-sm text-white/70">Nível {user.level || 1}</p>
+                      <p className="text-xs text-white/50">{user.totalGames || 0} jogos</p>
                     </div>
 
                     <Button
@@ -398,11 +407,11 @@ function LandingLayout({ children }: { children: ReactNode }) {
 }
 
 // =============================================================================
-// GAME LAYOUT
+// ✅ GAME LAYOUT - CORRIGIDO
 // =============================================================================
 function GameLayout({ children }: { children: ReactNode }) {
-  const { currentPhase, getPhaseColors } = useTheme();
-  const phaseColors = getPhaseColors();
+  const { getPhaseColors } = useTheme();
+  const phaseColors = getPhaseColors(); // ✅ CORRIGIDO: sem parâmetro
 
   return (
     <div className={clsx(
@@ -419,7 +428,7 @@ function GameLayout({ children }: { children: ReactNode }) {
                 Werewolf
               </h1>
               <p className={clsx('text-sm', phaseColors.text)}>
-                Fase: {currentPhase}
+                Em jogo
               </p>
             </div>
           </div>

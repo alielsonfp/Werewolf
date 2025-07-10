@@ -144,7 +144,7 @@ function LobbyPage() {
       console.log('🎵 Iniciando música do lobby...');
       const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
       const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
-      playMusic(randomMusic);
+      if (randomMusic) playMusic(randomMusic);
       setMusicStarted(true);
     }
   }, [isAuthLoading, isAuthenticated, musicStarted]);

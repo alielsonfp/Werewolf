@@ -129,7 +129,7 @@ export default function RegisterPage() {
     // Username validation
     const usernameValidation = authService.validateUsername(data.username);
     if (!usernameValidation.isValid) {
-      setError('username', usernameValidation.errors[0]);
+      setError('username', usernameValidation.errors[0] || 'Erro de validação');
       isValid = false;
     } else if (usernameAvailable === false) {
       setError('username', 'Este username já está em uso');
@@ -139,7 +139,7 @@ export default function RegisterPage() {
     // Password validation
     const passwordValidation = authService.validatePassword(data.password);
     if (!passwordValidation.isValid) {
-      setError('password', passwordValidation.errors[0]);
+      setError('password', passwordValidation.errors[0] || 'Erro de validação');
       isValid = false;
     }
 

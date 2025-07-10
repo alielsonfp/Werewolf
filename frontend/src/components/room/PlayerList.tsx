@@ -88,7 +88,7 @@ export default function PlayerList({
                         : 'bg-gradient-to-br from-blue-500 to-purple-600'
                       }
                     `}>
-                      {player.username[0].toUpperCase()}
+                      {player.username?.[0]?.toUpperCase() || '?'}
                     </div>
 
                     {/* Host Crown */}
@@ -244,7 +244,7 @@ export default function PlayerList({
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center text-white text-sm">
-                        {spectator.username[0].toUpperCase()}
+                        {spectator.username?.[0]?.toUpperCase() || '?'}
                       </div>
                       <div className={`
                         absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-800

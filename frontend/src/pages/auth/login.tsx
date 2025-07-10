@@ -179,7 +179,7 @@ export default function LoginPage() {
             onClick={() => {
               playSound('button_click');
               console.log('Google login clicked');
-              toast.info('Login com Google será implementado em breve');
+              toast('Login com Google será implementado em breve');
               // TODO: Implementar login com Google
             }}
             className="w-full border border-white/20 hover:border-white/40 mb-6"

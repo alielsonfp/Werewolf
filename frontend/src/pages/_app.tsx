@@ -195,8 +195,8 @@ if (typeof window !== 'undefined') {
           'TCP Connection': navigation.connectEnd - navigation.connectStart,
           'Request': navigation.responseStart - navigation.requestStart,
           'Response': navigation.responseEnd - navigation.responseStart,
-          'DOM Processing': navigation.domComplete - navigation.domLoading,
-          'Total Load Time': navigation.loadEventEnd - navigation.navigationStart,
+          'DOM Processing': navigation.domComplete - (navigation.domContentLoadedEventEnd || 0),
+          'Total Load Time': navigation.loadEventEnd - (navigation.fetchStart || 0),
         });
       }, 0);
     });

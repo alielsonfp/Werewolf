@@ -23,7 +23,7 @@ export default function GameBoard() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center">
-          <LoadingSpinner size="large" />
+          <LoadingSpinner size="xl" />
           <p className="text-white/70 mt-4">Carregando estado do jogo...</p>
         </div>
       </div>

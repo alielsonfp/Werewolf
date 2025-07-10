@@ -2,10 +2,77 @@
 import type WebSocket from 'ws';
 
 // =============================================================================
-// IMPORT ENUMS FROM CONSTANTS (ÚNICA FONTE)
+// IMPORT ENUMS FROM CONSTANTS (ÚNICA FONTE) - ✅ CORRIGIDO
 // =============================================================================
-export { Role, Faction, GamePhase } from '@/utils/constants';
-import { Role, Faction, GamePhase } from '@/utils/constants';
+// ✅ FIX: Comentar imports que estão causando erro até criar o arquivo constants.ts
+// export { Role, Faction, GamePhase } from '@/utils/constants';
+// import { Role, Faction, GamePhase } from '@/utils/constants';
+
+// ✅ TEMP: Definir diretamente aqui até resolver o constants.ts
+export enum Role {
+  WEREWOLF = 'WEREWOLF',
+  WEREWOLF_KING = 'WEREWOLF_KING',
+  JESTER = 'JESTER', // ✅ ADICIONADO: Resolve erros de ActionPanel e ChatGigante
+  SHERIFF = 'SHERIFF',
+  DOCTOR = 'DOCTOR',
+  VIGILANTE = 'VIGILANTE',
+  SERIAL_KILLER = 'SERIAL_KILLER',
+  VILLAGER = 'VILLAGER'
+}
+
+export enum Faction {
+  TOWN = 'TOWN',
+  WEREWOLF = 'WEREWOLF',
+  NEUTRAL = 'NEUTRAL'
+}
+
+export enum GamePhase {
+  LOBBY = 'LOBBY',
+  NIGHT = 'NIGHT',
+  DAY = 'DAY',
+  VOTING = 'VOTING'
+}
+
+// =============================================================================
+// ✅ EXPORTS FALTANDO PARA AuthContext
+// =============================================================================
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  avatar?: string;
+  level?: number;
+  totalGames?: number; // ✅ ADICIONADO: Resolve erros em Layout.tsx e index.tsx
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
+}
+
+export interface RegisterRequest {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword?: string;
+  acceptTerms?: boolean;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user: User;
+  tokens: AuthTokens;
+  message?: string;
+}
 
 // =============================================================================
 // API & HTTP
@@ -16,6 +83,7 @@ export interface ApiResponse<T = any> {
   message?: string;
   error?: string;
   timestamp: string;
+  statusCode?: number; // ✅ ADICIONADO para resolver erro na api.ts
 }
 
 // =============================================================================
@@ -91,7 +159,7 @@ export type WebSocketErrorCode =
   | 'UNKNOWN_MESSAGE_TYPE' | 'HANDLER_ERROR' | 'MISSING_ROOM_ID'
   | 'JOIN_ROOM_FAILED' | 'LEAVE_ROOM_FAILED' | 'READY_UPDATE_FAILED'
   | 'START_GAME_FAILED' | 'KICK_PLAYER_FAILED' | 'NOT_IMPLEMENTED'
-  | 'DELETE_ROOM_FAILED' | 'CHAT_FAILED'; // ✅ NOVOS
+  | 'DELETE_ROOM_FAILED' | 'CHAT_FAILED';
 
 // =============================================================================
 // GAME TYPES (COMPATÍVEIS COM CLASSES REAIS)
@@ -694,8 +762,8 @@ export interface GameSummary {
 // =============================================================================
 export interface ButtonProps {
   children: React.ReactNode;
-  variant?: 'primary' | 'secondary' | 'danger' | 'medieval' | 'ghost' | 'outline';
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  variant?: 'primary' | 'secondary' | 'danger' | 'medieval' | 'ghost' | 'outline'; // ✅ CORRIGIDO: Adicionado 'outline'
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'; // ✅ CORRIGIDO: Adicionado 'xs'
   disabled?: boolean;
   loading?: boolean;
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
@@ -720,10 +788,59 @@ export interface ModalProps {
 
   // ✅ ADICIONADO: Props extras
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  variant?: 'default' | 'medieval' | 'dark' | 'error' | 'warning'; // ✅ ATUALIZADO
+  variant?: 'default' | 'medieval' | 'dark' | 'error' | 'warning' | 'game'; // ✅ CORRIGIDO: Adicionado 'game'
   showCloseButton?: boolean;
   preventScroll?: boolean;
   zIndex?: number;
+}
+
+// ✅ CORRIGIDO: LoadingSpinner props
+export interface LoadingSpinnerProps {
+  size?: 'sm' | 'md' | 'lg' | 'xl'; // ✅ REMOVIDO 'large', só aceita essas 4 opções
+  className?: string;
+  color?: string;
+}
+
+// =============================================================================
+// ✅ CONTEXT TYPES - CORRIGIDOS COM BASE NOS ARQUIVOS REAIS
+// =============================================================================
+export interface ThemeContextType {
+  theme: 'werewolf' | 'medieval' | 'modern';
+  setTheme: (theme: 'werewolf' | 'medieval' | 'modern') => void;
+  playSound: (soundId: string) => void;
+  playMusic: (musicId: string) => void;
+  stopMusic: () => void;
+  setMusicVolume: (volume: number) => void;
+  setSoundVolume: (volume: number) => void;
+  musicVolume: number;
+  soundVolume: number;
+  isMusicPlaying: boolean;
+  isAudioUnblocked: boolean;
+  getPhaseColors: () => {
+    background: string;
+    text: string;
+    accent: string;
+    border: string;
+  };
+  getThemeClass: () => string;
+  audioConfig: {
+    musicVolume: number;
+    sfxVolume: number;
+    enabled: boolean;
+  };
+  updateAudioConfig: (config: Partial<{
+    musicVolume: number;
+    sfxVolume: number;
+    enabled: boolean;
+  }>) => void;
+}
+
+export interface WebSocketContextType {
+  socket: WebSocket | null;
+  isConnected: boolean;
+  connect: (url: string) => void;
+  disconnect: () => void;
+  sendMessage: (type: string, data?: any) => boolean;
 }
 
 // =============================================================================
@@ -737,7 +854,7 @@ export interface FormError {
 
 export interface ValidationResult {
   isValid: boolean;
-  errors: FormError[];
+  errors: string[]; // ✅ CORRIGIDO: array simples de strings para compatibilidade
   warnings?: FormError[];
 }
 
@@ -896,4 +1013,3 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   customRoles: [],
   bannedPlayers: [],
 };
-
