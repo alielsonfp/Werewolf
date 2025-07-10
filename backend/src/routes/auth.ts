@@ -2,7 +2,7 @@
 // Route definitions for authentication endpoints
 
 import { Router } from 'express';
-import { register, login, forgotPassword, resetPassword, getProfile, checkUsername, checkEmail } from '@/controllers/authController';
+import { register, login, forgotPassword, resetPassword, getProfile, checkUsername, checkEmail, googleLogin } from '@/controllers/authController';
 import { requireAuth } from '@/middleware/auth';
 
 const router = Router();
@@ -28,6 +28,14 @@ const authRateLimit = (req: any, res: any, next: any) => {
  * @body { email, username, password, confirmPassword }
  */
 router.post('/register', authRateLimit, register);
+
+/**
+ * @route POST /api/auth/google
+ * @desc Handle Google OAuth login
+ * @access Public
+ * @body { code }
+ */
+router.post('/google', authRateLimit, googleLogin); // Nova rota aqui
 
 /**
  * @route POST /api/auth/login

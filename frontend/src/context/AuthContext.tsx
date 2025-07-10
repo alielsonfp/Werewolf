@@ -25,6 +25,8 @@ interface AuthContextType {
   // Utils
   getToken: () => string | null;
   isTokenExpired: () => boolean;
+
+  setAuthData: (user: User, tokens: AuthTokens) => void;
 }
 
 // =============================================================================
@@ -128,6 +130,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.log('🔐 DEBUG isTokenExpired: Error parsing token:', error);
       return true;
     }
+  };
+
+  const setAuthData = (newUser: User, newTokens: AuthTokens) => {
+    console.log("🔐 DEBUG setAuthData: Manually setting auth state from Google login");
+    setUser(newUser);
+    setTokens(newTokens); // Reutiliza sua função existente para salvar os cookies
   };
 
   // =============================================================================
@@ -357,6 +365,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Utils
       getToken,
       isTokenExpired,
+      setAuthData,
     };
   }, [user, isAuthenticated, isLoading]);
 

@@ -13,13 +13,14 @@ import {
   validateLoginRequest,
   validateEmail,
 } from '@/utils/simpleValidators';
+import { OAuth2Client, LoginTicket } from 'google-auth-library';
 import type { ApiResponse } from '@/types';
 import { config } from '@/config/environment';
 
 /* -------------------------------------------------------------------------- */
 /*                                   REGISTER                                 */
 /* -------------------------------------------------------------------------- */
-export const register = async (req: Request, res: Response): Promise<void> => {
+export const register = async (req: Request, res: Response) => {
   try {
     const validation = validateRegisterRequest(req.body);
     if (!validation.success) {
@@ -129,7 +130,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 /* -------------------------------------------------------------------------- */
 /*                                    LOGIN                                   */
 /* -------------------------------------------------------------------------- */
-export const login = async (req: Request, res: Response): Promise<void> => {
+export const login = async (req: Request, res: Response) => {
   try {
     const validation = validateLoginRequest(req.body);
     if (!validation.success) {
@@ -287,7 +288,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 /* -------------------------------------------------------------------------- */
 /*                               FORGOT PASSWORD                              */
 /* -------------------------------------------------------------------------- */
-export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+export const forgotPassword = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
 
@@ -364,7 +365,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 /* -------------------------------------------------------------------------- */
 /*                               RESET PASSWORD                               */
 /* -------------------------------------------------------------------------- */
-export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+export const resetPassword = async (req: Request, res: Response) => {
   try {
     const { token, password } = req.body;
 
@@ -467,7 +468,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 /* -------------------------------------------------------------------------- */
 /*                                  PROFILE                                   */
 /* -------------------------------------------------------------------------- */
-export const getProfile = async (req: Request, res: Response): Promise<void> => {
+export const getProfile = async (req: Request, res: Response) => {
   try {
     const userQuery = `
       SELECT id, email, username, avatar, level, "totalGames", "totalWins",
@@ -512,7 +513,7 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
 /* -------------------------------------------------------------------------- */
 /*                              CHECK USERNAME                                */
 /* -------------------------------------------------------------------------- */
-export const checkUsername = async (req: Request, res: Response): Promise<void> => {
+export const checkUsername = async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
 
@@ -556,7 +557,7 @@ export const checkUsername = async (req: Request, res: Response): Promise<void> 
 /* -------------------------------------------------------------------------- */
 /*                                CHECK EMAIL                                 */
 /* -------------------------------------------------------------------------- */
-export const checkEmail = async (req: Request, res: Response): Promise<void> => {
+export const checkEmail = async (req: Request, res: Response) => {
   try {
     const { email } = req.params;
 
@@ -594,5 +595,101 @@ export const checkEmail = async (req: Request, res: Response): Promise<void> => 
       message: 'Erro interno do servidor',
       timestamp: new Date().toISOString(),
     } as ApiResponse);
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/*                                GOOGLE LOGIN                                */
+/* -------------------------------------------------------------------------- */
+export const googleLogin = async (req: Request, res: Response) => {
+  const { code } = req.body;
+
+  if (!code) {
+    // Adicione 'return' aqui
+    return res.status(400).json({ success: false, error: 'Authorization code is required', timestamp: new Date().toISOString() });
+  }
+
+  try {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      throw new Error("Google OAuth credentials are not configured in environment variables.");
+    }
+
+    const oauth2Client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      'postmessage'
+    );
+
+    const { tokens } = await oauth2Client.getToken(code);
+    const idToken = tokens.id_token;
+
+    if (!idToken) {
+      throw new Error("ID token not found in Google's response");
+    }
+
+    const ticket = await oauth2Client.verifyIdToken({
+      idToken: idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email || !payload.name) {
+      // Adicione 'return' aqui
+      return res.status(400).json({ success: false, error: 'Failed to retrieve user profile from Google', timestamp: new Date().toISOString() });
+    }
+
+    const { email, name, picture } = payload;
+
+    let userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    let user = userResult.rows[0];
+
+    if (!user) {
+      authLogger.info('Creating new user from Google login', { email, name });
+
+      let username = name.replace(/\s+/g, '_').toLowerCase();
+      const existingUsername = await pool.query('SELECT id FROM users WHERE username ILIKE $1', [username]);
+      if (existingUsername.rows.length > 0 || username.length < 3) {
+        username = `${username}${Date.now().toString().slice(-4)}`;
+      }
+
+      const randomPassword = Math.random().toString(36).slice(-8);
+      const passwordHash = await bcrypt.hash(randomPassword, 12);
+
+      const createUserQuery = `
+        INSERT INTO users(email, username, "passwordHash", avatar, "createdAt", "updatedAt")
+        VALUES($1, $2, $3, $4, NOW(), NOW())
+        RETURNING *
+      `;
+      const newUserResult = await pool.query(createUserQuery, [email, username, passwordHash, picture]);
+      user = newUserResult.rows[0];
+    }
+
+    await pool.query('UPDATE users SET "lastLoginAt" = NOW() WHERE id = $1', [user.id]);
+
+    const appTokens = generateTokenPair({
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+    });
+
+    const { passwordHash, ...userWithoutPassword } = user;
+
+    authLogger.info('User logged in successfully via Google', { userId: user.id, email });
+
+    // Adicione 'return' aqui
+    return res.json({
+      success: true,
+      data: {
+        user: userWithoutPassword,
+        tokens: appTokens,
+      },
+      message: 'Login com Google realizado com sucesso',
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    authLogger.error('Google login error', error instanceof Error ? error : new Error('Unknown Google login error'));
+    // Adicione 'return' aqui
+    return res.status(500).json({ success: false, error: 'Internal Server Error', timestamp: new Date().toISOString() });
   }
 };

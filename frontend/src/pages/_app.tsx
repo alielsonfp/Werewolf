@@ -14,6 +14,8 @@ import { AuthProvider } from '@/context/AuthContext';
 import { SocketProvider } from '@/context/SocketContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 
+import { GoogleOAuthProvider } from '@react-oauth/google';
+
 // Components
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { PageLoading } from '@/components/common/LoadingSpinner';
@@ -97,67 +99,69 @@ export default function App({ Component, pageProps, router }: AppProps) {
         <div className={`${inter.variable} ${cinzel.variable} ${pirataOne.variable}`}>
 
           {/* ✅ CORRIGIDO: Ordem correta de Context Providers */}
-          <ThemeProvider>
-            <AuthProvider>
-              <SocketProvider> {/* SocketProvider DEVE vir APÓS AuthProvider */}
+          <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
+            <ThemeProvider>
+              <AuthProvider>
+                <SocketProvider> {/* SocketProvider DEVE vir APÓS AuthProvider */}
 
-                {/* Page Transitions */}
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={router.route}
-                    initial="initial"
-                    animate="in"
-                    exit="out"
-                    variants={pageVariants}
-                    transition={pageTransition}
-                  >
-                    <Component {...pageProps} />
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* Global Toast Notifications */}
-                <Toaster
-                  position="top-right"
-                  toastOptions={{
-                    duration: 4000,
-                    style: {
-                      background: '#2D1B1E',
-                      color: '#F4E4BC',
-                      border: '1px solid #8B925A',
-                      fontFamily: 'var(--font-inter)',
-                    },
-                    success: {
-                      iconTheme: {
-                        primary: '#228B22',
-                        secondary: '#F4E4BC',
-                      },
-                    },
-                    error: {
-                      iconTheme: {
-                        primary: '#8B0000',
-                        secondary: '#F4E4BC',
-                      },
-                    },
-                  }}
-                />
-
-                {/* Loading Overlay for Page Transitions */}
-                <AnimatePresence>
-                  {router.isFallback && (
+                  {/* Page Transitions */}
+                  <AnimatePresence mode="wait" initial={false}>
                     <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="fixed inset-0 z-50"
+                      key={router.route}
+                      initial="initial"
+                      animate="in"
+                      exit="out"
+                      variants={pageVariants}
+                      transition={pageTransition}
                     >
-                      <PageLoading />
+                      <Component {...pageProps} />
                     </motion.div>
-                  )}
-                </AnimatePresence>
+                  </AnimatePresence>
 
-              </SocketProvider>
-            </AuthProvider>
-          </ThemeProvider>
+                  {/* Global Toast Notifications */}
+                  <Toaster
+                    position="top-right"
+                    toastOptions={{
+                      duration: 4000,
+                      style: {
+                        background: '#2D1B1E',
+                        color: '#F4E4BC',
+                        border: '1px solid #8B925A',
+                        fontFamily: 'var(--font-inter)',
+                      },
+                      success: {
+                        iconTheme: {
+                          primary: '#228B22',
+                          secondary: '#F4E4BC',
+                        },
+                      },
+                      error: {
+                        iconTheme: {
+                          primary: '#8B0000',
+                          secondary: '#F4E4BC',
+                        },
+                      },
+                    }}
+                  />
+
+                  {/* Loading Overlay for Page Transitions */}
+                  <AnimatePresence>
+                    {router.isFallback && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50"
+                      >
+                        <PageLoading />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                </SocketProvider>
+              </AuthProvider>
+            </ThemeProvider>
+          </GoogleOAuthProvider>
         </div>
       </ErrorBoundary>
     </>

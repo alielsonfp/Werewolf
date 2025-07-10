@@ -7,7 +7,9 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, User, UserPlus, Check, X } from 'lucide-react';
-
+import { useGoogleLogin } from '@react-oauth/google';
+import axios from 'axios';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useForm, useDebounce } from '@/hooks';
 import { RegisterRequest } from '@/types';
@@ -21,7 +23,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 // =============================================================================
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, isAuthenticated, isLoading } = useAuth();
+  const { register, isAuthenticated, isLoading, setAuthData } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
@@ -109,6 +111,38 @@ export default function RegisterPage() {
       setCheckingEmail(false);
     }
   };
+
+  const googleLoginHandler = useGoogleLogin({
+    onSuccess: async (codeResponse) => {
+      setIsSubmitting(true);
+      // Limpe qualquer erro anterior
+      // setError(''); 
+      try {
+        const apiResponse = await axios.post(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/auth/google`,
+          { code: codeResponse.code }
+        );
+
+        const responseData = apiResponse.data;
+
+        if (responseData.success && responseData.data) {
+          setAuthData(responseData.data.user, responseData.data.tokens);
+          toast.success(`Bem-vindo, ${responseData.data.user.username}!`);
+          // O useEffect de redirecionamento cuidará do resto
+        } else {
+          //setError(responseData.message || 'Falha no login com Google.');
+          toast.error(responseData.message || 'Falha no login com Google.');
+        }
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || err.message || 'Ocorreu um erro.';
+        //setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    flow: 'auth-code',
+  });
 
   // Form validation
   const validateForm = (data: RegisterRequest): boolean => {
@@ -205,10 +239,7 @@ export default function RegisterPage() {
           <Button
             variant="ghost"
             size="lg"
-            onClick={() => {
-              console.log('Google register clicked');
-              // TODO: Implementar registro com Google
-            }}
+            onClick={() => googleLoginHandler()}
             className="w-full border border-white/20 hover:border-white/40 mb-6"
             disabled={isSubmitting}
           >

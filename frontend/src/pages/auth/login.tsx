@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-
+import { useGoogleLogin } from '@react-oauth/google';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useForm } from '@/hooks';
@@ -16,13 +16,14 @@ import { LoginRequest } from '@/types';
 import Layout from '@/components/common/Layout';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import axios from 'axios';
 
 // =============================================================================
 // LOGIN PAGE COMPONENT
 // =============================================================================
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, setAuthData } = useAuth();
   const { playSound } = useTheme();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string>('');
@@ -42,6 +43,42 @@ export default function LoginPage() {
       };
     }
     return null;
+  });
+
+  const googleLoginHandler = useGoogleLogin({
+    onSuccess: async (codeResponse) => {
+      setIsSubmitting(true);
+      setError('');
+      try {
+        // ✅ CHAMADA DIRETA DA API SEM CRIAR UM NOVO SERVIÇO
+        const apiResponse = await axios.post(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/auth/google`,
+          { code: codeResponse.code }
+        );
+
+        const responseData = apiResponse.data;
+
+        if (responseData.success && responseData.data) {
+          // ✅ USE A NOVA FUNÇÃO DO CONTEXTO PARA ATUALIZAR O ESTADO
+          setAuthData(responseData.data.user, responseData.data.tokens);
+
+          toast.success(`Bem-vindo, ${responseData.data.user.username}!`);
+          // O useEffect no topo da página cuidará do redirecionamento
+          // pois `isAuthenticated` se tornará `true`.
+        } else {
+          const errorMessage = responseData.message || 'Falha no login com Google.';
+          setError(errorMessage);
+          toast.error(errorMessage);
+        }
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || err.message || 'Ocorreu um erro.';
+        setError(errorMessage);
+        toast.error(errorMessage);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    flow: 'auth-code',
   });
 
   // Form management
@@ -176,13 +213,13 @@ export default function LoginPage() {
           <Button
             variant="ghost"
             size="lg"
+            // O onClick agora é mais limpo. A chamada do hook já faz tudo o que é preciso.
             onClick={() => {
               playSound('button_click');
-              console.log('Google login clicked');
-              toast('Login com Google será implementado em breve');
-              // TODO: Implementar login com Google
+              googleLoginHandler(); // Apenas chame a função do hook aqui.
             }}
             className="w-full border border-white/20 hover:border-white/40 mb-6"
+            // O `disabled` é uma propriedade do Button, e já está sendo passado corretamente aqui.
             disabled={isSubmitting}
           >
             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
