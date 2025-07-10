@@ -243,7 +243,7 @@ export class WebSocketManager {
     return this.sendToConnection(connection.id, type, data);
   };
 
-  // ✅ MÉTODO COM LOGS DETALHADOS PARA DEBUG
+  // 🔥 MÉTODO COM LIMPEZA PROATIVA DE CONEXÕES MORTAS
   public broadcastToRoom = (roomId: string, type: string, data?: any, excludeConnectionId?: string): number => {
     console.log('🔥 BROADCAST: Tentando fazer broadcast', {
       roomId,
@@ -255,16 +255,48 @@ export class WebSocketManager {
 
     const roomConnections = this.channelManager.getRoomConnections(roomId);
 
-    console.log('🔥 BROADCAST: Conexões na sala', {
+    // 🔥 LIMPEZA PROATIVA - NOVA LÓGICA
+    const aliveConnections = new Set<string>();
+    const deadConnections = new Set<string>();
+
+    for (const connectionId of roomConnections) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      if (connection && connection.ws.readyState === connection.ws.OPEN) {
+        // Teste adicional: verificar se realmente pode enviar
+        try {
+          connection.ws.ping();
+          aliveConnections.add(connectionId);
+        } catch (error) {
+          console.log('🧹 LIMPEZA: Conexão falhou no ping test', { connectionId, error: error.message });
+          deadConnections.add(connectionId);
+        }
+      } else {
+        console.log('🧹 LIMPEZA: Conexão não está OPEN', {
+          connectionId,
+          hasConnection: !!connection,
+          readyState: connection?.ws.readyState
+        });
+        deadConnections.add(connectionId);
+      }
+    }
+
+    // Remove conexões mortas do ChannelManager
+    for (const deadId of deadConnections) {
+      this.channelManager.removeConnectionFromAllRooms(deadId);
+      this.connectionManager.removeConnection(deadId);
+      console.log('🧹 LIMPEZA: Removida conexão morta', { connectionId: deadId });
+    }
+
+    console.log('🔥 BROADCAST: Conexões na sala (após limpeza)', {
       roomId,
-      totalConnections: roomConnections.size,
-      connections: Array.from(roomConnections),
+      totalConnections: aliveConnections.size,
+      connections: Array.from(aliveConnections),
+      removed: deadConnections.size,
       timestamp: new Date().toISOString()
     });
 
     let sentCount = 0;
-
-    for (const connectionId of roomConnections) {
+    for (const connectionId of aliveConnections) {
       if (excludeConnectionId && connectionId === excludeConnectionId) {
         console.log('🔥 BROADCAST: Pulando conexão excluída', { connectionId });
         continue;
@@ -287,7 +319,7 @@ export class WebSocketManager {
     console.log('🔥 BROADCAST: Broadcast realizado', {
       roomId,
       type,
-      totalConnections: roomConnections.size,
+      totalConnections: aliveConnections.size,
       sentCount,
       timestamp: new Date().toISOString()
     });
@@ -295,7 +327,7 @@ export class WebSocketManager {
     wsLogger.debug('Broadcast to room completed', {
       roomId,
       type,
-      totalConnections: roomConnections.size,
+      totalConnections: aliveConnections.size,
       sentCount,
       excludedConnection: excludeConnectionId,
     });
