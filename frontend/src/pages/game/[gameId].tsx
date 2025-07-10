@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { GameProvider } from '@/context/GameContext';
 import { useSocket } from '@/context/SocketContext';
@@ -15,6 +15,9 @@ export default function GamePage() {
   const { gameId } = router.query;
   const { user, isAuthenticated, getToken } = useAuth();
   const { isConnected, connect, disconnect, sendMessage } = useSocket();
+
+  // ✅ CONTROLE DE EXECUÇÃO ÚNICA  
+  const didConnectRef = useRef(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,10 +44,16 @@ export default function GamePage() {
   }, [router.isReady, isAuthenticated, gameId, router]);
 
   // =============================================================================
-  // WEBSOCKET CONNECTION - CONEXÃO PARA O JOGO (CORRIGIDA)
+  // WEBSOCKET CONNECTION - UMA VEZ APENAS
   // =============================================================================
   useEffect(() => {
     if (!router.isReady || !isAuthenticated || !gameId || typeof gameId !== 'string') return;
+
+    // 🎯 PROTEÇÃO CONTRA MÚLTIPLAS EXECUÇÕES
+    if (didConnectRef.current) {
+      return;
+    }
+    didConnectRef.current = true;
 
     const token = getToken();
     if (!token) {
@@ -52,23 +61,17 @@ export default function GamePage() {
       return;
     }
 
-    // ✅ IMPORTANTE: A URL agora é do JOGO, não mais da SALA
     const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${gameId}?token=${encodeURIComponent(token)}`;
 
-    // Conecta se não estiver conectado
-    if (!isConnected) {
-      console.log('🔌 Connecting to game WebSocket:', wsUrl);
-      connect(wsUrl);
-    }
+    console.log('🔌 Connecting to game WebSocket:', wsUrl);
+    connect(wsUrl);
 
-    // Cleanup na desmontagem do componente
     return () => {
-      if (isConnected) {
-        console.log('🔌 Disconnecting from game WebSocket');
-        disconnect();
-      }
+      console.log('🔌 Disconnecting from game WebSocket');
+      disconnect();
+      didConnectRef.current = false; // Reset para próxima montagem
     };
-  }, [router.isReady, gameId, isAuthenticated, isConnected, connect, disconnect, getToken, router]);
+  }, [router.isReady, isAuthenticated, gameId]); // 🎯 DEPENDÊNCIAS MÍNIMAS
 
   // =============================================================================
   // REQUEST INITIAL GAME STATE (CORRIGIDO)

@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { withAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@/context/AuthContext';
@@ -14,6 +14,9 @@ function RoomPage() {
   const { id: roomId } = router.query;
   const { connect, disconnect, isConnected, sendMessage } = useSocket();
   const { user, getToken, isAuthenticated } = useAuth();
+
+  // ✅ CONTROLE DE EXECUÇÃO ÚNICA
+  const didConnectRef = useRef(false);
 
   // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
@@ -33,12 +36,18 @@ function RoomPage() {
   // ✅ CORRIGIDO: Bug #1 - Filtrar host antes de verificar se todos estão prontos
   const canStartGame = players.length >= 3 && players.filter(p => !p.isHost).every(p => p.isReady) && isConnected && isHost;
 
-  // ✅ EFEITO #1: Apenas para conectar e desconectar ao WebSocket.
-  // Ele roda UMA VEZ quando as dependências de inicialização estiverem prontas.
+  // ✅ EFEITO #1: Conectar UMA VEZ APENAS
   useEffect(() => {
     if (!router.isReady || !isAuthenticated || !roomId || typeof roomId !== 'string') {
-      return; // Aguarda até ter tudo o que precisa.
+      return;
     }
+
+    // 🎯 PROTEÇÃO CONTRA MÚLTIPLAS EXECUÇÕES
+    if (didConnectRef.current) {
+      return;
+    }
+    didConnectRef.current = true;
+
     const token = getToken();
     if (!token) {
       router.push('/auth/login');
@@ -48,24 +57,22 @@ function RoomPage() {
     const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${roomId}?token=${encodeURIComponent(token)}`;
     connect(wsUrl);
 
-    // A função de cleanup é chamada QUANDO O USUÁRIO SAI DA PÁGINA.
     return () => {
       sendMessage('leave-room', { roomId });
       disconnect();
+      didConnectRef.current = false; // Reset para próxima montagem
     };
-  }, [router.isReady, isAuthenticated, roomId, connect, disconnect, getToken, router, sendMessage]);
+  }, [router.isReady, isAuthenticated, roomId]); // 🎯 DEPENDÊNCIAS MÍNIMAS
 
-  // ✅ EFEITO #2: Apenas para entrar na sala, uma única vez por conexão.
-  // Ele REAGE à mudança de `isConnected`.
+  // ✅ EFEITO #2: Entrar na sala UMA VEZ APENAS  
   useEffect(() => {
-    // Só envia a mensagem se estivermos conectados E ainda não tivermos entrado.
-    if (isConnected && !hasJoinedRoom) {
+    if (isConnected && !hasJoinedRoom && roomId) {
       const asSpectator = router.query.spectate === 'true';
       if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
-        setHasJoinedRoom(true); // Marca que já tentamos entrar para não enviar de novo.
+        setHasJoinedRoom(true);
       }
     }
-  }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
+  }, [isConnected, hasJoinedRoom, roomId]); // 🎯 SEM sendMessage e router.query
 
   // ✅ EFEITO #3: Apenas para ouvir as mensagens.
   useEffect(() => {
