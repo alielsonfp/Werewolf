@@ -322,11 +322,9 @@ function LobbyPage() {
 
                 {/* Music Toggle */}
                 <Button
-                  variant="ghost"
-                  size="md"
                   onClick={toggleMusic}
                   className="text-white hover:text-salem-400"
-                  title={isMusicPlaying ? 'Desligar música' : 'Ligar música'}
+                  aria-label={isMusicPlaying ? 'Desligar música' : 'Ligar música'}
                 >
                   {isMusicPlaying ? <VolumeIcon /> : <VolumeOffIcon />}
                 </Button>
