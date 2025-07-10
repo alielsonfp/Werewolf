@@ -38,10 +38,11 @@ app.use(cors({
       'http://localhost:3001',
       'https://localhost:3000',
       'https://localhost:3001',
+      'https://equipe04.alphaedtech.org.br'
     ];
 
     if (config.IS_PRODUCTION) {
-      allowedOrigins.push('https://your-domain.com');
+      allowedOrigins.push('https://equipe04.alphaedtech.org.br');
     }
 
     if (allowedOrigins.includes(origin)) {

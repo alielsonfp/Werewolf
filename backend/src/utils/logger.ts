@@ -14,13 +14,13 @@ export enum LogLevel {
 }
 
 // =============================================================================
-// LOG ENTRY INTERFACE
+// ✅ LOG ENTRY INTERFACE - CORRIGIDA COM PROPRIEDADES OPCIONAIS
 // =============================================================================
 export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
-  service: string;
+  service?: string; // ✅ OPCIONAL - resolve exactOptionalPropertyTypes
   module?: string;
   userId?: string;
   roomId?: string;
@@ -34,15 +34,16 @@ export interface LogEntry {
 }
 
 // =============================================================================
-// LOGGER CLASS
+// ✅ LOGGER CLASS - CORRIGIDO COM TIPAGEM CORRETA
 // =============================================================================
 class Logger {
   private serviceName: string;
-  private moduleContext?: string;
+  private moduleContext: string | undefined; // ✅ TIPO CORRIGIDO
 
-  constructor(serviceName: string = config.SERVICE_ID, moduleContext?: string) {
-    this.serviceName = serviceName;
-    this.moduleContext = moduleContext;
+  constructor(serviceName?: string, moduleContext?: string) {
+    // ✅ SEMPRE garante que serviceName seja string
+    this.serviceName = serviceName || config.SERVICE_ID || 'werewolf-service';
+    this.moduleContext = moduleContext; // ✅ AGORA COMPATÍVEL
   }
 
   /**
@@ -56,21 +57,28 @@ class Logger {
    * Log an error message
    */
   error(message: string, error?: Error, metadata?: Record<string, any>): void {
-    this.log(LogLevel.ERROR, message, { error, metadata });
+    this.log(LogLevel.ERROR, message, {
+      ...(error && { error }),
+      ...(metadata && { metadata })
+    });
   }
 
   /**
    * Log a warning message
    */
   warn(message: string, metadata?: Record<string, any>): void {
-    this.log(LogLevel.WARN, message, { metadata });
+    this.log(LogLevel.WARN, message, {
+      ...(metadata && { metadata })
+    });
   }
 
   /**
    * Log an info message
    */
   info(message: string, metadata?: Record<string, any>): void {
-    this.log(LogLevel.INFO, message, { metadata });
+    this.log(LogLevel.INFO, message, {
+      ...(metadata && { metadata })
+    });
   }
 
   /**
@@ -78,7 +86,9 @@ class Logger {
    */
   debug(message: string, metadata?: Record<string, any>): void {
     if (config.IS_DEVELOPMENT) {
-      this.log(LogLevel.DEBUG, message, { metadata });
+      this.log(LogLevel.DEBUG, message, {
+        ...(metadata && { metadata })
+      });
     }
   }
 
@@ -162,12 +172,13 @@ class Logger {
       metadata?: Record<string, any>;
     }
   ): void {
+    // ✅ CORRIGIDO: service sempre será string com fallback
     const logEntry: LogEntry = {
       level,
       message,
       timestamp: new Date().toISOString(),
       service: this.serviceName,
-      module: this.moduleContext,
+      ...(this.moduleContext && { module: this.moduleContext }),
       ...context?.metadata,
     };
 
@@ -176,7 +187,7 @@ class Logger {
       logEntry.error = {
         name: context.error.name,
         message: context.error.message,
-        stack: context.error.stack,
+        ...(context.error.stack && { stack: context.error.stack }),
       };
     }
 
@@ -205,7 +216,7 @@ class Logger {
     const color = colors[entry.level];
 
     const timestamp = new Date(entry.timestamp).toLocaleTimeString();
-    const service = entry.service;
+    const service = entry.service || 'werewolf-service';
     const module = entry.module ? `[${entry.module}]` : '';
 
     let logLine = `${color}${entry.level}${reset} ${timestamp} ${service}${module}: ${entry.message}`;
@@ -313,11 +324,9 @@ export interface RequestLogContext {
 export function logRequest(context: RequestLogContext): void {
   const level = context.statusCode && context.statusCode >= 400 ? LogLevel.WARN : LogLevel.INFO;
 
-  logger.log(level, `${context.method} ${context.url}`, {
-    metadata: {
-      type: 'http_request',
-      ...context,
-    },
+  logger.info(`${context.method} ${context.url}`, {
+    type: 'http_request',
+    ...context,
   });
 }
 
