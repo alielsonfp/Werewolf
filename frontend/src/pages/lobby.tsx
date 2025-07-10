@@ -326,7 +326,7 @@ function LobbyPage() {
                   size="md"
                   onClick={toggleMusic}
                   className="text-white hover:text-salem-400"
-                  title={isMusicPlaying ? 'Desligar música' : 'Ligar música'}
+                  {...{ title: isMusicPlaying ? 'Desligar música' : 'Ligar música' } as any}
                 >
                   {isMusicPlaying ? <VolumeIcon /> : <VolumeOffIcon />}
                 </Button>
