@@ -6,7 +6,6 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
-import Layout from '@/components/common/Layout';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
@@ -28,12 +27,10 @@ function SafeNumberDisplay({ value, className = "" }: SafeNumberDisplayProps) {
     setMounted(true);
   }, []);
 
-  // ✅ No servidor, renderiza o número sem formatação para evitar mismatch
   if (!mounted) {
     return <span className={className}>{value}</span>;
   }
 
-  // ✅ No cliente, aplica a formatação brasileira
   return (
     <span className={className}>
       {value.toLocaleString('pt-BR')}
@@ -55,7 +52,6 @@ function SafeDateDisplay({ date, className = "" }: SafeDateDisplayProps) {
   }, []);
 
   if (!mounted) {
-    // Renderiza placeholder no servidor
     return <span className={className}>--:--</span>;
   }
 
@@ -69,6 +65,7 @@ function SafeDateDisplay({ date, className = "" }: SafeDateDisplayProps) {
   );
 }
 
+// Ícones SVG
 const PlusIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -118,11 +115,32 @@ const HashIcon = () => (
   </svg>
 );
 
+const LogoutIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+  </svg>
+);
+
+const VolumeIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 14.142M8.586 6L5 10H3a1 1 0 00-1 1v2a1 1 0 001 1h2l3.586 4a1 1 0 001.414-1.414L8.586 6z" />
+  </svg>
+);
+
+const VolumeOffIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 5.586L12 12m0 0l6.414 6.414M12 12L5.586 18.414M12 12l6.414-6.414M8.586 6L5 10H3a1 1 0 00-1 1v2a1 1 0 001 1h2l3.586 4a1 1 0 001.414-1.414L8.586 6z" />
+  </svg>
+);
+
 function LobbyPage() {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
   const { isConnected } = useSocket();
-  const { playSound, playMusic, stopMusic } = useTheme();
+  const { playSound, playMusic, stopMusic, getPhaseColors, getThemeClass } = useTheme();
+
+  // ✅ Aplicar cores dinâmicas do tema
+  const phaseColors = getPhaseColors();
 
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +149,7 @@ function LobbyPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
   const [musicStarted, setMusicStarted] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
@@ -144,10 +163,13 @@ function LobbyPage() {
       console.log('🎵 Iniciando música do lobby...');
       const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
       const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
-      if (randomMusic) playMusic(randomMusic);
+      if (randomMusic) {
+        playMusic(randomMusic);
+        setIsMusicPlaying(true);
+      }
       setMusicStarted(true);
     }
-  }, [isAuthLoading, isAuthenticated, musicStarted]);
+  }, [isAuthLoading, isAuthenticated, musicStarted, playMusic]);
 
   useEffect(() => {
     return () => {
@@ -156,7 +178,7 @@ function LobbyPage() {
         stopMusic();
       }
     };
-  }, [musicStarted]);
+  }, [musicStarted, stopMusic]);
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -222,21 +244,43 @@ function LobbyPage() {
     fetchRooms();
   }, [playSound, fetchRooms]);
 
+  const handleLogout = useCallback(() => {
+    console.log('🚪 Logging out...');
+    playSound('button_click');
+    logout();
+    router.push('/auth/login');
+  }, [logout, router, playSound]);
+
+  const toggleMusic = useCallback(() => {
+    if (isMusicPlaying) {
+      stopMusic();
+      setIsMusicPlaying(false);
+    } else {
+      const musicOptions = ['medieval_tavern01', 'medieval_tavern02', 'medieval_tavern03'];
+      const randomMusic = musicOptions[Math.floor(Math.random() * musicOptions.length)];
+      if (randomMusic) {
+        playMusic(randomMusic);
+        setIsMusicPlaying(true);
+      }
+    }
+    playSound('button_click');
+  }, [isMusicPlaying, stopMusic, playMusic, playSound]);
+
   if (isAuthLoading) {
     return (
       <>
         <Head>
           <title>Lobby - Lobisomem Online</title>
         </Head>
-        <Layout>
-          <div className="flex justify-center items-center min-h-[50vh]">
+        <div className={`min-h-screen transition-all duration-300 bg-gradient-to-br ${phaseColors.background} ${getThemeClass()}`}>
+          <div className="flex justify-center items-center min-h-screen">
             <LoadingSpinner
               variant="medieval"
               size="xl"
               text="Verificando autenticação..."
             />
           </div>
-        </Layout>
+        </div>
       </>
     );
   }
@@ -252,139 +296,185 @@ function LobbyPage() {
         <meta name="description" content="Encontre e participe de partidas de Werewolf" />
       </Head>
 
-      <Layout>
-        <div className="space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4"
-          >
-            <div>
-              <h1 className="text-3xl font-medieval text-glow">
+      <div className={`min-h-screen transition-all duration-300 bg-gradient-to-br ${phaseColors.background} ${getThemeClass()}`}>
+        {/* Header Simplificado */}
+        <header className="bg-medieval-800/50 border-b border-medieval-600 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              {/* Logo/Brand */}
+              <div className="flex items-center">
+                <h1 className="text-2xl font-medieval text-glow">
+                  🐺 Werewolf Online
+                </h1>
+              </div>
+
+              {/* User Info + Actions */}
+              <div className="flex items-center gap-4">
+                {/* User Info */}
+                <div className="flex items-center gap-3 bg-medieval-700/50 rounded-lg px-4 py-2 border border-medieval-600">
+                  <div className="w-8 h-8 bg-salem-500 rounded-full flex items-center justify-center text-white font-bold">
+                    {user?.username?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                  <span className="text-white font-medium">
+                    {user?.username || 'Jogador'}
+                  </span>
+                </div>
+
+                {/* Music Toggle */}
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={toggleMusic}
+                  className="text-white hover:text-salem-400"
+                  title={isMusicPlaying ? 'Desligar música' : 'Ligar música'}
+                >
+                  {isMusicPlaying ? <VolumeIcon /> : <VolumeOffIcon />}
+                </Button>
+
+                {/* Logout */}
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleLogout}
+                  className="flex items-center gap-2"
+                >
+                  <LogoutIcon />
+                  <span>Sair</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="space-y-6">
+            {/* Welcome Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center"
+            >
+              <h2 className="text-3xl font-medieval text-glow mb-4">
                 🏘️ Lobby Principal
-              </h1>
-              <p className="text-white/70 mt-2">
+              </h2>
+              <p className="text-white/70 text-lg">
                 Bem-vindo de volta, {user?.username || 'Jogador'}! Encontre uma partida ou crie sua própria sala.
               </p>
-            </div>
+            </motion.div>
 
-            <div className="flex items-center gap-3">
-              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${isConnected
-                ? 'bg-green-900/30 text-green-300 border border-green-500/30'
-                : 'bg-red-900/30 text-red-300 border border-red-500/30'
-                }`}>
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-                {isConnected ? 'Online' : 'Desconectado'}
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="flex flex-wrap gap-3"
-          >
-            <Button
-              variant="medieval"
-              size="lg"
-              onClick={handleCreateRoom}
-              className="flex-1 min-w-[200px]"
+            {/* Action Buttons */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="flex flex-wrap justify-center gap-4"
             >
-              <PlusIcon />
-              <span>Criar Sala</span>
-            </Button>
+              <Button
+                variant="medieval"
+                size="lg"
+                onClick={handleCreateRoom}
+                className="min-w-[200px]"
+              >
+                <PlusIcon />
+                <span>Criar Sala</span>
+              </Button>
 
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={handleJoinByCode}
-              className="flex-1 min-w-[200px]"
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={handleJoinByCode}
+                className="min-w-[200px]"
+              >
+                <HashIcon />
+                <span>Entrar por Código</span>
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={handleRefresh}
+                disabled={loading}
+              >
+                <RefreshIcon />
+              </Button>
+            </motion.div>
+
+            {/* Search and Filters */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="flex flex-col sm:flex-row gap-4 max-w-4xl mx-auto"
             >
-              <HashIcon />
-              <span>Entrar por Código</span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={handleRefresh}
-              disabled={loading}
-            >
-              <RefreshIcon />
-            </Button>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="flex flex-col sm:flex-row gap-4"
-          >
-            <div className="flex-1 relative">
-              <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
-                <SearchIcon />
+              <div className="flex-1 relative">
+                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50">
+                  <SearchIcon />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar salas..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-medieval-800/50 border border-medieval-600 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-salem-400 focus:border-transparent"
+                />
               </div>
-              <input
-                type="text"
-                placeholder="Buscar salas..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-medieval-800/50 border border-medieval-600 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-salem-400 focus:border-transparent"
-              />
-            </div>
 
-            <div className="flex gap-2">
-              {(['ALL', 'WAITING', 'PLAYING'] as const).map((filter) => (
-                <Button
-                  key={filter}
-                  variant={filterStatus === filter ? 'primary' : 'ghost'}
-                  size="md"
-                  onClick={() => setFilterStatus(filter)}
-                >
-                  {filter === 'ALL' ? 'Todas' : filter === 'WAITING' ? 'Aguardando' : 'Em Jogo'}
-                </Button>
-              ))}
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-          >
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <LoadingSpinner variant="medieval" size="lg" text="Carregando salas..." />
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {filteredRooms.length > 0 ? (
-                  filteredRooms.map((room, index) => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      onJoin={() => handleJoinRoom(room.id)}
-                      onSpectate={() => handleSpectateRoom(room.id)}
-                      delay={index * 0.05}
-                    />
-                  ))
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-center py-12 text-white/60"
+              <div className="flex gap-2">
+                {(['ALL', 'WAITING', 'PLAYING'] as const).map((filter) => (
+                  <Button
+                    key={filter}
+                    variant={filterStatus === filter ? 'primary' : 'ghost'}
+                    size="md"
+                    onClick={() => setFilterStatus(filter)}
                   >
-                    <div className="text-6xl mb-4">🏚️</div>
-                    <h3 className="text-xl font-semibold mb-2">Nenhuma sala encontrada</h3>
-                    <p>Tente ajustar os filtros ou criar uma nova sala.</p>
-                  </motion.div>
-                )}
+                    {filter === 'ALL' ? 'Todas' : filter === 'WAITING' ? 'Aguardando' : 'Em Jogo'}
+                  </Button>
+                ))}
               </div>
-            )}
-          </motion.div>
-        </div>
+            </motion.div>
 
+            {/* Rooms List */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="max-w-6xl mx-auto"
+            >
+              {loading ? (
+                <div className="flex justify-center py-12">
+                  <LoadingSpinner variant="medieval" size="lg" text="Carregando salas..." />
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {filteredRooms.length > 0 ? (
+                    filteredRooms.map((room, index) => (
+                      <RoomCard
+                        key={room.id}
+                        room={room}
+                        onJoin={() => handleJoinRoom(room.id)}
+                        onSpectate={() => handleSpectateRoom(room.id)}
+                        delay={index * 0.05}
+                      />
+                    ))
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-center py-12 text-white/60"
+                    >
+                      <div className="text-6xl mb-4">🏚️</div>
+                      <h3 className="text-xl font-semibold mb-2">Nenhuma sala encontrada</h3>
+                      <p>Tente ajustar os filtros ou criar uma nova sala.</p>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </div>
+        </main>
+
+        {/* Modals */}
         <CreateRoomModal
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
@@ -394,12 +484,12 @@ function LobbyPage() {
           isOpen={showJoinCodeModal}
           onClose={() => setShowJoinCodeModal(false)}
         />
-      </Layout>
+      </div>
     </>
   );
 }
 
-// ✅ CORREÇÃO: RoomCard com renderização segura de data/hora
+// Room Card Component
 interface RoomCardProps {
   room: RoomListItem;
   onJoin: () => void;
@@ -472,7 +562,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
               <span>Host: {room.hostUsername}</span>
             </div>
 
-            {/* ✅ CORREÇÃO: Usar SafeDateDisplay em vez de toLocaleTimeString direto */}
             <div className="flex items-center gap-1">
               <ClockIcon />
               <SafeDateDisplay date={room.createdAt} />

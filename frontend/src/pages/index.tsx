@@ -359,11 +359,19 @@ export default function LandingPage() {
               </div>
 
               <div className="flex space-x-4">
-                <Button variant="ghost" size="sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    playSound('button_click');
+                    window.open('https://github.com/alielsonfp/Werewolf', '_blank');
+                  }}
+                  className="hover:text-salem-400 transition-colors"
+                >
                   <Github className="w-5 h-5" />
                 </Button>
               </div>
-            </div>
+            </div> {/* ✅ ESTA DIV ESTAVA FALTANDO! */}
 
             <div className="mt-8 pt-8 border-t border-medieval-600 text-center text-white/60 text-sm">
               © 2025 Werewolf. Todos os direitos reservados.
