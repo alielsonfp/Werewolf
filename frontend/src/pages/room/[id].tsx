@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react'; // ✅ ADICIONADO useRef
 import { withAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@/context/AuthContext';
@@ -14,6 +14,9 @@ function RoomPage() {
   const { id: roomId } = router.query;
   const { connect, disconnect, isConnected, sendMessage } = useSocket();
   const { user, getToken, isAuthenticated } = useAuth();
+
+  // ✅ ADICIONADO: REF PARA PREVENIR DOUBLE SEND
+  const joinAttemptRef = useRef<string | null>(null);
 
   // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
@@ -34,35 +37,82 @@ function RoomPage() {
   const canStartGame = players.length >= 3 && players.filter(p => !p.isHost).every(p => p.isReady) && isConnected && isHost;
 
   // ✅ EFEITO #1: Apenas para conectar e desconectar ao WebSocket.
-  // Ele roda UMA VEZ quando as dependências de inicialização estiverem prontas.
   useEffect(() => {
+    console.log('🚪 [FE-ROOM] useEffect de conexão disparado!', {
+      isReady: router.isReady,
+      isAuthenticated,
+      roomId,
+      isConnected,
+      roomIdType: typeof roomId,
+      timestamp: new Date().toISOString()
+    });
+
     if (!router.isReady || !isAuthenticated || !roomId || typeof roomId !== 'string') {
-      return; // Aguarda até ter tudo o que precisa.
+      console.log('🚪 [FE-ROOM] Condições de conexão não atendidas, saindo do efeito.', {
+        routerReady: router.isReady,
+        authenticated: isAuthenticated,
+        hasRoomId: !!roomId,
+        roomIdType: typeof roomId
+      });
+      return;
     }
+
     const token = getToken();
     if (!token) {
+      console.log('🚪 [FE-ROOM] Token não encontrado, redirecionando para login');
       router.push('/auth/login');
       return;
     }
 
     const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${roomId}?token=${encodeURIComponent(token)}`;
+
+    console.log('🔌 [FE-ROOM] TENTANDO CONECTAR...', {
+      url: wsUrl,
+      isConnected,
+      currentRoomId: roomId
+    });
+
     connect(wsUrl);
 
-    // A função de cleanup é chamada QUANDO O USUÁRIO SAI DA PÁGINA.
     return () => {
+      console.log('🚪 [FE-ROOM] useEffect de conexão está sendo LIMPO (cleanup). Desconectando...');
       sendMessage('leave-room', { roomId });
       disconnect();
     };
   }, [router.isReady, isAuthenticated, roomId, connect, disconnect, getToken, router, sendMessage]);
 
-  // ✅ EFEITO #2: Apenas para entrar na sala, uma única vez por conexão.
-  // Ele REAGE à mudança de `isConnected`.
+  // ✅ EFEITO #2: CORRIGIDO - Previne double send
   useEffect(() => {
-    // Só envia a mensagem se estivermos conectados E ainda não tivermos entrado.
-    if (isConnected && !hasJoinedRoom) {
+    console.log('🔄 [FE-ROOM] useEffect join-room disparado', {
+      isConnected,
+      hasJoinedRoom,
+      roomId,
+      spectate: router.query.spectate,
+      joinAttemptCurrent: joinAttemptRef.current,
+      timestamp: new Date().toISOString()
+    });
+
+    if (isConnected && !hasJoinedRoom && roomId) {
+      // ✅ PREVENIR MULTIPLE SENDS PARA A MESMA SALA
+      if (joinAttemptRef.current === roomId) {
+        console.log('🚫 [FE-ROOM] Join já tentado para esta sala, ignorando');
+        return;
+      }
+
       const asSpectator = router.query.spectate === 'true';
+
+      console.log('📤 [FE-ROOM] Enviando join-room', {
+        roomId,
+        asSpectator,
+        timestamp: new Date().toISOString()
+      });
+
       if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
-        setHasJoinedRoom(true); // Marca que já tentamos entrar para não enviar de novo.
+        joinAttemptRef.current = roomId as string; // Marcar tentativa
+        setHasJoinedRoom(true);
+        console.log('✅ [FE-ROOM] join-room enviado, marcando hasJoinedRoom=true');
+      } else {
+        console.log('❌ [FE-ROOM] Falha ao enviar join-room');
       }
     }
   }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
@@ -71,10 +121,15 @@ function RoomPage() {
   useEffect(() => {
     const handleMessage = (event: CustomEvent) => {
       const { type, data } = event.detail;
-      console.log('📨 [RoomPage] Received:', type, data);
+      console.log('📨 [FE-ROOM] Received:', type, data);
 
       switch (type) {
         case 'room-joined':
+          console.log('📨 [FE-ROOM] room-joined recebido', {
+            room: data.room?.name,
+            playersCount: data.players?.length,
+            spectatorsCount: data.spectators?.length
+          });
           setRoom(data.room);
           setPlayers(Array.isArray(data.players) ? data.players : []);
           setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
@@ -83,6 +138,10 @@ function RoomPage() {
           break;
 
         case 'player-joined':
+          console.log('📨 [FE-ROOM] player-joined recebido', {
+            player: data.player,
+            currentPlayersCount: players.length
+          });
           if (data.player) {
             setPlayers(prev => {
               const filtered = prev.filter(p => p.userId !== data.player.userId);
@@ -135,14 +194,12 @@ function RoomPage() {
           }
           break;
 
-        // ✅ CORRIGIDO: Bug #2 - Redirecionamento para tela do jogo
         case 'game-starting':
         case 'game-started':
-        case 'game-state': // ✅ ADICIONADO: Ouvir também game-state do backend
-          // ✅ CORRIGIDO: Identificar gameId correto (backend gera "game-${roomId}")
+        case 'game-state':
           const gameId = data?.gameId || `game-${roomId}`;
 
-          console.log('🎮 [RoomPage] Game starting/started:', {
+          console.log('🎮 [FE-ROOM] Game starting/started:', {
             type,
             gameId,
             roomId,
@@ -150,11 +207,7 @@ function RoomPage() {
           });
 
           toast.success('🎮 Jogo iniciando!');
-
-          // ✅ CORRIGIDO: Desconectar WebSocket da sala antes de navegar
           disconnect();
-
-          // ✅ CORRIGIDO: Redirecionar imediatamente (sem setTimeout)
           router.push(`/game/${gameId}`);
           break;
 
@@ -181,9 +234,9 @@ function RoomPage() {
     return () => {
       window.removeEventListener('websocket-message', handleMessage as EventListener);
     };
-  }, [roomId, router, disconnect]);
+  }, [roomId, router, disconnect, players.length]);
 
-  // ✅ HANDLERS (MOVIDOS DO WAITINGROOM)
+  // ✅ HANDLERS
   const handleToggleReady = () => {
     sendMessage('player-ready', { ready: !isReady });
   };
@@ -298,7 +351,6 @@ function RoomPage() {
     );
   }
 
-  // ✅ RENDERIZA O WAITINGROOM PASSANDO TUDO COMO PROPS
   return (
     <>
       <Head>
@@ -307,25 +359,18 @@ function RoomPage() {
       </Head>
 
       <WaitingRoom
-        // IDs e dados básicos
         roomId={roomId as string}
         room={room}
         players={players}
         spectators={spectators}
         messages={messages}
-
-        // Estados do usuário
         currentUserId={currentUserId}
         isHost={isHost}
         isReady={isReady}
         canStartGame={canStartGame}
         isConnected={isConnected}
-
-        // Modal states
         showLeaveModal={showLeaveModal}
         setShowLeaveModal={setShowLeaveModal}
-
-        // Handlers
         onToggleReady={handleToggleReady}
         onStartGame={handleStartGame}
         onKickPlayer={handleKickPlayer}

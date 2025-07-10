@@ -168,15 +168,42 @@ export class MessageRouter {
   // ROOM HANDLERS
   //====================================================================
   private async handleJoinRoom(connectionId: string, data: any): Promise<void> {
+    console.log('📨 [Router-JOIN] Recebido evento join-room.', {
+      connectionId: connectionId.slice(-6),
+      roomId: data.roomId?.slice(-6),
+      isSpectator: data.asSpectator,
+      timestamp: new Date().toISOString()
+    });
+
     const connection = this.connectionManager.getConnection(connectionId);
-    if (!connection) return;
+    if (!connection) {
+      console.log('📨 [Router-JOIN] Conexão não encontrada!', { connectionId: connectionId.slice(-6) });
+      return;
+    }
+
+    console.log('📨 [Router-JOIN] Estado da conexão', {
+      connectionId: connectionId.slice(-6),
+      userId: connection.context.userId,
+      username: connection.context.username,
+      currentRoomId: connection.context.roomId?.slice(-6),
+      isSpectator: connection.context.isSpectator
+    });
 
     const { roomId, asSpectator = false } = data;
 
     if (!roomId || typeof roomId !== 'string') {
+      console.log('📨 [Router-JOIN] RoomId inválido!', { roomId, type: typeof roomId });
       await this.sendError(connectionId, 'MISSING_ROOM_ID', 'Room ID is required and must be a string');
       return;
     }
+
+    console.log('📨 [Router-JOIN] Dados validados', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      asSpectator,
+      userId: connection.context.userId,
+      username: connection.context.username
+    });
 
     try {
       // Buscar dados reais da sala no banco de dados
@@ -201,17 +228,46 @@ export class MessageRouter {
         return;
       }
 
+      console.log('📨 [Router-JOIN] Antes de chamar channelManager.joinRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        asSpectator,
+        currentRoom: this.channelManager.getConnectionRoom(connectionId)?.slice(-6)
+      });
+
       // Join the room channel
       const success = this.channelManager.joinRoom(roomId, connectionId, asSpectator);
+
+      console.log('📨 [Router-JOIN] Resultado do channelManager.joinRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        success,
+        connectionsInRoom: this.channelManager.getRoomConnections(roomId).size
+      });
+
       if (!success) {
+        console.log('📨 [Router-JOIN] FALHA ao entrar na sala!', {
+          connectionId: connectionId.slice(-6),
+          roomId: roomId.slice(-6)
+        });
         await this.sendError(connectionId, 'JOIN_ROOM_FAILED', 'Failed to join room');
         return;
       }
+
+      console.log('📨 [Router-JOIN] Antes de updateConnectionContext', {
+        connectionId: connectionId.slice(-6),
+        newRoomId: roomId.slice(-6),
+        newIsSpectator: asSpectator
+      });
 
       // Update connection context
       this.connectionManager.updateConnectionContext(connectionId, {
         roomId,
         isSpectator: asSpectator,
+      });
+
+      console.log('📨 [Router-JOIN] Após updateConnectionContext', {
+        connectionId: connectionId.slice(-6)
       });
 
       // Get room connections for player list
@@ -292,9 +348,20 @@ export class MessageRouter {
         yourRole: asSpectator ? 'SPECTATOR' : (playerForSelf.isHost ? 'HOST' : 'PLAYER'),
       });
 
+      console.log('📨 [Router-JOIN] Antes do broadcast player-joined', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        hasBroadcastFunction: !!this.broadcastToRoom
+      });
+
       // Broadcast player-joined to other room members
       if (this.broadcastToRoom) {
-        this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf }, connectionId);
+        const broadcastCount = this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf }, connectionId);
+        console.log('📨 [Router-JOIN] Resultado do broadcast', {
+          connectionId: connectionId.slice(-6),
+          roomId: roomId.slice(-6),
+          broadcastCount
+        });
       }
 
       // Publish event to event bus
@@ -304,6 +371,13 @@ export class MessageRouter {
         username: connection.context.username,
         asSpectator,
         timestamp: new Date().toISOString(),
+      });
+
+      console.log('✅ [Router-JOIN] Processo concluído com sucesso', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        username: connection.context.username,
+        asSpectator
       });
 
       wsLogger.info('Player joined room with real data', {
@@ -318,6 +392,12 @@ export class MessageRouter {
       });
 
     } catch (error) {
+      console.log('❌ [Router-JOIN] Erro capturado', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId?.slice(-6),
+        error: error.message
+      });
+
       wsLogger.error('Error joining room', error instanceof Error ? error : new Error('Unknown join room error'), {
         connectionId,
         roomId,
@@ -333,14 +413,39 @@ export class MessageRouter {
     if (!connection) return;
 
     const roomId: string | undefined = data?.roomId || connection.context.roomId;
+
+    // ✅ LOG DE ENTRADA
+    console.log('🚪 [Router-LEAVE] Recebido evento leave-room.', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId?.slice(-6),
+      fromData: !!data?.roomId,
+      fromContext: !!connection.context.roomId,
+      timestamp: new Date().toISOString()
+    });
+
     if (!roomId) {
+      console.log('🚪 [Router-LEAVE] Não está em sala!', {
+        connectionId: connectionId.slice(-6)
+      });
       await this.sendError(connectionId, 'NOT_IN_ROOM', 'Not currently in a room');
       return;
     }
 
     try {
+      console.log('🚪 [Router-LEAVE] Antes de channelManager.leaveRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6)
+      });
+
       // Leave the room channel
       const success = this.channelManager.leaveRoom(roomId, connectionId);
+
+      console.log('🚪 [Router-LEAVE] Resultado do channelManager.leaveRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        success
+      });
+
       if (!success) {
         await this.sendError(connectionId, 'LEAVE_ROOM_FAILED', 'Failed to leave room');
         return;
@@ -371,6 +476,12 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       });
 
+      console.log('✅ [Router-LEAVE] Processo concluído com sucesso', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        username: connection.context.username
+      });
+
       wsLogger.info('Player left room', {
         connectionId,
         userId: connection.context.userId,
@@ -379,6 +490,12 @@ export class MessageRouter {
       });
 
     } catch (error) {
+      console.log('❌ [Router-LEAVE] Erro capturado', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId?.slice(-6),
+        error: error.message
+      });
+
       wsLogger.error('Error leaving room', error instanceof Error ? error : new Error('Unknown leave room error'), {
         connectionId,
         roomId,

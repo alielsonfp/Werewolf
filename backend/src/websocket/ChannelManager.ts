@@ -24,6 +24,7 @@ export class ChannelManager {
     this.rooms.set(roomId, {
       players: new Set(),
       spectators: new Set(),
+      readyPlayers: new Set(),
       createdAt: new Date(),
       lastActivity: new Date(),
     });
@@ -33,26 +34,73 @@ export class ChannelManager {
   }
 
   joinRoom(roomId: string, connectionId: string, asSpectator = false): boolean {
+    console.log('🏠 [ChannelManager-JOIN] Iniciando processo', {
+      roomId: roomId.slice(-6),
+      connectionId: connectionId.slice(-6),
+      asSpectator,
+      timestamp: new Date().toISOString()
+    });
+
     let room = this.rooms.get(roomId);
 
     if (!room) {
+      console.log('🏠 [ChannelManager-JOIN] Sala não existe, criando nova', { roomId: roomId.slice(-6) });
       this.createRoom(roomId);
       room = this.rooms.get(roomId)!;
+    } else {
+      console.log('🏠 [ChannelManager-JOIN] Sala já existe', {
+        roomId: roomId.slice(-6),
+        currentPlayers: room.players.size,
+        currentSpectators: room.spectators.size
+      });
     }
 
+    // ✅ SUSPEITO #1: LOG DETALHADO DO LEAVE AUTOMÁTICO
     const currentRoom = this.connectionRooms.get(connectionId);
-    if (currentRoom) {
+    if (currentRoom === roomId) {
+      console.log('🔄 [ChannelManager-JOIN] Conexão já está na mesma sala, ignorando', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6)
+      });
+      return true; // Já está na sala certa, não precisa fazer nada
+    }
+
+    if (currentRoom && currentRoom !== roomId) {
+      console.log('🔄 [ChannelManager-JOIN] Conexão mudando de sala', {
+        connectionId: connectionId.slice(-6),
+        fromRoom: currentRoom.slice(-6),
+        toRoom: roomId.slice(-6)
+      });
       this.leaveRoom(currentRoom, connectionId);
     }
 
+    // ✅ ADICIONAR À SALA
     if (asSpectator) {
       room.spectators.add(connectionId);
+      console.log('👁️ [ChannelManager-JOIN] Adicionado como spectator', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        totalSpectators: room.spectators.size
+      });
     } else {
       room.players.add(connectionId);
+      console.log('👤 [ChannelManager-JOIN] Adicionado como player', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        totalPlayers: room.players.size
+      });
     }
 
     this.connectionRooms.set(connectionId, roomId);
     room.lastActivity = new Date();
+
+    console.log('✅ [ChannelManager-JOIN] Processo concluído', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      finalPlayers: room.players.size,
+      finalSpectators: room.spectators.size,
+      connectionMapped: this.connectionRooms.has(connectionId)
+    });
 
     wsLogger.debug('Connection joined room', {
       connectionId,
@@ -66,8 +114,18 @@ export class ChannelManager {
   }
 
   leaveRoom(roomId: string, connectionId: string): boolean {
+    console.log('🚪 [ChannelManager-LEAVE] Iniciando processo', {
+      roomId: roomId.slice(-6),
+      connectionId: connectionId.slice(-6),
+      timestamp: new Date().toISOString()
+    });
+
     const room = this.rooms.get(roomId);
     if (!room) {
+      console.log('🚪 [ChannelManager-LEAVE] Sala não existe!', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
       wsLogger.warn('Attempted to leave non-existent room', { roomId, connectionId });
       return false;
     }
@@ -75,7 +133,20 @@ export class ChannelManager {
     const wasPlayer = room.players.delete(connectionId);
     const wasSpectator = room.spectators.delete(connectionId);
 
+    console.log('🚪 [ChannelManager-LEAVE] Remoção das listas', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      wasPlayer,
+      wasSpectator,
+      remainingPlayers: room.players.size,
+      remainingSpectators: room.spectators.size
+    });
+
     if (!wasPlayer && !wasSpectator) {
+      console.log('🚪 [ChannelManager-LEAVE] Conexão não estava na sala!', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
       wsLogger.warn('Connection was not in room', { roomId, connectionId });
       return false;
     }
@@ -83,10 +154,23 @@ export class ChannelManager {
     this.connectionRooms.delete(connectionId);
     room.lastActivity = new Date();
 
+    // ✅ LOG CRÍTICO: QUANDO SALA FICA VAZIA
     if (room.players.size === 0 && room.spectators.size === 0) {
+      console.log('🗑️ [ChannelManager-LEAVE] Sala ficou vazia, removendo', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
       this.rooms.delete(roomId);
       wsLogger.info('Room channel removed (empty)', { roomId });
     }
+
+    console.log('✅ [ChannelManager-LEAVE] Processo concluído', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      wasPlayer,
+      wasSpectator,
+      roomStillExists: this.rooms.has(roomId)
+    });
 
     wsLogger.debug('Connection left room', {
       connectionId,
@@ -286,7 +370,6 @@ export class ChannelManager {
 
     room.lastActivity = new Date();
   }
-
 
   // ✅ Verifica se um jogador está marcado como "pronto"
   isPlayerReady(roomId: string, connectionId: string): boolean {
