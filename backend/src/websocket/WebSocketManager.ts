@@ -150,9 +150,10 @@ export class WebSocketManager {
         });
       } else if (context.roomId) {
         // Se é uma conexão de SALA, acione o `join-room`.
-        await this.messageRouter.handleMessage(connectionId, {
-          type: 'join-room',
-          data: { roomId: context.roomId }
+        wsLogger.info('Room connection established. Awaiting join-room request from client.', {
+          connectionId,
+          roomId: context.roomId,
+          userId: context.userId
         });
       }
 
