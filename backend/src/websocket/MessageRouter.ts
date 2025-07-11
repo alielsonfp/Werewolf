@@ -895,12 +895,15 @@ export class MessageRouter {
       );
 
       if (success) {
+        // ✅ PASSO 1a: ENVIAR CONFIRMAÇÃO DIRETA PARA O VOTANTE
+        // Esta é a nova linha crucial.
         await this.sendToConnection(connectionId, 'vote-confirmed', {
-          message: 'Voto registrado',
+          message: 'Voto registrado com sucesso!',
           targetId
         });
 
-        // Broadcast vote update to all players in room
+        // ✅ PASSO 1b: BROADCAST PARA TODOS (LÓGICA EXISTENTE)
+        // Isso atualiza a contagem de votos para todos os outros jogadores.
         if (this.broadcastToRoom) {
           const voteCounts = Object.fromEntries(gameState.getVoteCounts());
           this.broadcastToRoom(connection.context.roomId, 'voting-update', {
