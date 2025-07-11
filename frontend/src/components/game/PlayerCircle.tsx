@@ -2,14 +2,18 @@ import React, { useState } from 'react';
 import { useGame } from '@/context/GameContext';
 import { useTheme } from '@/context/ThemeContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { Player, GamePhase, Role } from '@/types';
 import PlayerActionModal from './PlayerActionModal';
-import { Player, GamePhase } from '@/types';
 
 // =============================================================================
 // PLAYER EMOJIS - Lista de emojis de pessoas para usar nas bolinhas
 // =============================================================================
 const PLAYER_EMOJIS = [
-  '👨', '👩', '🧑', '👴', '👵'];
+  '👨', '👩', '🧑', '👴', '👵', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓', '👨‍⚕️',
+  '👩‍⚕️', '👨‍🌾', '👩‍🌾', '👨‍🍳', '👩‍🍳', '👨‍🔧', '👩‍🔧', '👨‍🏭', '👩‍🏭', '👨‍💻',
+  '👩‍💻', '👨‍🎨', '👩‍🎨', '👨‍🚒', '👩‍🚒', '👮‍♂️', '👮‍♀️', '🧙‍♂️', '🧙‍♀️', '🧝‍♂️',
+  '🧝‍♀️', '🧛‍♂️', '🧛‍♀️', '🧟‍♂️', '🧟‍♀️', '👸', '🤴', '👰', '🤵', '🤱'
+];
 
 // =============================================================================
 // HELPER FUNCTION - Get player emoji by ID
@@ -76,14 +80,23 @@ export default function PlayerCircle() {
   // PLAYER CLICK HANDLER
   // =============================================================================
   const handlePlayerClick = (player: Player) => {
+    console.log('🎯 DEBUG - Player clicked:', {
+      targetPlayer: player.username,
+      targetRole: player.role,
+      myRole: me?.role,
+      gamePhase: gameState?.phase
+    });
+
     // Don't allow actions if not logged in or no game state
     if (!me || !gameState) {
+      console.log('❌ No me or gameState');
       playSound('error');
       return;
     }
 
     // Don't allow clicking on dead players
     if (!player.isAlive) {
+      console.log('❌ Player is dead');
       playSound('error');
       return;
     }
@@ -91,13 +104,38 @@ export default function PlayerCircle() {
     // Don't allow actions during certain phases
     const canAct = gameState.phase === GamePhase.VOTING || 
                    (gameState.phase === GamePhase.NIGHT && me.role && 
-                    ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role));
+                    [Role.SHERIFF, Role.DOCTOR, Role.WEREWOLF_KING, Role.VIGILANTE, Role.SERIAL_KILLER].includes(me.role));
     
     if (!canAct) {
+      console.log('❌ Cannot act in this phase');
       playSound('error');
       return;
     }
 
+    // ✅ VALIDAÇÃO PRINCIPAL: Verificar se ambos são lobos (CORRIGIDA PARA ENUMS)
+    const isTargetWerewolf = player.role === Role.WEREWOLF || player.role === Role.WEREWOLF_KING;
+    const isMeWerewolf = me.role === Role.WEREWOLF || me.role === Role.WEREWOLF_KING;
+    const isBothWerewolves = isTargetWerewolf && isMeWerewolf && player.id !== me.id;
+
+    console.log('🐺 DEBUG - Werewolf check:', {
+      isTargetWerewolf,
+      isMeWerewolf,
+      isBothWerewolves,
+      targetId: player.id,
+      myId: me.id
+    });
+
+    // Se ambos são lobos, bloquear qualquer ação (votação ou ataque)
+    if (isBothWerewolves) {
+      console.log('🚫 BLOCKED - Both are werewolves!');
+      playSound('error');
+      
+      // Mostrar feedback visual rápido
+      alert(`🐺 Proteção da Alcateia!\n\nLobos não podem agir contra outros lobos.\n\nSeu role: ${me.role}\nAlvo: ${player.username} (${player.role})`);
+      return;
+    }
+
+    console.log('✅ Action allowed - Opening modal');
     // Open modal for selected player
     playSound('button_click');
     setSelectedPlayer(player);
@@ -117,10 +155,22 @@ export default function PlayerCircle() {
   // =============================================================================
   const getPlayerStyles = (player: Player) => {
     const isCurrentPlayer = player.id === me?.id;
-    const canClickPlayer = me && gameState && player.isAlive && 
-                          (gameState.phase === GamePhase.VOTING || 
-                           (gameState.phase === GamePhase.NIGHT && me.role && 
-                            ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role)));
+    
+    // ✅ NOVA LÓGICA: Verificar se pode clicar (considerando proteção de lobos)
+    let canClickPlayer = false;
+    if (me && gameState && player.isAlive) {
+      const isTargetWerewolf = player.role === Role.WEREWOLF || player.role === Role.WEREWOLF_KING;
+      const isMeWerewolf = me.role === Role.WEREWOLF || me.role === Role.WEREWOLF_KING;
+      const isBothWerewolves = isTargetWerewolf && isMeWerewolf && !isCurrentPlayer;
+      
+      // Pode clicar se: fase correta + role válida + não são ambos lobos
+      const hasValidPhase = gameState.phase === GamePhase.VOTING || 
+                           (gameState.phase === GamePhase.NIGHT && 
+                            me.role !== undefined && 
+                            [Role.SHERIFF, Role.DOCTOR, Role.WEREWOLF_KING, Role.VIGILANTE, Role.SERIAL_KILLER].includes(me.role));
+      
+      canClickPlayer = Boolean(hasValidPhase && !isBothWerewolves);
+    }
 
     let baseClasses = `
       relative w-16 h-16 rounded-full border-4 flex items-center justify-center
@@ -140,7 +190,7 @@ export default function PlayerCircle() {
                        cursor-pointer hover:ring-2 hover:ring-blue-400/50
                        active:scale-95`;
     }
-    // Non-clickable players
+    // Non-clickable players (including protected werewolves)
     else {
       baseClasses += ` border-gray-400 bg-gradient-to-br from-gray-600/80 to-gray-800/80`;
     }
@@ -158,7 +208,7 @@ export default function PlayerCircle() {
 
     const isVoting = gameState.phase === GamePhase.VOTING;
     const isNight = gameState.phase === GamePhase.NIGHT;
-    const hasNightAbility = me.role && ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role);
+    const hasNightAbility = me.role && [Role.SHERIFF, Role.DOCTOR, Role.WEREWOLF_KING, Role.VIGILANTE, Role.SERIAL_KILLER].includes(me.role);
 
     if (isVoting) {
       return (
@@ -170,11 +220,11 @@ export default function PlayerCircle() {
 
     if (isNight && hasNightAbility && !me.hasActed) {
       const abilityIcons = {
-        'SHERIFF': '🔍',
-        'DOCTOR': '🛡️',
-        'WEREWOLF': '🐺',
-        'VIGILANTE': '⚔️',
-        'SERIAL_KILLER': '🔪'
+        [Role.SHERIFF]: '🔍',
+        [Role.DOCTOR]: '🛡️',
+        [Role.WEREWOLF_KING]: '👑',
+        [Role.VIGILANTE]: '⚔️',
+        [Role.SERIAL_KILLER]: '🔪'
       };
       
       return (
@@ -272,7 +322,7 @@ export default function PlayerCircle() {
               </div>
             )}
             {gameState.phase === GamePhase.NIGHT && me.role && 
-             ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role) && 
+             [Role.SHERIFF, Role.DOCTOR, Role.WEREWOLF_KING, Role.VIGILANTE, Role.SERIAL_KILLER].includes(me.role) && 
              !me.hasActed && (
               <div className="bg-black/60 rounded-lg px-4 py-2 backdrop-blur-sm">
                 ✨ Clique em um jogador para usar sua habilidade
@@ -288,11 +338,13 @@ export default function PlayerCircle() {
       </div>
 
       {/* Player Action Modal */}
-      <PlayerActionModal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        targetPlayer={selectedPlayer}
-      />
+      {isModalOpen && selectedPlayer && (
+        <PlayerActionModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          targetPlayer={selectedPlayer}
+        />
+      )}
     </>
   );
 }

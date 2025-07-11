@@ -165,7 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Lógica de falha...
       console.log('🔐 Login failed:', response.error || response.message);
       const errorMessage = response.message || response.error || 'Ocorreu uma falha.';
-      toast.error(errorMessage);
+      //toast.error(errorMessage);
       return false;
     }
   };
@@ -197,7 +197,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Lógica de falha...
       console.log('🔐 Registration failed:', response.error || response.message);
       const errorMessage = response.message || response.error || 'Erro ao criar conta';
-      toast.error(errorMessage);
+      //toast.error(errorMessage);
       return false;
     }
   };

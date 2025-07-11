@@ -145,7 +145,7 @@ apiClient.interceptors.response.use(
           break;
 
         case 500:
-          toast.error('Erro interno do servidor. Tente novamente.');
+          //toast.error('Erro interno do servidor. Tente novamente.');
           break;
 
         case 502:

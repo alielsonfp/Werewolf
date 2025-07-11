@@ -209,13 +209,13 @@ function RoomPage() {
           break;
 
         case 'room-deleted':
-          toast.error(data.reason || 'A sala foi encerrada pelo host');
+          //toast.error(data.reason || 'A sala foi encerrada pelo host');
           router.push('/lobby');
           break;
 
         case 'error':
           if (data.message) {
-            toast.error(data.message);
+            //toast.error(data.message);
           }
           break;
       }

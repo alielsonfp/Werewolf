@@ -9,7 +9,7 @@ import { Player, Role, GamePhase } from '@/types';
 // =============================================================================
 // TYPES
 // =============================================================================
-interface PlayerActionModalProps {
+export interface PlayerActionModalProps {
     isOpen: boolean;
     onClose: () => void;
     targetPlayer: Player | null;
@@ -43,13 +43,15 @@ const getRoleAction = (role: Role | undefined): RoleAction | null => {
                 description: 'Proteja este jogador de ataques',
                 icon: '🛡️'
             };
-        case Role.WEREWOLF:
+        case Role.WEREWOLF_KING:
             return {
                 type: 'WEREWOLF_KILL',
                 label: 'Atacar',
                 description: 'Elimine este jogador durante a noite',
-                icon: '🐺'
+                icon: '👑'
             };
+        case Role.WEREWOLF:
+            return null; // Werewolf normal não tem ações noturnas
         case Role.VIGILANTE:
             return {
                 type: 'VIGILANTE_KILL',
@@ -98,6 +100,11 @@ export default function PlayerActionModal({
     // Can't target self for most actions (except protection)
     const isSelfTarget = targetPlayer.id === me.id;
     const canTargetSelf = roleAction?.type === 'PROTECT';
+
+    // ✅ NOVA VALIDAÇÃO: Verificar se são ambos lobos (CORRIGIDA)
+    const isTargetWerewolf = targetPlayer.role === Role.WEREWOLF || targetPlayer.role === Role.WEREWOLF_KING;
+    const isMeWerewolf = me.role === Role.WEREWOLF || me.role === Role.WEREWOLF_KING;
+    const isBothWerewolves = isTargetWerewolf && isMeWerewolf && !isSelfTarget; // Não conta self-target
 
     // =============================================================================
     // ACTION HANDLERS
@@ -167,6 +174,36 @@ export default function PlayerActionModal({
             );
         }
 
+        // ✅ NOVA VALIDAÇÃO: Lobos não podem votar em outros lobos
+        if (isBothWerewolves) {
+            return (
+                <Modal
+                    isOpen={isOpen}
+                    onClose={onClose}
+                    title="🐺 Proteção da Alcateia"
+                    variant="medieval"
+                    size="sm"
+                >
+                    <div className="space-y-6">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">🐺</div>
+                            <p className="text-white/90">
+                                Lobos não podem votar contra outros membros da alcateia!
+                            </p>
+                            <p className="text-white/70 text-sm mt-2">
+                                A lealdade entre lobos é inquebrantável.
+                            </p>
+                        </div>
+                        <div className="flex justify-center">
+                            <Button variant="secondary" onClick={handleCancel}>
+                                Entendi
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            );
+        }
+
         return (
             <Modal
                 isOpen={isOpen}
@@ -203,6 +240,36 @@ export default function PlayerActionModal({
     // RENDER NIGHT ACTION
     // =============================================================================
     if (isNightPhase && roleAction) {
+        // ✅ PRIMEIRA VALIDAÇÃO: Werewolf King não pode atacar outros lobos
+        if (isBothWerewolves && me.role === Role.WEREWOLF_KING) {
+            return (
+                <Modal
+                    isOpen={isOpen}
+                    onClose={onClose}
+                    title="👑 Lealdade da Alcateia"
+                    variant="medieval"
+                    size="sm"
+                >
+                    <div className="space-y-6">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">👑</div>
+                            <p className="text-white/90">
+                                Um Rei Lobo não ataca seus próprios súditos!
+                            </p>
+                            <p className="text-white/70 text-sm mt-2">
+                                Escolha um alvo fora da alcateia.
+                            </p>
+                        </div>
+                        <div className="flex justify-center">
+                            <Button variant="secondary" onClick={handleCancel}>
+                                Entendi
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            );
+        }
+
         // Check if can target self
         if (isSelfTarget && !canTargetSelf) {
             return (
