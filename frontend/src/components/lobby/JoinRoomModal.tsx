@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/router';
@@ -17,7 +17,6 @@ export default function JoinRoomModal({ isOpen, onClose }: JoinRoomModalProps) {
   const router = useRouter();
 
   const [roomCode, setRoomCode] = useState('');
-  const [asSpectator, setAsSpectator] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,10 +32,9 @@ export default function JoinRoomModal({ isOpen, onClose }: JoinRoomModalProps) {
     try {
       const response = await apiService.post('/api/rooms/join-by-code', {
         code: roomCode.toUpperCase(),
-        asSpectator,
       });
 
-      toast.success(`${asSpectator ? 'Espectando' : 'Entrou na'} sala com sucesso!`);
+      toast.success('Entrou na sala com sucesso!');
       onClose();
 
       // ✅ CORREÇÃO APLICADA AQUI
@@ -65,7 +63,6 @@ export default function JoinRoomModal({ isOpen, onClose }: JoinRoomModalProps) {
   const handleClose = () => {
     if (!loading) {
       setRoomCode('');
-      setAsSpectator(false);
       onClose();
     }
   };
@@ -93,22 +90,6 @@ export default function JoinRoomModal({ isOpen, onClose }: JoinRoomModalProps) {
             className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase tracking-widest"
             disabled={loading}
           />
-        </div>
-
-        {/* Entrar como Espectador */}
-        <div className="flex items-center gap-2">
-          <input
-            id="spectator"
-            type="checkbox"
-            checked={asSpectator}
-            onChange={(e) => setAsSpectator(e.target.checked)}
-            className="rounded"
-            disabled={loading}
-          />
-          <label htmlFor="spectator" className="text-sm text-slate-300 flex items-center gap-2">
-            <Eye className="w-4 h-4" />
-            Entrar como espectador
-          </label>
         </div>
 
         {/* Botões */}

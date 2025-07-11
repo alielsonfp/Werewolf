@@ -1,17 +1,15 @@
 import React from 'react';
 import { useGame } from '@/context/GameContext';
-import PhaseIndicator from './PhaseIndicator';
 import TimerDisplay from './TimerDisplay';
 import RoleCard from './RoleCard';
 import PlayerCircle from './PlayerCircle';
 import ChatGigante from './ChatGigante';
 import PlayerList from './PlayerList';
 import ActionPanel from './ActionPanel';
-import WillNotes from './WillNotes';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
-// GAME BOARD COMPONENT - LAYOUT TOWN OF SALEM
+// GAME BOARD COMPONENT - LAYOUT TOWN OF SALEM (SEM PHASE INDICATOR E WILL NOTES)
 // =============================================================================
 export default function GameBoard() {
   const { gameState, isLoading, error, me, connectionStatus } = useGame();
@@ -33,18 +31,18 @@ export default function GameBoard() {
   // =============================================================================
   // ERROR STATE
   // =============================================================================
-  if (error || connectionStatus === 'error') {
+  if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6">
-          <div className="text-red-400 text-6xl mb-4">💀</div>
-          <h2 className="text-xl font-bold text-white mb-4">Erro no Jogo</h2>
-          <p className="text-white/70">{error || 'Erro de conexão'}</p>
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-white mb-2">Erro no Jogo</h2>
+          <p className="text-red-400 mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"
+            className="bg-medieval-600 hover:bg-medieval-500 text-white px-4 py-2 rounded"
           >
-            Recarregar
+            Recarregar Página
           </button>
         </div>
       </div>
@@ -54,47 +52,55 @@ export default function GameBoard() {
   // =============================================================================
   // NO GAME STATE
   // =============================================================================
-  if (!gameState || connectionStatus === 'disconnected') {
+  if (!gameState) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-pulse">
-            <div className="text-amber-400 text-6xl mb-4">🌙</div>
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">Aguardando Jogo</h2>
-          <p className="text-white/70">Conectando ao servidor...</p>
+          <div className="text-6xl mb-4">🎮</div>
+          <h2 className="text-xl font-bold text-white mb-2">Jogo não encontrado</h2>
+          <p className="text-white/70 mb-4">O estado do jogo não foi carregado.</p>
+          <button
+            onClick={() => window.location.href = '/lobby'}
+            className="bg-medieval-600 hover:bg-medieval-500 text-white px-4 py-2 rounded"
+          >
+            Voltar ao Lobby
+          </button>
         </div>
       </div>
     );
   }
 
   // =============================================================================
-  // LOBBY STATE
+  // WAITING FOR PLAYERS
   // =============================================================================
-  if (gameState.phase === 'LOBBY' || gameState.status === 'WAITING') {
+  if (gameState.status === 'WAITING') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black flex items-center justify-center">
-        <div className="text-center max-w-2xl mx-auto p-8">
-          <div className="text-6xl mb-6">🏰</div>
-          <h2 className="text-3xl font-bold text-white mb-4">Preparando o Jogo</h2>
-          <p className="text-white/70 mb-6">
-            O jogo está sendo configurado...
-          </p>
+        <div className="text-center">
+          <div className="text-6xl mb-4">⏳</div>
+          <h2 className="text-xl font-bold text-white mb-4">Aguardando Jogadores</h2>
 
-          <div className="bg-medieval-800/30 border border-medieval-600 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Jogadores ({gameState.players.length})
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {gameState.players.map((player) => (
-                <div
-                  key={player.id}
-                  className="flex items-center space-x-2 p-2 bg-medieval-800/50 border border-medieval-600 rounded"
-                >
-                  <div className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
-                  <span className="text-white text-sm">{player.username}</span>
-                  {player.isHost && <span className="text-amber-400 text-xs">👑</span>}
-                  {player.isReady && <span className="text-green-400 text-xs">✓</span>}
+          <div className="bg-medieval-800/50 rounded-lg p-6 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <div className="text-2xl font-bold text-white">{gameState.players?.length || 0}</div>
+                <div className="text-sm text-white/70">Jogadores</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-white">{gameState.spectators?.length || 0}</div>
+                <div className="text-sm text-white/70">Espectadores</div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {gameState.players?.map((player: any) => (
+                <div key={player.id} className="flex items-center justify-between p-2 bg-medieval-700 rounded">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                    <span className="text-white text-sm">{player.username}</span>
+                    {player.isHost && <span className="text-amber-400 text-xs">👑</span>}
+                    {player.isReady && <span className="text-green-400 text-xs">✓</span>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -110,26 +116,33 @@ export default function GameBoard() {
   }
 
   // =============================================================================
-  // MAIN GAME LAYOUT - TOWN OF SALEM STYLE
+  // DETERMINE BACKGROUND BASED ON PHASE
+  // =============================================================================
+  const getBackgroundClass = () => {
+    if (gameState.phase === 'NIGHT') {
+      return 'bg-gradient-to-br from-blue-900 via-blue-800 to-blue-950';
+    }
+    return 'bg-gradient-to-br from-medieval-900 via-medieval-800 to-black';
+  };
+
+  // =============================================================================
+  // MAIN GAME LAYOUT - TOWN OF SALEM STYLE (MODIFICADO)
   // =============================================================================
   return (
-    <div className="h-screen bg-gradient-to-br from-medieval-900 via-medieval-800 to-black">
-      {/* Top Header Bar */}
+    <div className={`h-screen transition-all duration-1000 ${getBackgroundClass()}`}>
+      {/* Top Header Bar - SEM PHASE INDICATOR E SEM TÍTULO */}
       <header className="h-16 bg-medieval-800/50 border-b border-medieval-600 flex items-center justify-between px-4">
-        {/* Left: Phase & Day */}
-        <PhaseIndicator />
+        {/* Left: Espaço vazio onde estava o PhaseIndicator */}
+        <div className="w-32"></div>
 
-        {/* Center: Game Title */}
-        <div className="flex items-center space-x-2">
-          <span className="text-2xl">🐺</span>
-          <h1 className="text-xl font-bold text-white">Lobisomem Online</h1>
-        </div>
+        {/* Center: Espaço vazio onde estava o título */}
+        <div className="w-32"></div>
 
         {/* Right: Timer */}
         <TimerDisplay />
       </header>
 
-      {/* Main Game Grid - 6 Sections Layout */}
+      {/* Main Game Grid - LAYOUT ORIGINAL RESTAURADO */}
       <main className="h-[calc(100vh-4rem)] grid grid-cols-12 grid-rows-2 gap-4 p-4">
 
         {/* Left Column - Top: Role Card */}
@@ -152,10 +165,9 @@ export default function GameBoard() {
           <PlayerList />
         </section>
 
-        {/* Center Column - Bottom: Action Panel & Will Notes */}
-        <section className="col-span-6 row-span-1 grid grid-cols-2 gap-4">
+        {/* Center Column - Bottom: APENAS Action Panel (sem WillNotes) */}
+        <section className="col-span-6 row-span-1">
           <ActionPanel />
-          <WillNotes />
         </section>
 
       </main>
@@ -167,22 +179,21 @@ export default function GameBoard() {
             <div className="text-center">
               <div className="text-6xl mb-4">
                 {gameState.winningFaction === 'TOWN' ? '🏘️' :
-                  gameState.winningFaction === 'WEREWOLF' ? '🐺' : '⚡'}
+                  gameState.winningFaction === 'WEREWOLF' ? '🐺' :
+                    gameState.winningFaction === 'NEUTRAL' ? '🎭' : '⚡'}
               </div>
-
               <h2 className="text-2xl font-bold text-white mb-4">
-                Fim de Jogo!
+                {gameState.winningFaction === 'TOWN' ? 'Cidade Venceu!' :
+                  gameState.winningFaction === 'WEREWOLF' ? 'Lobisomens Venceram!' :
+                    gameState.winningFaction === 'NEUTRAL' ? 'Neutros Venceram!' : 'Jogo Encerrado!'}
               </h2>
-
               <p className="text-white/70 mb-6">
-                {gameState.winningFaction === 'TOWN' && 'A Vila Venceu!'}
-                {gameState.winningFaction === 'WEREWOLF' && 'Os Lobisomens Venceram!'}
-                {gameState.winningFaction === 'NEUTRAL' && 'Neutros Venceram!'}
-                {!gameState.winningFaction && 'Jogo Encerrado'}
+                O jogo terminou!
               </p>
 
+              {/* Mostrar jogadores vencedores se existirem */}
               {gameState.winningPlayers && gameState.winningPlayers.length > 0 && (
-                <div className="mb-6">
+                <div className="mb-4">
                   <h3 className="text-lg font-semibold text-white mb-2">Vencedores:</h3>
                   <div className="space-y-1">
                     {gameState.winningPlayers.map((playerId) => {
@@ -197,28 +208,9 @@ export default function GameBoard() {
                 </div>
               )}
 
-              {/* All Players Results */}
-              <div className="mb-6 max-h-48 overflow-y-auto">
-                <h3 className="text-lg font-semibold text-white mb-2">Todos os Jogadores:</h3>
-                <div className="space-y-1 text-sm">
-                  {gameState.players.filter(p => !p.isSpectator).map((player) => (
-                    <div key={player.id} className="flex justify-between text-white/70">
-                      <span>{player.username}</span>
-                      <span className={`
-                        ${player.faction === 'TOWN' ? 'text-green-400' :
-                          player.faction === 'WEREWOLF' ? 'text-red-400' :
-                            'text-purple-400'}
-                      `}>
-                        {player.role}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <button
                 onClick={() => window.location.href = '/lobby'}
-                className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200"
+                className="bg-medieval-600 hover:bg-medieval-500 text-white px-6 py-2 rounded"
               >
                 Voltar ao Lobby
               </button>

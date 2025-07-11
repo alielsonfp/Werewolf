@@ -3,7 +3,7 @@ import { useGame } from '@/context/GameContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
-// PLAYER CIRCLE COMPONENT - PLAYERS AO REDOR DA FORCA
+// PLAYER CIRCLE COMPONENT - PLAYERS AO REDOR DA FORCA (SEM CEMITÉRIO)
 // =============================================================================
 export default function PlayerCircle() {
   const { gameState, me } = useGame();
@@ -20,10 +20,9 @@ export default function PlayerCircle() {
   }
 
   // =============================================================================
-  // FILTER PLAYERS
+  // FILTER PLAYERS - APENAS JOGADORES VIVOS
   // =============================================================================
   const alivePlayers = gameState.players.filter(p => p.isAlive && !p.isSpectator);
-  const deadPlayers = gameState.players.filter(p => !p.isAlive && !p.isSpectator);
 
   // =============================================================================
   // CALCULATE PLAYER POSITIONS IN CIRCLE
@@ -70,80 +69,58 @@ export default function PlayerCircle() {
         return (
           <div
             key={player.id}
-            className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 hover:scale-110"
+            className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer group"
             style={{
               left: `${position.x}%`,
               top: `${position.y}%`,
             }}
           >
-            {/* Player Avatar Container */}
+            {/* Player Avatar */}
             <div className={`
-              relative w-16 h-16 rounded-full border-2 transition-all duration-200
+              w-12 h-12 rounded-full border-2 flex items-center justify-center text-lg
+              transition-all duration-200 group-hover:scale-110
               ${isMe
-                ? 'border-blue-400 bg-blue-900/80 ring-2 ring-blue-400/50'
-                : 'border-medieval-600 bg-medieval-700/80 hover:border-amber-400'
+                ? 'border-blue-400 bg-blue-900/70 text-blue-200'
+                : hasVoted
+                  ? 'border-green-400 bg-green-900/70 text-green-200'
+                  : 'border-medieval-300 bg-medieval-700/70 text-white'
               }
+              ${votesReceived > 0 ? 'ring-2 ring-red-400 ring-opacity-75' : ''}
             `}>
-
-              {/* Avatar */}
-              <div className="w-full h-full rounded-full flex items-center justify-center text-2xl">
-                {player.avatar ? (
-                  <img src={player.avatar} alt={player.username} className="w-full h-full rounded-full" />
-                ) : (
-                  player.isHost ? '👑' : isMe ? '👤' : '🧑'
-                )}
-              </div>
-
-              {/* Connection Status Dot */}
-              <div className={`
-                absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-medieval-900
-                ${player.isConnected ? 'bg-green-400' : 'bg-red-400'}
-              `} />
-
-              {/* Vote Count Badge */}
-              {votesReceived > 0 && gameState.phase === 'VOTING' && (
-                <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-xs rounded-full px-2 py-1 font-bold min-w-[24px] text-center">
-                  {votesReceived}
-                </div>
-              )}
-
-              {/* Has Voted Indicator */}
-              {hasVoted && gameState.phase === 'VOTING' && (
-                <div className="absolute -top-2 -left-2 text-green-400 text-lg">
-                  ✓
-                </div>
-              )}
-
-              {/* Protected Shield */}
-              {player.isProtected && (
-                <div className="absolute -bottom-2 -right-2 text-blue-400 text-lg">
-                  🛡️
-                </div>
-              )}
-
-              {/* Host Crown */}
-              {player.isHost && (
-                <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-amber-400 text-lg">
-                  👑
-                </div>
-              )}
+              {player.username?.[0]?.toUpperCase() || '?'}
             </div>
 
-            {/* Player Name */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 text-center min-w-[80px]">
+            {/* Vote Count Indicator */}
+            {votesReceived > 0 && gameState.phase === 'VOTING' && (
+              <div className="absolute -top-2 -right-2 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold animate-pulse">
+                {votesReceived}
+              </div>
+            )}
+
+            {/* Voted Indicator */}
+            {hasVoted && gameState.phase === 'VOTING' && (
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                <div className="bg-green-600 text-white text-xs px-1 rounded-full">
+                  ✓
+                </div>
+              </div>
+            )}
+
+            {/* Player Name Tooltip */}
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
               <div className={`
-                text-xs font-semibold truncate px-2 py-1 rounded
+                px-2 py-1 rounded text-xs whitespace-nowrap font-medium border
                 ${isMe
-                  ? 'text-blue-300 bg-blue-900/50'
-                  : 'text-white bg-medieval-800/50'
+                  ? 'text-blue-300 bg-blue-900/80 border-blue-600'
+                  : 'text-white bg-medieval-800/80 border-medieval-600'
                 }
               `}>
                 {player.username}
               </div>
 
               {/* Role indicator (only for me or if dead) */}
-              {((isMe && player.role) || (!player.isAlive && player.role)) && (
-                <div className="text-xs text-purple-300 mt-1">
+              {isMe && player.role && (
+                <div className="text-xs text-purple-300 mt-1 text-center">
                   {player.role}
                 </div>
               )}
@@ -151,39 +128,6 @@ export default function PlayerCircle() {
           </div>
         );
       })}
-
-      {/* Dead Players - Ghosts around the gallows */}
-      {deadPlayers.length > 0 && (
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="text-center">
-            <h4 className="text-red-400 text-sm font-semibold mb-2 flex items-center justify-center space-x-1">
-              <span>💀</span>
-              <span>Cemitério ({deadPlayers.length})</span>
-            </h4>
-
-            <div className="flex flex-wrap justify-center gap-2">
-              {deadPlayers.map((player) => (
-                <div
-                  key={player.id}
-                  className="relative opacity-75 transform scale-75"
-                >
-                  <div className="w-8 h-8 rounded-full border border-gray-600 bg-gray-800/50 flex items-center justify-center">
-                    <span className="text-lg">👻</span>
-                  </div>
-                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 text-xs text-gray-400 min-w-[40px] text-center">
-                    {player.username}
-                  </div>
-                  {player.role && (
-                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-4 text-xs text-purple-400 text-center">
-                      {player.role}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Phase Information Overlay */}
       <div className="absolute top-4 left-4 bg-medieval-800/80 border border-medieval-600 rounded-lg px-3 py-2">
@@ -209,7 +153,7 @@ export default function PlayerCircle() {
         </div>
       </div>
 
-      {/* Empty State */}
+      {/* Empty State - quando não há jogadores vivos */}
       {alivePlayers.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
@@ -219,6 +163,16 @@ export default function PlayerCircle() {
           </div>
         </div>
       )}
+
+      {/* Players Count Info - canto inferior direito */}
+      <div className="absolute bottom-4 right-4 bg-medieval-800/80 border border-medieval-600 rounded-lg px-3 py-2">
+        <div className="text-white text-sm">
+          <div className="flex items-center space-x-2">
+            <span>👥</span>
+            <span>{alivePlayers.length} vivos</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

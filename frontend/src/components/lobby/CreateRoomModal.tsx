@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Users, Eye, Lock, Globe, Settings } from 'lucide-react';
+import { X, Users, Lock, Globe } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
 
@@ -11,15 +11,6 @@ import { apiService } from '@/services/api';
 interface CreateRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface RoomSettings {
-  gameMode: 'CLASSIC' | 'RANKED' | 'CUSTOM';
-  timeDay: number;
-  timeNight: number;
-  timeVoting: number;
-  allowSpectators: boolean;
-  autoStart: boolean;
 }
 
 export default function CreateRoomModal({
@@ -33,32 +24,13 @@ export default function CreateRoomModal({
     name: '',
     isPrivate: false,
     maxPlayers: 12,
-    maxSpectators: 8,
   });
-
-  const [settings, setSettings] = useState<RoomSettings>({
-    gameMode: 'CLASSIC',
-    timeDay: 300,
-    timeNight: 120,
-    timeVoting: 180,
-    allowSpectators: true,
-    autoStart: false,
-  });
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   /* -------------------------------------------------------------------------- */
   /*                                 Handlers                                   */
   /* -------------------------------------------------------------------------- */
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleSettingsChange = (field: keyof RoomSettings, value: any) => {
-    setSettings(prev => ({
       ...prev,
       [field]: value,
     }));
@@ -80,10 +52,7 @@ export default function CreateRoomModal({
 
     try {
       /* ------------------------------ Cria a sala ----------------------------- */
-      const response = await apiService.post('/api/rooms', {
-        ...formData,
-        settings,
-      });
+      const response = await apiService.post('/api/rooms', formData);
 
       toast.success('Sala criada com sucesso!');
       onClose();
@@ -117,17 +86,7 @@ export default function CreateRoomModal({
         name: '',
         isPrivate: false,
         maxPlayers: 12,
-        maxSpectators: 8,
       });
-      setSettings({
-        gameMode: 'CLASSIC',
-        timeDay: 300,
-        timeNight: 120,
-        timeVoting: 180,
-        allowSpectators: true,
-        autoStart: false,
-      });
-      setShowAdvanced(false);
       onClose();
     }
   };
@@ -163,51 +122,26 @@ export default function CreateRoomModal({
           </div>
         </div>
 
-        {/* Configurações Básicas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Máximo de Jogadores */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              <Users className="w-4 h-4 inline mr-2" />
-              Máximo de Jogadores
-            </label>
-            <select
-              value={formData.maxPlayers}
-              onChange={e =>
-                handleInputChange('maxPlayers', parseInt(e.target.value))
-              }
-              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            >
-              {[6, 8, 10, 12, 14, 16].map(num => (
-                <option key={num} value={num}>
-                  {num} jogadores
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Máximo de Espectadores */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              <Eye className="w-4 h-4 inline mr-2" />
-              Máximo de Espectadores
-            </label>
-            <select
-              value={formData.maxSpectators}
-              onChange={e =>
-                handleInputChange('maxSpectators', parseInt(e.target.value))
-              }
-              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            >
-              {[0, 4, 8, 12, 16, 20].map(num => (
-                <option key={num} value={num}>
-                  {num === 0 ? 'Sem espectadores' : `${num} espectadores`}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Máximo de Jogadores */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            <Users className="w-4 h-4 inline mr-2" />
+            Máximo de Jogadores
+          </label>
+          <select
+            value={formData.maxPlayers}
+            onChange={e =>
+              handleInputChange('maxPlayers', parseInt(e.target.value))
+            }
+            className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
+          >
+            {[6, 8, 10, 12, 14, 16].map(num => (
+              <option key={num} value={num}>
+                {num} jogadores
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Tipo de Sala */}
@@ -244,152 +178,6 @@ export default function CreateRoomModal({
               <div className="text-xs opacity-75">Apenas por código</div>
             </button>
           </div>
-        </div>
-
-        {/* Configurações Avançadas (colapse) */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
-            disabled={loading}
-          >
-            <Settings className="w-4 h-4" />
-            Configurações Avançadas
-            <motion.div
-              animate={{ rotate: showAdvanced ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <X className="w-4 h-4" />
-            </motion.div>
-          </button>
-
-          {showAdvanced && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 p-4 bg-slate-800/50 rounded-lg border border-slate-600 space-y-4"
-            >
-              {/* Modo de Jogo */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Modo de Jogo
-                </label>
-                <select
-                  value={settings.gameMode}
-                  onChange={e =>
-                    handleSettingsChange(
-                      'gameMode',
-                      e.target.value as RoomSettings['gameMode'],
-                    )
-                  }
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
-                  disabled={loading}
-                >
-                  <option value="CLASSIC">Clássico</option>
-                  <option value="RANKED">Ranqueado</option>
-                  <option value="CUSTOM">Personalizado</option>
-                </select>
-              </div>
-
-              {/* Tempos */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Tempo Dia (seg)
-                  </label>
-                  <input
-                    type="number"
-                    min={60}
-                    max={600}
-                    value={settings.timeDay}
-                    onChange={e =>
-                      handleSettingsChange(
-                        'timeDay',
-                        parseInt(e.target.value, 10),
-                      )
-                    }
-                    className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                    disabled={loading}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Tempo Noite (seg)
-                  </label>
-                  <input
-                    type="number"
-                    min={30}
-                    max={300}
-                    value={settings.timeNight}
-                    onChange={e =>
-                      handleSettingsChange(
-                        'timeNight',
-                        parseInt(e.target.value, 10),
-                      )
-                    }
-                    className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                    disabled={loading}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Tempo Votação (seg)
-                  </label>
-                  <input
-                    type="number"
-                    min={60}
-                    max={300}
-                    value={settings.timeVoting}
-                    onChange={e =>
-                      handleSettingsChange(
-                        'timeVoting',
-                        parseInt(e.target.value, 10),
-                      )
-                    }
-                    className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-
-              {/* Opções */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={settings.allowSpectators}
-                    onChange={e =>
-                      handleSettingsChange('allowSpectators', e.target.checked)
-                    }
-                    className="rounded"
-                    disabled={loading}
-                  />
-                  <span className="text-sm text-slate-300">
-                    Permitir espectadores
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoStart}
-                    onChange={e =>
-                      handleSettingsChange('autoStart', e.target.checked)
-                    }
-                    className="rounded"
-                    disabled={loading}
-                  />
-                  <span className="text-sm text-slate-300">
-                    Início automático quando todos estiverem prontos
-                  </span>
-                </label>
-              </div>
-            </motion.div>
-          )}
         </div>
 
         {/* Botões */}

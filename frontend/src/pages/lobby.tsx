@@ -90,13 +90,6 @@ const UsersIcon = () => (
   </svg>
 );
 
-const EyeIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-  </svg>
-);
-
 const PlayIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15M9 10v4a4 4 0 008 0v-4M9 10V9a4 4 0 118 0v1M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -550,15 +543,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
             </div>
 
             <div className="flex items-center gap-1">
-              <EyeIcon />
-              <span>
-                <SafeNumberDisplay value={room.currentSpectators} />
-                /
-                <SafeNumberDisplay value={room.maxSpectators} />
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1">
               <span>Host: {room.hostUsername}</span>
             </div>
 
@@ -570,16 +554,6 @@ function RoomCard({ room, onJoin, onSpectate, delay = 0 }: RoomCardProps) {
         </div>
 
         <div className="flex gap-2 ml-4">
-          {canSpectate && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onSpectate}
-            >
-              <EyeIcon />
-            </Button>
-          )}
-
           <Button
             variant={canJoin ? 'primary' : 'secondary'}
             size="sm"
