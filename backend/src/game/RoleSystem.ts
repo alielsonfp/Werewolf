@@ -613,9 +613,6 @@ class RoleRevealManager {
 // WIN CONDITION CALCULATOR - SEM EXPORT NA DECLARAÇÃO
 //====================================================================
 class WinConditionCalculator {
-  /**
-   * Calculate win condition based on alive players and their roles
-   */
   static calculateWinCondition(alivePlayers: { playerId: string; role: Role }[]): {
     hasWinner: boolean;
     winningFaction?: Faction;
@@ -626,7 +623,6 @@ class WinConditionCalculator {
       return { hasWinner: false, reason: "Ninguém sobreviveu." };
     }
 
-    // 1. Contagem das facções (seu código aqui estava perfeito)
     const factionGroups = new Map<Faction, { playerId: string; role: Role }[]>();
     alivePlayers.forEach(player => {
       const faction = roleConfigurations[player.role].faction;
@@ -639,79 +635,47 @@ class WinConditionCalculator {
     const werewolfCount = (factionGroups.get(Faction.WEREWOLF) || []).length;
     const neutralPlayers = factionGroups.get(Faction.NEUTRAL) || [];
     const serialKiller = neutralPlayers.find(p => p.role === Role.SERIAL_KILLER);
-
     const werewolfPlayers = factionGroups.get(Faction.WEREWOLF) || [];
     const townPlayers = factionGroups.get(Faction.TOWN) || [];
 
-    // --- LÓGICA DE VERIFICAÇÃO COM ORDEM DE PRIORIDADE CORRETA ---
-
-    // REGRA #1: VITÓRIA DA VILA (A mais restrita)
-    // A Vila SÓ vence se TODAS as ameaças forem eliminadas.
+    // REGRA #1: VITÓRIA DA VILA
     if (townCount > 0 && werewolfCount === 0 && !serialKiller) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.TOWN,
-        winningPlayers: townPlayers.map(p => p.playerId),
-        reason: 'Todas as ameaças à Vila foram eliminadas.',
-      };
+      return { hasWinner: true, winningFaction: Faction.TOWN, winningPlayers: townPlayers.map(p => p.playerId), reason: 'Todas as ameaças à Vila foram eliminadas.' };
     }
 
-    // REGRA #2: VITÓRIA DOS LOBISOMENS POR DOMINAÇÃO
-    // Vencem se superam a Vila E não há mais ninguém para detê-los.
+    // REGRA #2: VITÓRIA POR DOMINAÇÃO (LOBOS OU SK)
     if (werewolfCount > 0 && townCount === 0 && !serialKiller) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.WEREWOLF,
-        winningPlayers: werewolfPlayers.map(p => p.playerId),
-        reason: 'A alcateia eliminou todas as outras facções.',
-      };
+      return { hasWinner: true, winningFaction: Faction.WEREWOLF, winningPlayers: werewolfPlayers.map(p => p.playerId), reason: 'A alcateia eliminou todas as outras facções.' };
     }
-
-    // REGRA #3: VITÓRIA DO SERIAL KILLER POR DOMINAÇÃO
-    // Vence se for o único sobrevivente.
     if (serialKiller && townCount === 0 && werewolfCount === 0) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.NEUTRAL,
-        winningPlayers: [serialKiller.playerId],
-        reason: 'O Serial Killer foi o último sobrevivente.',
-      };
+      return { hasWinner: true, winningFaction: Faction.NEUTRAL, winningPlayers: [serialKiller.playerId], reason: 'O Serial Killer foi o último sobrevivente.' };
     }
 
-    // REGRA #4: CONDIÇÕES DE IMPASSE (STANDOFF) ONDE O JOGO ACABA
-    // Se o jogo chegou a um ponto onde o resultado é inevitável.
-
-    // Cenário: Lobos vs. Vila (sem SK). Vitória por paridade.
+    // REGRA #3: CONDIÇÕES DE IMPASSE (STANDOFF)
     if (werewolfCount >= townCount && townCount > 0 && !serialKiller) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.WEREWOLF,
-        winningPlayers: werewolfPlayers.map(p => p.playerId),
-        reason: 'A alcateia alcançou a paridade e não pode mais ser detida pela Vila.',
-      };
+      return { hasWinner: true, winningFaction: Faction.WEREWOLF, winningPlayers: werewolfPlayers.map(p => p.playerId), reason: 'A alcateia alcançou a paridade e não pode mais ser detida pela Vila.' };
     }
-
-    // Cenário: SK vs. um oponente. O SK vence.
     if (serialKiller && alivePlayers.length === 2 && (townCount === 1 || werewolfCount === 1)) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.NEUTRAL,
-        winningPlayers: [serialKiller.playerId],
-        reason: 'O Serial Killer encurralou o último oponente.',
-      };
+      return { hasWinner: true, winningFaction: Faction.NEUTRAL, winningPlayers: [serialKiller.playerId], reason: 'O Serial Killer encurralou o último oponente.' };
     }
-
-    // Cenário: Múltiplos Lobos vs. SK. Os lobos vencem.
     if (townCount === 0 && serialKiller && werewolfCount > 1) {
-      return {
-        hasWinner: true,
-        winningFaction: Faction.WEREWOLF,
-        winningPlayers: werewolfPlayers.map(p => p.playerId),
-        reason: 'A alcateia era maioria contra a última ameaça.',
-      };
+      return { hasWinner: true, winningFaction: Faction.WEREWOLF, winningPlayers: werewolfPlayers.map(p => p.playerId), reason: 'A alcateia era maioria contra a última ameaça.' };
     }
 
-    // Se nenhuma condição de vitória foi alcançada, o jogo continua.
     return { hasWinner: false };
   }
+
+  // ✅ FUNÇÃO DO JESTER RESTAURADA
+  static checkJesterWin(executedRole: Role): boolean {
+    return executedRole === Role.JESTER;
+  }
 }
+
+// ✅ EXPORTAÇÕES RESTAURADAS NO FINAL DO ARQUIVO
+export {
+  roleConfigurations as ROLE_CONFIGURATIONS,
+  balancedRoleDistributions as BALANCED_ROLE_DISTRIBUTIONS,
+  RoleDistributor,
+  RoleRevealManager,
+  WinConditionCalculator,
+};
