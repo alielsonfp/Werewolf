@@ -111,7 +111,7 @@ const roleConfigurations: Record<Role, RoleConfiguration> = {
       'Aparece como SUSPEITO para o Investigador'
     ],
     goalDescription: 'Igualar ou superar o número de aldeões vivos',
-    canAct: true,
+    canAct: false,
     actsDuring: ['NIGHT'],
     hasNightChat: true,
     immuneToInvestigation: false,
@@ -199,11 +199,11 @@ const balancedRoleDistributions: Record<number, RoleDistribution> = {
     [Role.VILLAGER]: 0,
     [Role.SHERIFF]: 0,
     [Role.DOCTOR]: 1,
-    [Role.VIGILANTE]: 1,
+    [Role.VIGILANTE]: 0,
     [Role.WEREWOLF]: 1,
-    [Role.WEREWOLF_KING]: 0,
-    [Role.JESTER]: 1,
-    [Role.SERIAL_KILLER]: 0,
+    [Role.WEREWOLF_KING]: 1,
+    [Role.JESTER]: 0,
+    [Role.SERIAL_KILLER]: 1,
   },
 
   // 6 players - Minimum composition

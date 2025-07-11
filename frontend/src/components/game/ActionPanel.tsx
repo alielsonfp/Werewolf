@@ -210,7 +210,10 @@ export default function ActionPanel() {
 
     if (gameState.phase === 'NIGHT' && me.role) {
       const roleActions = {
-        WEREWOLF: { title: '🐺 Ataque Lobisomem', description: 'Escolha um aldeão para eliminar', actionText: 'Atacar', canAct: canAct },
+        WEREWOLF_KING: { title: '👑 Ataque da Alcateia', description: 'Escolha a presa para a alcateia eliminar', actionText: 'Atacar', canAct: canAct },
+
+        // ✅ AJUSTE A ENTRADA PARA O LOBO COMUM (com canAct: false)
+        WEREWOLF: { title: '🐺 Alcateia', description: 'Você segue as ordens do seu Rei. Aguarde a decisão...', actionText: 'Aguardar', canAct: false },
         SHERIFF: { title: '🔍 Investigação', description: 'Investigue um jogador', actionText: 'Investigar', canAct: canAct },
         DOCTOR: { title: '💉 Proteção', description: 'Proteja alguém dos ataques', actionText: 'Proteger', canAct: canAct },
         VIGILANTE: { title: '🔫 Justiça', description: 'Atire em um suspeito', actionText: 'Atirar em', canAct: canAct },
