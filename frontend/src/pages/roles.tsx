@@ -90,7 +90,7 @@ const roles: Role[] = [
     emoji: '🔫',
     faction: 'Vila',
     description: 'Justiceiro da vila que toma a lei em suas próprias mãos.',
-    power: 'Mata 1 pessoa por noite (3 usos) - Se matar inocente, perde a próxima noite',
+    power: 'Mata 1 pessoa por noite (3 usos) - Se matar inocente, perde a propria vida com peso na consciencia',
     strategy: 'Só mate se tiver CERTEZA. Um erro pode custar caro à vila.',
     winCondition: 'Eliminar todos os lobisomens e inimigos da vila',
     icon: <Sword className="w-6 h-6" />,
