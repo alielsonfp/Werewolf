@@ -1,8 +1,18 @@
-// frontend/src/hooks/useAutoReconnect.ts
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/context/AuthContext';
-import { apiService } from '@/services/api'; // ✅ CORRETO
+import { apiService } from '@/services/api';
+
+type RoomType = {
+  id: string;
+  name: string;
+  // adicione outras propriedades conforme sua modelagem
+};
+
+type CheckActiveRoomResponse = {
+  hasActiveRoom: boolean;
+  room: RoomType;
+};
 
 export function useAutoReconnect() {
   const router = useRouter();
@@ -18,14 +28,16 @@ export function useAutoReconnect() {
       try {
         console.log('🔍 [AutoReconnect] Verificando sala ativa...');
 
-        const response = await apiService.get('/api/rooms/check-active-game');
+        const response = await apiService.get<CheckActiveRoomResponse | undefined>(
+          '/api/rooms/check-active-game'
+        );
 
-        if (response.hasActiveRoom) { // ✅ SEM .data
-          const { room } = response;
+        const data = response?.data;
+
+        if (data && data.hasActiveRoom) {
+          const { room } = data;
           console.log('🔄 Sala ativa encontrada, reconectando...', room.name);
-
-          // Redirecionar para o JOGO
-          router.push(`/game/${room.id}`); // ✅ /game/ não /room/
+          router.push(`/game/${room.id}`);
         } else {
           console.log('✅ Nenhuma sala ativa encontrada');
         }
@@ -34,7 +46,6 @@ export function useAutoReconnect() {
       }
     };
 
-    // Só verifica se estiver no lobby
     if (router.pathname === '/lobby') {
       console.log('📍 Usuário no lobby, verificando...');
       checkActiveRoom();
