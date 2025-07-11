@@ -85,11 +85,12 @@ async function initializeRoomCleanupService(): Promise<void> {
     // Criar e iniciar o serviço de limpeza
     roomCleanupService = new RoomCleanupService(
       wsManager.channelManager,
-      wsManager.connectionManager
+      wsManager.connectionManager,
+      wsManager.gameEngine  // ← ESTA LINHA ESTÁ FALTANDO!
     );
 
     // Iniciar com intervalo de 30 segundos
-    roomCleanupService.start(30000);
+    roomCleanupService.start(15000);
 
     logger.info('✅ Room cleanup service initialized successfully');
 

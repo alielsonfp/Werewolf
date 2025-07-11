@@ -33,6 +33,35 @@ CREATE TABLE IF NOT EXISTS rooms (
     "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS room_players (
+    "roomId" UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "joinedAt" TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    "leftAt" TIMESTAMPTZ DEFAULT NULL, -- NULL = ainda na sala, NOT NULL = saiu
+    "isSpectator" BOOLEAN DEFAULT false NOT NULL,
+    "isReady" BOOLEAN DEFAULT false NOT NULL,
+    PRIMARY KEY ("roomId", "userId")
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_players_room ON room_players("roomId");
+CREATE INDEX IF NOT EXISTS idx_room_players_user ON room_players("userId");
+CREATE INDEX IF NOT EXISTS idx_room_players_active ON room_players("userId", "leftAt") 
+    WHERE "leftAt" IS NULL; -- Índice parcial para jogadores ativos
+
+-- Trigger para atualizar updatedAt automaticamente (se necessário)
+DROP TRIGGER IF EXISTS update_room_players_updated_at ON room_players;
+
+-- Função para limpar registros antigos (opcional - executar periodicamente)
+CREATE OR REPLACE FUNCTION cleanup_old_room_players()
+RETURNS void AS $$
+BEGIN
+    -- Remove registros de salas que não existem mais ou de jogadores que saíram há mais de 7 dias
+    DELETE FROM room_players 
+    WHERE "leftAt" IS NOT NULL 
+    AND "leftAt" < NOW() - INTERVAL '7 days';
+END;
+$$ LANGUAGE plpgsql;
+
 -- Índices para melhor performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_rooms_code ON rooms(code);

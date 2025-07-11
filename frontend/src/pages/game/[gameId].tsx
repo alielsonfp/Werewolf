@@ -16,6 +16,10 @@ export default function GamePage() {
   const { user, isAuthenticated, getToken } = useAuth();
   const { isConnected, connect, disconnect, sendMessage } = useSocket();
 
+
+
+
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasRequestedGameState, setHasRequestedGameState] = useState(false);

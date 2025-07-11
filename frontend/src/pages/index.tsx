@@ -22,29 +22,29 @@ import { useTheme } from '@/context/ThemeContext';
 import Button from '@/components/common/Button';
 import Layout from '@/components/common/Layout';
 
-// ✅ CORREÇÃO: Componente de estatísticas à prova de hidratação
-interface SafeStatsDisplayProps {
-  value: number;
-  label: string;
-  color?: string;
-}
+// ❌ REMOVER: Todo esse componente SafeStatsDisplay
+// ❌ REMOVER: interface SafeStatsDisplayProps {
+// ❌ REMOVER:   value: number;
+// ❌ REMOVER:   label: string;
+// ❌ REMOVER:   color?: string;
+// ❌ REMOVER: }
 
-function SafeStatsDisplay({ value, label, color = "text-salem-400" }: SafeStatsDisplayProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  return (
-    <div className="text-center">
-      <div className={`text-2xl font-bold ${color}`}>
-        {mounted ? value.toLocaleString('pt-BR') : value}
-      </div>
-      <div className="text-sm text-white/60">{label}</div>
-    </div>
-  );
-}
+// ❌ REMOVER: function SafeStatsDisplay({ value, label, color = "text-salem-400" }: SafeStatsDisplayProps) {
+// ❌ REMOVER:   const [mounted, setMounted] = useState(false);
+// ❌ REMOVER: 
+// ❌ REMOVER:   useEffect(() => {
+// ❌ REMOVER:     setMounted(true);
+// ❌ REMOVER:   }, []);
+// ❌ REMOVER: 
+// ❌ REMOVER:   return (
+// ❌ REMOVER:     <div className="text-center">
+// ❌ REMOVER:       <div className={`text-2xl font-bold ${color}`}>
+// ❌ REMOVER:         {mounted ? value.toLocaleString('pt-BR') : value}
+// ❌ REMOVER:       </div>
+// ❌ REMOVER:       <div className="text-sm text-white/60">{label}</div>
+// ❌ REMOVER:     </div>
+// ❌ REMOVER:   );
+// ❌ REMOVER: }
 
 // =============================================================================
 // LANDING PAGE COMPONENT
@@ -59,11 +59,12 @@ export default function LandingPage() {
   const backgroundY = useTransform(scrollY, [0, 500], [0, 150]);
   const textY = useTransform(scrollY, [0, 500], [0, 100]);
 
-  const [stats] = useState({
-    totalPlayers: 15847,
-    gamesPlayed: 89234,
-    onlineNow: 342,
-  });
+  // ❌ REMOVER: Todo esse estado stats
+  // ❌ REMOVER: const [stats] = useState({
+  // ❌ REMOVER:   totalPlayers: 15847,
+  // ❌ REMOVER:   gamesPlayed: 89234,
+  // ❌ REMOVER:   onlineNow: 342,
+  // ❌ REMOVER: });
 
   // Handle main action
   const handleMainAction = () => {
@@ -159,8 +160,8 @@ export default function LandingPage() {
               blefe, investigação e sobrevivência.
             </motion.p>
 
-            {/* ✅ CORREÇÃO: Stats com componente seguro para hidratação */}
-            <motion.div
+            {/* ❌ REMOVER: Todo esse bloco de estatísticas */}
+            {/* ❌ REMOVER: <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 1.1, duration: 0.8 }}
@@ -179,7 +180,7 @@ export default function LandingPage() {
                 label="Online Agora"
                 color="text-green-400"
               />
-            </motion.div>
+            </motion.div> */}
 
             {/* CTA Buttons */}
             <motion.div
@@ -210,17 +211,17 @@ export default function LandingPage() {
               )}
             </motion.div>
 
-            {/* User welcome */}
+            {/* User welcome - ✅ MODIFICAR: Remover detalhes, centralizar */}
             {isAuthenticated && user && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 1.7 }}
-                className="mt-8 p-4 bg-salem-800/30 rounded-lg border border-salem-600/50"
+                className="mt-8 p-4 bg-salem-800/30 rounded-lg border border-salem-600/50 text-center"
               >
                 <p className="text-salem-300">
                   Bem-vindo de volta, <span className="font-bold">{user.username}</span>!
-                  Você está no nível {user.level} com {user.totalGames} partidas jogadas.
+                  {/* ❌ REMOVER: Você está no nível {user.level} com {user.totalGames} partidas jogadas. */}
                 </p>
               </motion.div>
             )}
@@ -371,7 +372,7 @@ export default function LandingPage() {
                   <Github className="w-5 h-5" />
                 </Button>
               </div>
-            </div> {/* ✅ ESTA DIV ESTAVA FALTANDO! */}
+            </div>
 
             <div className="mt-8 pt-8 border-t border-medieval-600 text-center text-white/60 text-sm">
               © 2025 Werewolf. Todos os direitos reservados.

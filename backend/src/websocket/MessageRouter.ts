@@ -60,6 +60,10 @@ export class MessageRouter {
     this.handlers.set('vote', this.handleVote.bind(this));
     this.handlers.set('unvote', this.handleUnvote.bind(this));
 
+    // reconnect
+    this.handlers.set('check-active-game', this.handleCheckActiveGame.bind(this));
+    this.handlers.set('leave-room', this.handleLeaveRoom.bind(this)); // Desconexão normal
+
     wsLogger.debug('Message handlers setup completed', {
       handlerCount: this.handlers.size,
       handlers: Array.from(this.handlers.keys()),
@@ -175,12 +179,15 @@ export class MessageRouter {
       timestamp: new Date().toISOString()
     });
 
+
     const connection = this.connectionManager.getConnection(connectionId);
     if (!connection) {
       console.log('📨 [Router-JOIN] Conexão não encontrada!', { connectionId: connectionId.slice(-6) });
       return;
     }
 
+
+    // ✅ ADICIONAR AQUI - Verificar jogo ativo ANTES de validar roomI
     console.log('📨 [Router-JOIN] Estado da conexão', {
       connectionId: connectionId.slice(-6),
       userId: connection.context.userId,
@@ -188,8 +195,10 @@ export class MessageRouter {
       currentRoomId: connection.context.roomId?.slice(-6),
       isSpectator: connection.context.isSpectator
     });
-
+    const { userId } = connection.context;
     const { roomId, asSpectator = false } = data;
+
+    const activeGame = this.findActiveGameForUser(userId);
 
     if (!roomId || typeof roomId !== 'string') {
       console.log('📨 [Router-JOIN] RoomId inválido!', { roomId, type: typeof roomId });
@@ -413,6 +422,10 @@ export class MessageRouter {
     if (!connection) return;
 
     const roomId: string | undefined = data?.roomId || connection.context.roomId;
+    const { userId } = connection.context;
+
+    // ✅ CORRIGIDO: Verificar se é saída VOLUNTÁRIA
+    const isVoluntaryLeave = data?.voluntary === true;
 
     // ✅ LOG DE ENTRADA
     console.log('🚪 [Router-LEAVE] Recebido evento leave-room.', {
@@ -420,6 +433,7 @@ export class MessageRouter {
       roomId: roomId?.slice(-6),
       fromData: !!data?.roomId,
       fromContext: !!connection.context.roomId,
+      isVoluntaryLeave, // ← NOVO LOG
       timestamp: new Date().toISOString()
     });
 
@@ -432,6 +446,27 @@ export class MessageRouter {
     }
 
     try {
+      // ✅ CORRIGIDO: SÓ MARCA leftAt SE FOR SAÍDA VOLUNTÁRIA
+      if (isVoluntaryLeave) {
+        await pool.query(`
+          UPDATE room_players 
+          SET "leftAt" = NOW() 
+          WHERE "userId" = $1 AND "roomId" = $2
+        `, [userId, roomId]);
+
+        console.log('✅ Saída VOLUNTÁRIA registrada (não reconectará):', {
+          userId,
+          username: connection.context.username,
+          roomId: roomId.slice(-6)
+        });
+      } else {
+        console.log('🔌 Desconexão detectada (PODE RECONECTAR):', {
+          userId,
+          username: connection.context.username,
+          roomId: roomId.slice(-6)
+        });
+      }
+
       console.log('🚪 [Router-LEAVE] Antes de channelManager.leaveRoom', {
         connectionId: connectionId.slice(-6),
         roomId: roomId.slice(-6)
@@ -473,13 +508,15 @@ export class MessageRouter {
         roomId,
         userId: connection.context.userId,
         username: connection.context.username,
+        voluntary: isVoluntaryLeave, // ← NOVO
         timestamp: new Date().toISOString(),
       });
 
       console.log('✅ [Router-LEAVE] Processo concluído com sucesso', {
         connectionId: connectionId.slice(-6),
         roomId: roomId.slice(-6),
-        username: connection.context.username
+        username: connection.context.username,
+        isVoluntaryLeave
       });
 
       wsLogger.info('Player left room', {
@@ -487,6 +524,7 @@ export class MessageRouter {
         userId: connection.context.userId,
         username: connection.context.username,
         roomId,
+        voluntary: isVoluntaryLeave
       });
 
     } catch (error) {
@@ -504,6 +542,13 @@ export class MessageRouter {
       await this.sendError(connectionId, 'LEAVE_ROOM_FAILED', 'Internal error leaving room');
     }
   }
+
+  // ✅ handleVoluntaryLeave ESTÁ PERFEITO
+  private async handleVoluntaryLeave(connectionId: string, data: any): Promise<void> {
+    // Chama handleLeaveRoom com flag voluntary
+    await this.handleLeaveRoom(connectionId, { ...data, voluntary: true });
+  }
+
 
   private async handlePlayerReady(connectionId: string, data: any): Promise<void> {
     const connection = this.connectionManager.getConnection(connectionId);
@@ -1072,6 +1117,8 @@ export class MessageRouter {
       const gameId = `game-${roomId}`;
       const gameState = await this.gameEngine.getGameState(gameId);
 
+
+
       if (!gameState) {
         // ✅ SALA DE ESPERA: Usa broadcast normal (JÁ FUNCIONA)
         if (this.broadcastToRoom) {
@@ -1117,6 +1164,65 @@ export class MessageRouter {
       await this.sendError(connectionId, 'CHAT_FAILED', 'Failed to send chat message');
     }
   }
+
+  private async handleCheckActiveGame(connectionId: string, data: any): Promise<void> {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection) return;
+
+    const { userId } = connection.context;
+
+    try {
+      const activeGame = this.findActiveGameForUser(userId);
+
+      if (activeGame) {
+        // Calcular tempo restante para reconexão (2 minutos - tempo decorrido)
+        const player = activeGame.player;
+        const disconnectedAt = player.lastSeen || new Date();
+        const elapsedMs = Date.now() - disconnectedAt.getTime();
+        const remainingMs = Math.max(0, 120000 - elapsedMs); // 2 minutos
+
+        await this.sendToConnection(connectionId, 'active-game-found', {
+          gameId: activeGame.gameId,
+          roomId: activeGame.roomId,
+          roomName: activeGame.roomName,
+          status: activeGame.status,
+          phase: activeGame.phase,
+          day: activeGame.day,
+          canRejoin: remainingMs > 0,
+          remainingSeconds: Math.floor(remainingMs / 1000)
+        });
+      } else {
+        await this.sendToConnection(connectionId, 'no-active-game', {});
+      }
+    } catch (error) {
+      wsLogger.error('Error checking active game', error);
+      await this.sendToConnection(connectionId, 'no-active-game', {});
+    }
+  }
+
+  private findActiveGameForUser(userId: string): any {
+    const allGames = this.gameEngine.getAllGames();
+
+    for (const game of allGames) {
+      if (game.status === 'PLAYING') {
+        const player = game.players.find(p => p.userId === userId);
+        if (player && player.isAlive) {
+          return {
+            gameId: game.gameId,
+            roomId: game.roomId,
+            roomName: game.roomName || 'Sala sem nome',
+            status: game.status,
+            phase: game.phase,
+            day: game.day,
+            player: player
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
 
   private async handleSpectateRoom(connectionId: string, data: any): Promise<void> {
     await this.handleJoinRoom(connectionId, { ...data, asSpectator: true });
