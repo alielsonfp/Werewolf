@@ -312,6 +312,11 @@ export class ActionManager {
 
       this.gameState.nightActions.push(nightAction);
 
+      console.log('--- CHECKPOINT 3: ACTION MANAGER --- Ação na Fila:', {
+        actionQueued: nightAction,
+        totalActionsInQueue: this.gameState.nightActions.length,
+        timestamp: new Date().toISOString()
+      });
       // Log the action
       logger.info('Night action queued', {
         gameId: this.gameState.gameId,

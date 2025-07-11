@@ -685,6 +685,20 @@ export class GameEngine implements IGameEngine {
       }))
     });
 
+    gameState.getAlivePlayers().forEach(player => {
+      if (player.isGuilty) {
+        player.kill('VIGILANTE_SUICIDE' as any, 'guilt');
+        player.isGuilty = false; // Importante resetar a flag
+
+        // Adiciona a mensagem ao chat imediatamente
+        this.broadcastSystemMessage(
+          gameState.gameId,
+          `💀 ${player.username} não aguentou o peso na consciência e cometeu suicídio.`,
+          'system'
+        );
+      }
+    });
+
     const deaths: string[] = [];
     const protections: string[] = [];
 
@@ -752,6 +766,58 @@ export class GameEngine implements IGameEngine {
             targetId: action.targetId,
             targetName: target.username
           });
+        }
+      }
+    });
+
+    gameState.nightActions.forEach(action => {
+      if (action.type === 'VIGILANTE_KILL' && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        const vigilante = gameState.getPlayer(action.playerId); // Pega a referência do Vigilante
+
+        if (target && vigilante && target.isAlive && !target.isProtected) {
+          target.kill('VIGILANTE');
+          deaths.push(action.targetId);
+          logger.info('Ataque do Vigilante bem-sucedido.');
+
+          // ✅ ADICIONE APENAS ESTA CONDIÇÃO "IF" AQUI DENTRO
+          // Se o alvo for da Vila OU for um Jester...
+          if (target.faction === Faction.TOWN || target.role === Role.JESTER) {
+            // ...então o Vigilante fica culpado.
+            vigilante.isGuilty = true;
+            logger.info(`VIGILANTE CULPADO: Matou ${target.username} (${target.role}). Morrerá na próxima noite.`);
+          }
+
+        } else if (target && target.isProtected) {
+          logger.info('Ataque do Vigilante bloqueado pela proteção.');
+        }
+      }
+    });
+
+    // Processar ataques do Serial Killer
+    gameState.nightActions.forEach(action => {
+      if (action.type === 'SERIAL_KILL' && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        if (target && target.isAlive) {
+          // Serial Killer ignora proteção na primeira noite
+          const isFirstNight = gameState.day === 1;
+          if (!target.isProtected || isFirstNight) {
+            target.kill('SERIAL_KILLER');
+            deaths.push(action.targetId);
+
+            logger.info('Serial killer kill applied', {
+              gameId: gameState.gameId,
+              targetId: action.targetId,
+              targetName: target.username,
+              bypassedProtection: isFirstNight && target.isProtected
+            });
+          } else {
+            logger.info('Serial killer attack blocked by protection', {
+              gameId: gameState.gameId,
+              targetId: action.targetId,
+              targetName: target.username
+            });
+          }
         }
       }
     });

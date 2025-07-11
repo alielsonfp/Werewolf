@@ -58,6 +58,12 @@ export default function ActionPanel() {
       minute: '2-digit'
     });
   };
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   // =============================================================================
   // RENDER
@@ -96,8 +102,8 @@ export default function ActionPanel() {
           // Lista de mensagens
           <div className="space-y-3">
             {systemMessages.map((msg) => (
-              <div
-                key={msg.id}
+              <div 
+                key={msg.id} 
                 className="bg-amber-900/20 border border-amber-600/30 rounded-lg p-3"
               >
                 <div className="flex items-center justify-between mb-2">

@@ -29,6 +29,8 @@ export class Player {
   public actionsUsed: number = 0;
   public maxActions?: number;
 
+  public isGuilty: boolean = false;
+
   // Tracking
   public lastAction?: string;
   public protectedByDoctor: boolean = false;
@@ -75,6 +77,9 @@ export class Player {
   }
 
   canAct(): boolean {
+
+    if (this.isGuilty) return false;
+
     if (!this.isAlive || !this.role) return false;
     if (this.hasActed) return false;
     if (this.maxActions !== undefined && this.actionsUsed >= this.maxActions) return false;
