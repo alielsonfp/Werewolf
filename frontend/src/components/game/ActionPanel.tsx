@@ -1,202 +1,123 @@
-import React, { useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
-import { useSocket } from '@/context/SocketContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 // =============================================================================
-// ACTION PANEL COMPONENT - VERSÃO ORIGINAL COM RESPONSIVIDADE ADICIONADA
+// TYPES
+// =============================================================================
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
+  channel: 'public' | 'werewolf' | 'spectator' | 'system' | 'dead';
+  timestamp: string;
+  filtered?: boolean;
+  isWhisper?: boolean;
+  targetUserId?: string;
+  edited?: boolean;
+  editedAt?: string;
+}
+
+// =============================================================================
+// SYSTEM CHAT COMPONENT - APENAS MENSAGENS DO SISTEMA (SEM CHAT PÚBLICO)
 // =============================================================================
 export default function ActionPanel() {
-  const { gameState, me, alivePlayers, canVote, canAct } = useGame();
-  const { sendMessage } = useSocket();
+  const { gameState, chatMessages, me, canVote, canAct } = useGame();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
-  const [confirmingAction, setConfirmingAction] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // =============================================================================
+  // AUTO SCROLL TO BOTTOM
+  // =============================================================================
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-  // ✅ LOG do estado atual do painel
-  React.useEffect(() => {
-    console.log('🎯 ActionPanel: Current state:', {
-      gamePhase: gameState?.phase,
-      gameDay: gameState?.day,
-      userRole: me?.role,
-      userFaction: me?.faction,
-      userAlive: me?.isAlive,
-      userHasActed: me?.hasActed,
-      userHasVoted: me?.hasVoted,
-      canVote,
-      canAct,
-      selectedTarget,
-      alivePlayers: alivePlayers.length,
-      timestamp: new Date().toISOString()
-    });
-  }, [gameState?.phase, me?.hasActed, me?.hasVoted, canVote, canAct, selectedTarget]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages]);
 
   // =============================================================================
   // LOADING STATE
   // =============================================================================
-  if (!gameState || !me) {
+  if (!gameState) {
     return (
-      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg p-2 md:p-4">
-        <div className="flex items-center justify-center h-full">
-          <LoadingSpinner text="Carregando ações..." />
-        </div>
+      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex items-center justify-center">
+        <LoadingSpinner text="Carregando chat do sistema..." />
       </div>
     );
   }
 
   // =============================================================================
-  // ✅ CORRIGIDO: ACTION HANDLERS COM LOGS DETALHADOS E TIPOS CORRETOS
+  // FILTER SYSTEM MESSAGES
   // =============================================================================
-  const handleNightAction = async () => {
-    if (!selectedTarget || !me.role || isSubmitting) return;
+  const systemMessages = chatMessages.filter(msg =>
+    msg.channel === 'system' || msg.userId === 'system'
+  );
 
-    // ✅ CORREÇÃO PRINCIPAL: Mapear role para tipo de ação exato que o backend espera
-    let actionType: string | null = null;
-    switch (me.role) {
-      case 'SHERIFF':
-        actionType = 'INVESTIGATE';
-        break;
-      case 'DOCTOR':
-        actionType = 'PROTECT';
-        break;
-      case 'WEREWOLF':
-      case 'WEREWOLF_KING':
-        actionType = 'WEREWOLF_KILL'; // ✅ Esta é a correção principal
-        break;
-      case 'VIGILANTE':
-        actionType = 'VIGILANTE_KILL';
-        break;
-      case 'SERIAL_KILLER':
-        actionType = 'SERIAL_KILL';
-        break;
-      default:
-        actionType = null;
-    }
-
-    if (actionType) {
-      setIsSubmitting(true);
-
-      console.log('--- CHECKPOINT 1: FRONTEND --- Enviando Ação:', {
-        actionType,
-        targetId: selectedTarget,
-        timestamp: new Date().toISOString()
-      });
-
-      // ✅ LOG DETALHADO: Tentativa de ação noturna
-      console.log('🌙 ActionPanel: Attempting night action:', {
-        actionType,
-        targetId: selectedTarget,
-        userRole: me.role,
-        userId: me.userId,
-        gamePhase: gameState.phase,
-        gameId: gameState.gameId,
-        timestamp: new Date().toISOString()
-      });
-
-      try {
-        const success = sendMessage('game-action', {
-          type: actionType, // ✅ Enviar o tipo correto
-          targetId: selectedTarget,
-        });
-
-        console.log('🌙 ActionPanel: Night action send result:', {
-          success,
-          actionType,
-          targetId: selectedTarget
-        });
-
-        if (success) {
-          console.log('✅ ActionPanel: Night action sent successfully');
-        } else {
-          console.error('❌ ActionPanel: Failed to send night action');
-        }
-      } catch (error) {
-        console.error('❌ ActionPanel: Error sending night action:', error);
-      }
-
-      // Reset state after sending
-      setTimeout(() => {
-        setSelectedTarget(null);
-        setConfirmingAction(false);
-        setIsSubmitting(false);
-      }, 500);
-    } else {
-      console.warn('⚠️ ActionPanel: No valid action type for role:', me.role);
-    }
-  };
-
-  const handleVote = async () => {
-    if (!selectedTarget || isSubmitting) return;
-
-    setIsSubmitting(true);
-
-    // ✅ LOG DETALHADO: Tentativa de voto
-    console.log('🗳️ ActionPanel: Attempting vote:', {
-      targetId: selectedTarget,
-      userId: me.userId,
-      gamePhase: gameState.phase,
-      gameId: gameState.gameId,
-      timestamp: new Date().toISOString()
-    });
-
+  // =============================================================================
+  // MESSAGE FORMATTING
+  // =============================================================================
+  const formatTimestamp = (timestamp: string) => {
     try {
-      const success = sendMessage('vote', { targetId: selectedTarget });
-
-      console.log('🗳️ ActionPanel: Vote send result:', {
-        success,
-        targetId: selectedTarget
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
       });
-
-      if (success) {
-        console.log('✅ ActionPanel: Vote sent successfully');
-      } else {
-        console.error('❌ ActionPanel: Failed to send vote');
-      }
-    } catch (error) {
-      console.error('❌ ActionPanel: Error sending vote:', error);
+    } catch {
+      return '';
     }
-
-    setTimeout(() => {
-      setSelectedTarget(null);
-      setIsSubmitting(false);
-    }, 500);
   };
 
-  const handleUnvote = async () => {
-    if (isSubmitting) return;
+  const getMessageIcon = (message: string) => {
+    if (message.includes('morreu') || message.includes('eliminado') || message.includes('foi executado')) return '💀';
+    if (message.includes('protegido') || message.includes('protegeu')) return '🛡️';
+    if (message.includes('investigou') || message.includes('investigação')) return '🔍';
+    if (message.includes('votou') || message.includes('voto')) return '🗳️';
+    if (message.includes('atacou') || message.includes('matou')) return '🐺';
+    if (message.includes('noite') || message.includes('anoiteceu')) return '🌙';
+    if (message.includes('dia') || message.includes('amanheceu')) return '☀️';
+    if (message.includes('vitória') || message.includes('venceu') || message.includes('ganhou')) return '🏆';
+    if (message.includes('iniciou') || message.includes('começou') || message.includes('jogo')) return '🎮';
+    if (message.includes('conectou') || message.includes('entrou')) return '🔌';
+    if (message.includes('desconectou') || message.includes('saiu')) return '🔌';
+    return 'ℹ️';
+  };
 
-    setIsSubmitting(true);
-
-    // ✅ LOG DETALHADO: Tentativa de remover voto
-    console.log('🗳️ ActionPanel: Attempting unvote:', {
-      userId: me.userId,
-      gamePhase: gameState.phase,
-      timestamp: new Date().toISOString()
-    });
-
-    try {
-      const success = sendMessage('unvote', {});
-
-      console.log('🗳️ ActionPanel: Unvote send result:', { success });
-
-      if (success) {
-        console.log('✅ ActionPanel: Unvote sent successfully');
-      } else {
-        console.error('❌ ActionPanel: Failed to send unvote');
-      }
-    } catch (error) {
-      console.error('❌ ActionPanel: Error sending unvote:', error);
-    }
-
-    setTimeout(() => {
-      setIsSubmitting(false);
-    }, 500);
+  const getMessageColor = (message: string) => {
+    if (message.includes('morreu') || message.includes('eliminado') || message.includes('foi executado')) return 'text-red-300';
+    if (message.includes('protegido') || message.includes('protegeu')) return 'text-green-300';
+    if (message.includes('investigou') || message.includes('investigação')) return 'text-yellow-300';
+    if (message.includes('votou') || message.includes('voto')) return 'text-orange-300';
+    if (message.includes('atacou') || message.includes('matou')) return 'text-red-400';
+    if (message.includes('vitória') || message.includes('venceu') || message.includes('ganhou')) return 'text-purple-300';
+    if (message.includes('iniciou') || message.includes('começou') || message.includes('jogo')) return 'text-blue-300';
+    if (message.includes('noite') || message.includes('anoiteceu')) return 'text-indigo-300';
+    if (message.includes('dia') || message.includes('amanheceu')) return 'text-yellow-200';
+    return 'text-white/90';
   };
 
   // =============================================================================
-  // ✅ LÓGICA DAS AÇÕES (ORIGINAL MANTIDA) - CORRIGIDA TIPAGEM
+  // GAME STATUS INFO - MANTENDO SUA VERSÃO SIMPLES
   // =============================================================================
+  const getGameStatusInfo = () => {
+    const alivePlayers = gameState.players.filter(p => p.isAlive && !p.isSpectator);
+    const deadPlayers = gameState.players.filter(p => !p.isAlive && !p.isSpectator);
+    
+    return {
+      phase: gameState.phase,
+      day: gameState.day,
+      alivePlayers: alivePlayers.length,
+      deadPlayers: deadPlayers.length,
+      timeLeft: gameState.timeLeft,
+    };
+  };
+
+  // =============================================================================
+  // ACTION INFO - PRESERVANDO A LÓGICA DELE COMO FALLBACK (COMENTADA)
+  // =============================================================================
+  /*
   const getActionInfo = () => {
     if (gameState.phase === 'VOTING') {
       return {
@@ -208,11 +129,9 @@ export default function ActionPanel() {
       };
     }
 
-    if (gameState.phase === 'NIGHT' && me.role) {
+    if (gameState.phase === 'NIGHT' && me?.role) {
       const roleActions = {
         WEREWOLF_KING: { title: '👑 Ataque da Alcateia', description: 'Escolha a presa para a alcateia eliminar', actionText: 'Atacar', canAct: canAct },
-
-        // ✅ AJUSTE A ENTRADA PARA O LOBO COMUM (com canAct: false)
         WEREWOLF: { title: '🐺 Alcateia', description: 'Você segue as ordens do seu Rei. Aguarde a decisão...', actionText: 'Aguardar', canAct: false },
         SHERIFF: { title: '🔍 Investigação', description: 'Investigue um jogador', actionText: 'Investigar', canAct: canAct },
         DOCTOR: { title: '💉 Proteção', description: 'Proteja alguém dos ataques', actionText: 'Proteger', canAct: canAct },
@@ -234,193 +153,95 @@ export default function ActionPanel() {
       }
     }
 
-    return {
-      title: '⏳ Aguardando',
-      description: 'Aguarde o início da próxima fase',
-      canAct: false,
-      actionText: 'Aguardar',
-      isVoting: false
-    };
+    return null;
   };
+  */
 
-  const actionInfo = getActionInfo();
-  const validTargets = alivePlayers.filter(p => p.id !== me.id);
-  const myVote = gameState.votes?.[me.userId];
-
-  // =============================================================================
-  // ✅ HAS VOTED - UNVOTE INTERFACE (ORIGINAL MANTIDA)
-  // =============================================================================
-  if (myVote && gameState.phase === 'VOTING') {
-    return (
-      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
-
-        {/* Header - Mais compacto SEM DEBUG */}
-        <div className="flex-shrink-0 border-b border-medieval-600 p-3">
-          <h3 className="text-base font-bold text-white mb-1">✅ Voto Registrado</h3>
-          <p className="text-white/70 text-xs">Você já votou nesta rodada</p>
-        </div>
-
-        <div className="flex-1 flex flex-col justify-center p-3">
-          <div className="text-center mb-6">
-            <div className="text-3xl mb-4">🗳️</div>
-            <div className="text-green-400 font-bold text-sm mb-2">Seu voto foi registrado!</div>
-            <div className="text-white text-base">
-              Você votou em: <span className="font-bold">{validTargets.find(p => p.id === myVote)?.username}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleUnvote}
-            disabled={isSubmitting}
-            className={`
-              w-full py-2 px-4 rounded-lg font-semibold text-sm transition-all duration-200
-              ${isSubmitting
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-red-600 hover:bg-red-700 text-white'
-              }
-            `}
-          >
-            {isSubmitting ? 'Removendo...' : 'Remover Voto'}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const statusInfo = getGameStatusInfo();
 
   // =============================================================================
-  // ✅ MAIN ACTION INTERFACE (ORIGINAL COM RESPONSIVIDADE)
+  // RENDER COMPONENT - MANTENDO SUA INTERFACE
   // =============================================================================
   return (
-    <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
-
-      {/* Header - Mais compacto SEM DEBUG */}
-      <div className="flex-shrink-0 border-b border-medieval-600 p-3">
-        <h3 className="text-base font-bold text-white mb-1">{actionInfo.title}</h3>
-        <p className="text-white/70 text-xs">{actionInfo.description}</p>
-      </div>
-
-      {/* Target Selection - Mais compacto */}
-      <div className="flex-1 overflow-y-auto p-3">
-        <h4 className="text-white font-semibold mb-2 text-sm">Escolha um alvo:</h4>
-
-        <div className="space-y-1">
-          {validTargets.map((player) => (
-            <button
-              key={player.id}
-              onClick={() => {
-                console.log('🎯 ActionPanel: Target selected:', {
-                  playerId: player.id,
-                  username: player.username,
-                  previousTarget: selectedTarget
-                });
-                setSelectedTarget(player.id);
-              }}
-              disabled={isSubmitting}
-              className={`
-                w-full p-2 rounded-lg border-2 transition-all duration-200 text-left
-                ${selectedTarget === player.id
-                  ? 'border-amber-400 bg-amber-900/30'
-                  : 'border-medieval-600 bg-medieval-700/30 hover:border-amber-400/50 hover:bg-medieval-700/50'
-                }
-                ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
-              `}
-            >
-              <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 rounded-full bg-medieval-600 flex items-center justify-center text-xs">
-                  {player.avatar ? (
-                    <img src={player.avatar} alt={player.username} className="w-full h-full rounded-full" />
-                  ) : (
-                    player.isHost ? '👑' : player.userId === me.userId ? '👤' : '🧑'
-                  )}
-                </div>
-
-                <div className="flex-1">
-                  <div className="text-white font-medium text-sm">{player.username}</div>
-                  <div className="text-white/50 text-xs">
-                    {player.isHost && 'Host • '}
-                    {player.isConnected ? 'Conectado' : 'Desconectado'}
-                    {player.isProtected && ' • 🛡️ Protegido'}
-                  </div>
-                </div>
-
-                {selectedTarget === player.id && (
-                  <div className="text-amber-400 text-lg">👈</div>
-                )}
-              </div>
-            </button>
-          ))}
+    <div className="h-full flex flex-col bg-medieval-800/50 border border-medieval-600 rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="bg-medieval-700/70 border-b border-medieval-600 p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-2xl">💬</span>
+          <h3 className="text-white font-bold text-base font-medieval">
+            Chat do Sistema
+          </h3>
         </div>
 
-        {validTargets.length === 0 && (
-          <div className="text-center text-white/50 py-8">
-            <div className="text-3xl md:text-4xl mb-2">🚫</div>
-            <p className="text-sm md:text-base">Nenhum alvo válido disponível</p>
-            {/* ✅ DEBUG: Por que não há alvos */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mt-2 text-xs text-white/30">
-                Debug: Alive players: {alivePlayers.length} | Phase: {gameState.phase} | Role: {me.role}
-              </div>
-            )}
+        {/* Game Status - More compact */}
+        <div className="flex flex-wrap gap-3 text-xs text-white/70">
+          <div className="flex items-center gap-1">
+            <span className="text-yellow-400">📅</span>
+            <span>Dia {statusInfo.day}</span>
           </div>
-        )}
-      </div>
-
-      {/* Action Button - Mais compacto */}
-      {validTargets.length > 0 && (
-        <div className="flex-shrink-0 border-t border-medieval-600 p-3">
-          {!confirmingAction ? (
-            <button
-              onClick={() => {
-                console.log('🎯 ActionPanel: Confirming action:', {
-                  selectedTarget,
-                  actionType: actionInfo.title
-                });
-                setConfirmingAction(true);
-              }}
-              disabled={!selectedTarget || isSubmitting}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 disabled:cursor-not-allowed text-sm"
-            >
-              {isSubmitting ? 'Enviando...' :
-                selectedTarget
-                  ? `${actionInfo.actionText} ${validTargets.find(p => p.id === selectedTarget)?.username}`
-                  : 'Selecione um alvo'
-              }
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-center text-amber-400 font-semibold text-sm">
-                ⚠️ Confirmar ação?
-              </div>
-
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => {
-                    console.log('🎯 ActionPanel: Action cancelled');
-                    setConfirmingAction(false);
-                    setSelectedTarget(null);
-                  }}
-                  disabled={isSubmitting}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  onClick={() => {
-                    console.log('🎯 ActionPanel: Action confirmed, executing...');
-                    gameState.phase === 'VOTING' ? handleVote() : handleNightAction();
-                  }}
-                  disabled={isSubmitting}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
-                >
-                  {isSubmitting ? 'Enviando...' : 'CONFIRMAR'}
-                </button>
-              </div>
+          <div className="flex items-center gap-1">
+            <span className="text-green-400">👥</span>
+            <span>{statusInfo.alivePlayers} vivos</span>
+          </div>
+          {statusInfo.deadPlayers > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-red-400">💀</span>
+              <span>{statusInfo.deadPlayers} mortos</span>
             </div>
           )}
         </div>
-      )}
+      </div>
 
+      {/* Messages Container */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {systemMessages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-white/50">
+            <div className="text-3xl mb-2">💬</div>
+            <p className="text-center text-sm">
+              Aqui ficaria o chat do sistema
+            </p>
+            <p className="text-center text-xs text-white/40 mt-1">
+              Aguardando eventos...
+            </p>
+          </div>
+        ) : (
+          systemMessages.map((msg) => (
+            <div
+              key={msg.id}
+              className="bg-black/20 rounded-md p-2 border-l-2 border-medieval-500/50 backdrop-blur-sm"
+            >
+              <div className="flex items-start gap-2">
+                <div className="text-lg flex-shrink-0">
+                  {getMessageIcon(msg.message)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-medieval-300 text-xs font-medium">
+                      Sistema
+                    </span>
+                    <span className="text-white/40 text-xs">
+                      {formatTimestamp(msg.timestamp)}
+                    </span>
+                  </div>
+                  <p className={`text-xs leading-relaxed ${getMessageColor(msg.message)}`}>
+                    {msg.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* Auto-scroll anchor */}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Footer with info */}
+      <div className="bg-medieval-700/50 border-t border-medieval-600 p-2">
+        <div className="text-center text-white/60 text-xs">
+          📢 Eventos e notificações do jogo aparecem aqui
+        </div>
+      </div>
     </div>
   );
 }

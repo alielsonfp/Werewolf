@@ -20,10 +20,11 @@ interface ChatMessage {
   editedAt?: string;
 }
 
-type ChatTab = 'public' | 'werewolf' | 'dead' | 'system';
+// ✅ ALTERAÇÃO: Removido 'system' dos tipos de aba disponíveis
+type ChatTab = 'public' | 'werewolf' | 'dead';
 
 // =============================================================================
-// CHAT GIGANTE COMPONENT - VERSÃO LIMPA SEM DEBUG
+// CHAT GIGANTE COMPONENT - SEM MENSAGENS DO SISTEMA
 // =============================================================================
 export default function ChatGigante() {
   const { gameState, me, chatMessages } = useGame();
@@ -57,31 +58,32 @@ export default function ChatGigante() {
   }
 
   // =============================================================================
-  // DETERMINE AVAILABLE TABS
+  // ✅ ALTERAÇÃO: DETERMINE AVAILABLE TABS (SEM SYSTEM)
   // =============================================================================
   const getAvailableTabs = (): ChatTab[] => {
     const tabs: ChatTab[] = ['public'];
 
-    if (me?.role === 'WEREWOLF' || me?.role === 'WEREWOLF_KING') {
+    // Werewolf chat (apenas para lobisomens vivos)
+    if (me.faction === 'WEREWOLF' && me.isAlive) {
       tabs.push('werewolf');
     }
 
-    if (!me?.isAlive) {
+    // Dead chat (apenas para mortos)
+    if (!me.isAlive) {
       tabs.push('dead');
     }
-
-    tabs.push('system');
 
     return tabs;
   };
 
-  const availableTabs = getAvailableTabs();
-
   // =============================================================================
-  // FILTER MESSAGES BY TAB
+  // ✅ ALTERAÇÃO: FILTER MESSAGES (EXCLUINDO SYSTEM)
   // =============================================================================
   const getMessagesForTab = (tab: ChatTab): ChatMessage[] => {
     return chatMessages.filter(msg => {
+      // ✅ IMPORTANTE: Excluir mensagens do sistema do chat
+      if (msg.channel === 'system') return false;
+
       switch (tab) {
         case 'public':
           return msg.channel === 'public';
@@ -89,8 +91,6 @@ export default function ChatGigante() {
           return msg.channel === 'werewolf';
         case 'dead':
           return msg.channel === 'dead';
-        case 'system':
-          return msg.channel === 'system';
         default:
           return false;
       }
@@ -98,61 +98,47 @@ export default function ChatGigante() {
   };
 
   // =============================================================================
-  // CHECK CHAT RESTRICTIONS (SEM LOGS)
+  // MESSAGE RESTRICTIONS
   // =============================================================================
-  const canSendMessage = () => {
-    // Verificações básicas, se não tiver dados, não pode enviar
-    if (!me || !gameState) {
-      return false;
+  const canSendMessage = (): boolean => {
+    if (!gameState || !me) return false;
+
+    switch (activeTab) {
+      case 'public':
+        // Pode falar durante o dia ou se estiver morto (como espectador)
+        return gameState.phase === 'DAY' || !me.isAlive;
+      case 'werewolf':
+        // Lobisomens podem falar durante a noite
+        return (me.faction === 'WEREWOLF') && (me.isAlive ?? false) && gameState.phase === 'NIGHT';
+      case 'dead':
+        // Mortos podem sempre falar entre si
+        return !(me.isAlive ?? true);
+      default:
+        return false;
+    }
+  };
+
+  const getRestrictionMessage = (): string | null => {
+    if (!gameState || !me) return 'Carregando...';
+
+    if (activeTab === 'public' && gameState.phase === 'NIGHT' && (me.isAlive ?? false)) {
+      return 'Você não pode falar durante a noite. Aguarde o dia.';
     }
 
-    // REGRA 1: Se o jogador está morto, ele SÓ pode falar no chat dos mortos
-    if (!me.isAlive) {
-      return activeTab === 'dead';
+    if (activeTab === 'werewolf' && gameState.phase === 'DAY') {
+      return 'Canal werewolf apenas disponível durante a noite.';
     }
 
-    // A partir daqui, o jogador está VIVO
-
-    // REGRA 2 (A REGRA DE OURO): Se for noite E o chat for público, NINGUÉM FALA
-    if (gameState.phase === 'NIGHT' && activeTab === 'public') {
-      return false; // ❌ Chat público bloqueado durante a noite para TODOS
-    }
-
-    // REGRA 3: Durante a NOITE, apenas lobisomens podem usar o chat de lobisomens
-    if (gameState.phase === 'NIGHT' && activeTab === 'werewolf') {
-      const isWerewolf = me.role === 'WEREWOLF' || me.role === 'WEREWOLF_KING';
-      return isWerewolf;
-    }
-
-    // REGRA 4: Se NÃO for noite (Dia ou Votação), o único chat para os vivos é o público
-    if (gameState.phase === 'DAY' || gameState.phase === 'VOTING') {
-      return activeTab === 'public';
-    }
-
-    // REGRA 5: Nunca permitir envio no canal do sistema
-    if (activeTab === 'system') {
-      return false;
-    }
-
-    // REGRA 6: Chat de lobisomens só para lobisomens (em qualquer fase)
-    if (activeTab === 'werewolf') {
-      return me.role === 'WEREWOLF' || me.role === 'WEREWOLF_KING';
-    }
-
-    // Se não se encaixar em nenhuma regra acima, bloqueia por segurança
-    return false;
+    return null;
   };
 
   // =============================================================================
-  // SEND MESSAGE (SEM DEBUG)
+  // EVENT HANDLERS
   // =============================================================================
   const handleSendMessage = async () => {
-    if (!message.trim() || !gameState || isSubmitting || !canSendMessage()) {
-      return;
-    }
+    if (!message.trim() || isSubmitting || !canSendMessage()) return;
 
     setIsSubmitting(true);
-
     try {
       const success = sendMessage('chat-message', {
         message: message.trim(),
@@ -161,13 +147,13 @@ export default function ChatGigante() {
 
       if (success) {
         setMessage('');
+      } else {
+        console.error('Failed to send message - WebSocket not connected');
       }
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
+      console.error('❌ Error sending message:', error);
     } finally {
-      setTimeout(() => {
-        setIsSubmitting(false);
-      }, 200);
+      setIsSubmitting(false);
     }
   };
 
@@ -179,145 +165,78 @@ export default function ChatGigante() {
   };
 
   // =============================================================================
-  // TAB CONFIGURATION
+  // ✅ ALTERAÇÃO: TAB CONFIGURATION (SEM SYSTEM)
   // =============================================================================
-  const getTabConfig = (tab: ChatTab) => {
-    switch (tab) {
-      case 'public':
-        return {
-          name: 'Público',
-          icon: '🗣️',
-          color: 'text-white',
-          bgColor: 'bg-blue-600',
-          available: true,
-        };
-      case 'werewolf':
-        return {
-          name: 'Lobisomens',
-          icon: '🐺',
-          color: 'text-red-400',
-          bgColor: 'bg-red-600',
-          available: me?.role === 'WEREWOLF' || me?.role === 'WEREWOLF_KING',
-        };
-      case 'dead':
-        return {
-          name: 'Mortos',
-          icon: '👻',
-          color: 'text-gray-400',
-          bgColor: 'bg-gray-600',
-          available: !me?.isAlive,
-        };
-      case 'system':
-        return {
-          name: 'Sistema',
-          icon: '⚙️',
-          color: 'text-amber-400',
-          bgColor: 'bg-amber-600',
-          available: true,
-        };
-    }
+  const tabConfigs = {
+    public: { name: 'Público', icon: '🏘️', bgColor: 'bg-blue-600' },
+    werewolf: { name: 'Lobisomens', icon: '🐺', bgColor: 'bg-red-600' },
+    dead: { name: 'Mortos', icon: '💀', bgColor: 'bg-gray-600' },
   };
 
+  const availableTabs = getAvailableTabs();
+  const restrictionMessage = getRestrictionMessage();
+
   // =============================================================================
-  // MESSAGE COMPONENT
+  // CHAT MESSAGE COMPONENT
   // =============================================================================
   const ChatMessageComponent = ({ msg }: { msg: ChatMessage }) => {
-    const isMe = msg.userId === me?.userId;
-    const isSystem = msg.channel === 'system';
+    const formatTime = (timestamp: string) => {
+      return new Date(timestamp).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
+    const getMessageStyle = (channel: string) => {
+      switch (channel) {
+        case 'public':
+          return 'bg-blue-900/20 border-blue-600/30';
+        case 'werewolf':
+          return 'bg-red-900/20 border-red-600/30';
+        case 'dead':
+        case 'spectator':
+          return 'bg-gray-900/20 border-gray-600/30';
+        default:
+          return 'bg-medieval-700/30 border-medieval-600/30';
+      }
+    };
 
     return (
-      <div className={`p-2 border-b border-medieval-600/30 ${isMe ? 'bg-blue-900/20' : ''}`}>
-        <div className="flex items-start space-x-2">
-          {/* Avatar */}
-          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-medieval-700 flex items-center justify-center text-xs">
-            {isSystem ? '🤖' : isMe ? '👤' : '🧑'}
-          </div>
-
-          {/* Message Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2 mb-1">
-              <span className={`font-semibold text-xs ${isMe ? 'text-blue-300' : isSystem ? 'text-amber-300' : 'text-white'}`}>
-                {msg.username}
-              </span>
-              <span className="text-xs text-white/50">
-                {new Date(msg.timestamp).toLocaleTimeString('pt-BR', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </span>
-              {isSystem && (
-                <span className="text-xs bg-amber-600 text-white px-1 rounded">
-                  SISTEMA
-                </span>
-              )}
-            </div>
-
-            <div className={`text-xs break-words ${isSystem ? 'text-amber-100' : 'text-white/90'}`}>
-              {msg.message}
-            </div>
-          </div>
+      <div className={`p-2 rounded border ${getMessageStyle(msg.channel)} text-white/90 text-sm`}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-medium text-xs">
+            {msg.username}
+          </span>
+          <span className="text-xs opacity-60">
+            {formatTime(msg.timestamp)}
+          </span>
         </div>
+        <p className="text-sm leading-relaxed">
+          {msg.message}
+        </p>
       </div>
     );
   };
 
   // =============================================================================
-  // GET CHAT RESTRICTION MESSAGE
+  // RENDER
   // =============================================================================
-  const getChatRestrictionMessage = () => {
-    if (!me.isAlive && activeTab !== 'dead') {
-      return "Você está morto e só pode usar o chat dos mortos";
-    }
-
-    if (activeTab === 'system') {
-      return "Você não pode enviar mensagens no canal do sistema";
-    }
-
-    if (activeTab === 'werewolf' && me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') {
-      return "Apenas lobisomens podem usar este chat";
-    }
-
-    if (gameState.phase === 'NIGHT' && activeTab === 'public' &&
-      me.role !== 'WEREWOLF' && me.role !== 'WEREWOLF_KING') {
-      return "Durante a noite, apenas Lobisomens podem conversar entre si";
-    }
-
-    return null;
-  };
-
-  const restrictionMessage = getChatRestrictionMessage();
-
   return (
     <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
-
-      {/* Chat Header - Compacto */}
-      <div className="flex-shrink-0 border-b border-medieval-600 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-base font-bold text-white flex items-center space-x-2">
-            <span>💬</span>
-            <span>Chat do Jogo</span>
-          </h2>
-
-          {gameState && (
-            <div className="text-xs text-white/50">
-              Dia {gameState.day} - {gameState.phase}
-            </div>
-          )}
-        </div>
-
-        {/* Chat Tabs - Compactos */}
+      {/* Header with Tabs */}
+      <div className="flex-shrink-0 bg-medieval-800/50 border-b border-medieval-600 p-3">
         <div className="flex space-x-1">
           {availableTabs.map((tab) => {
-            const config = getTabConfig(tab);
-            const tabMessages = getMessagesForTab(tab);
-            const unreadCount = tab !== activeTab ? tabMessages.length : 0;
+            const config = tabConfigs[tab];
+            const messagesCount = getMessagesForTab(tab).length;
+            const unreadCount = messagesCount > 0 && tab !== activeTab ? Math.min(messagesCount, 9) : 0;
 
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`
-                  px-2 py-1 rounded text-xs font-medium transition-all duration-200 relative
+                  relative px-3 py-2 text-xs font-medium rounded-md transition-colors duration-200
                   ${activeTab === tab
                     ? `${config.bgColor} text-white`
                     : 'bg-medieval-700 text-white/70 hover:text-white'
@@ -328,7 +247,7 @@ export default function ChatGigante() {
                 <span className="hidden sm:inline">{config.name}</span>
 
                 {/* Unread count */}
-                {unreadCount > 0 && tab !== 'system' && (
+                {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
@@ -350,7 +269,7 @@ export default function ChatGigante() {
             </div>
           </div>
         ) : (
-          <div>
+          <div className="p-3 space-y-2">
             {getMessagesForTab(activeTab).map((msg) => (
               <ChatMessageComponent key={msg.id} msg={msg} />
             ))}
@@ -392,7 +311,7 @@ export default function ChatGigante() {
           </button>
         </div>
 
-        {/* Help text - Compacto */}
+        {/* Help text */}
         <div className="mt-1 text-xs text-white/50 text-center">
           💡 Use Enter para enviar • Shift+Enter para quebrar linha
         </div>

@@ -1,12 +1,45 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '@/context/GameContext';
+import { useTheme } from '@/context/ThemeContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import PlayerActionModal from './PlayerActionModal';
+import { Player, GamePhase } from '@/types';
 
 // =============================================================================
-// PLAYER CIRCLE COMPONENT - PLAYERS AO REDOR DA FORCA (SEM CEMITÉRIO)
+// PLAYER EMOJIS - Lista de emojis de pessoas para usar nas bolinhas
+// =============================================================================
+const PLAYER_EMOJIS = [
+  '👨', '👩', '🧑', '👴', '👵'];
+
+// =============================================================================
+// HELPER FUNCTION - Get player emoji by ID
+// =============================================================================
+const getPlayerEmoji = (playerId: string | undefined): string => {
+  // Default emoji if no ID provided
+  if (!playerId) return '👤';
+  
+  // Use a simple hash of the player ID to consistently assign the same emoji
+  let hash = 0;
+  for (let i = 0; i < playerId.length; i++) {
+    const char = playerId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  const index = Math.abs(hash) % PLAYER_EMOJIS.length;
+  return PLAYER_EMOJIS[index] || '👤'; // Fallback emoji if undefined
+};
+// =============================================================================
+// PLAYER CIRCLE COMPONENT - PLAYERS AO REDOR DA FORCA (COM AÇÕES DE CLIQUE)
 // =============================================================================
 export default function PlayerCircle() {
   const { gameState, me } = useGame();
+  const { playSound } = useTheme();
+  
+  // =============================================================================
+  // MODAL STATE
+  // =============================================================================
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // =============================================================================
   // LOADING STATE
@@ -29,150 +62,237 @@ export default function PlayerCircle() {
   // =============================================================================
   const getPlayerPosition = (index: number, totalPlayers: number) => {
     const angle = (index * 360) / totalPlayers - 90; // Start from top
-    const radiusX = 35; // Horizontal radius percentage
-    const radiusY = 30; // Vertical radius percentage
+    const radius = 180; // Distance from center
+    const centerX = 50; // Center X percentage
+    const centerY = 50; // Center Y percentage
 
-    const x = 50 + radiusX * Math.cos((angle * Math.PI) / 180);
-    const y = 50 + radiusY * Math.sin((angle * Math.PI) / 180);
+    const x = centerX + (radius * Math.cos((angle * Math.PI) / 180)) / 4;
+    const y = centerY + (radius * Math.sin((angle * Math.PI) / 180)) / 4;
 
-    return { x, y };
+    return { x: `${x}%`, y: `${y}%` };
   };
 
+  // =============================================================================
+  // PLAYER CLICK HANDLER
+  // =============================================================================
+  const handlePlayerClick = (player: Player) => {
+    // Don't allow actions if not logged in or no game state
+    if (!me || !gameState) {
+      playSound('error');
+      return;
+    }
+
+    // Don't allow clicking on dead players
+    if (!player.isAlive) {
+      playSound('error');
+      return;
+    }
+
+    // Don't allow actions during certain phases
+    const canAct = gameState.phase === GamePhase.VOTING || 
+                   (gameState.phase === GamePhase.NIGHT && me.role && 
+                    ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role));
+    
+    if (!canAct) {
+      playSound('error');
+      return;
+    }
+
+    // Open modal for selected player
+    playSound('button_click');
+    setSelectedPlayer(player);
+    setIsModalOpen(true);
+  };
+
+  // =============================================================================
+  // MODAL HANDLERS
+  // =============================================================================
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedPlayer(null);
+  };
+
+  // =============================================================================
+  // GET PLAYER STATUS STYLING
+  // =============================================================================
+  const getPlayerStyles = (player: Player) => {
+    const isCurrentPlayer = player.id === me?.id;
+    const canClickPlayer = me && gameState && player.isAlive && 
+                          (gameState.phase === GamePhase.VOTING || 
+                           (gameState.phase === GamePhase.NIGHT && me.role && 
+                            ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role)));
+
+    let baseClasses = `
+      relative w-16 h-16 rounded-full border-4 flex items-center justify-center
+      transition-all duration-300 transform text-white font-bold text-sm
+      shadow-lg backdrop-blur-sm
+    `;
+
+    // Current player styling
+    if (isCurrentPlayer) {
+      baseClasses += ` border-yellow-400 bg-gradient-to-br from-yellow-600/80 to-yellow-800/80
+                       shadow-yellow-400/50 ring-2 ring-yellow-400/30`;
+    }
+    // Clickable players
+    else if (canClickPlayer && !isCurrentPlayer) {
+      baseClasses += ` border-blue-400 bg-gradient-to-br from-blue-600/80 to-blue-800/80
+                       hover:border-blue-300 hover:shadow-blue-400/50 hover:scale-110
+                       cursor-pointer hover:ring-2 hover:ring-blue-400/50
+                       active:scale-95`;
+    }
+    // Non-clickable players
+    else {
+      baseClasses += ` border-gray-400 bg-gradient-to-br from-gray-600/80 to-gray-800/80`;
+    }
+
+    return baseClasses;
+  };
+
+  // =============================================================================
+  // GET CLICK INDICATOR
+  // =============================================================================
+  const getClickIndicator = (player: Player) => {
+    if (!me || !gameState || player.id === me.id || !player.isAlive) {
+      return null;
+    }
+
+    const isVoting = gameState.phase === GamePhase.VOTING;
+    const isNight = gameState.phase === GamePhase.NIGHT;
+    const hasNightAbility = me.role && ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role);
+
+    if (isVoting) {
+      return (
+        <div className="absolute -top-2 -right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs">
+          🗳️
+        </div>
+      );
+    }
+
+    if (isNight && hasNightAbility && !me.hasActed) {
+      const abilityIcons = {
+        'SHERIFF': '🔍',
+        'DOCTOR': '🛡️',
+        'WEREWOLF': '🐺',
+        'VIGILANTE': '⚔️',
+        'SERIAL_KILLER': '🔪'
+      };
+      
+      return (
+        <div className="absolute -top-2 -right-2 w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-xs">
+          {abilityIcons[me.role as keyof typeof abilityIcons] || '✨'}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  // =============================================================================
+  // RENDER COMPONENT
+  // =============================================================================
   return (
-    <div className="w-full h-full bg-medieval-800/30 border border-medieval-600 rounded-lg relative overflow-hidden">
-
-      {/* Background - Town Square */}
-      <div className="absolute inset-0 bg-gradient-to-b from-amber-900/20 to-medieval-900/50" />
-
-      {/* Center - Gallows/Forca */}
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-        <div className="text-center">
-          {/* Forca Visual */}
-          <div className="text-6xl mb-2 filter drop-shadow-lg">
-            🪓
-          </div>
-          <div className="text-amber-400 text-xs font-semibold">
+    <>
+      <div className="relative w-full h-full">
+        {/* Background Circle */}
+        <div className="absolute inset-0 border-2 border-medieval-600/50 rounded-full bg-medieval-900/20" />
+        
+        {/* Center Gallows with Axe */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+          <div className="text-6xl filter drop-shadow-lg">🪓</div>
+          <div className="text-center text-white/70 text-sm mt-1 font-medieval font-bold">
             FORCA
           </div>
         </div>
-      </div>
 
-      {/* Living Players Circle */}
-      {alivePlayers.map((player, index) => {
-        const position = getPlayerPosition(index, alivePlayers.length);
-        const isMe = me?.userId === player.userId;
-        const hasVoted = gameState.votes && Object.keys(gameState.votes).includes(player.userId);
-        const votesReceived = gameState.votes
-          ? Object.values(gameState.votes).filter(targetId => targetId === player.id).length
-          : 0;
+        {/* Players positioned in circle */}
+        {alivePlayers.map((player, index) => {
+          const position = getPlayerPosition(index, alivePlayers.length);
+          
+          return (
+            <div
+              key={player.id}
+              className="absolute transform -translate-x-1/2 -translate-y-1/2"
+              style={{
+                left: position.x,
+                top: position.y,
+              }}
+            >
+              {/* Player Circle */}
+              <div
+                className={getPlayerStyles(player)}
+                onClick={() => handlePlayerClick(player)}
+                title={`${player.username}${player.id === me?.id ? ' (Você)' : ''}`}
+              >
+                {/* Player Emoji */}
+                <span className="text-2xl">
+                  {getPlayerEmoji(player?.id)}
+                </span>
 
-        return (
-          <div
-            key={player.id}
-            className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer group"
-            style={{
-              left: `${position.x}%`,
-              top: `${position.y}%`,
-            }}
-          >
-            {/* Player Avatar */}
-            <div className={`
-              w-12 h-12 rounded-full border-2 flex items-center justify-center text-lg
-              transition-all duration-200 group-hover:scale-110
-              ${isMe
-                ? 'border-blue-400 bg-blue-900/70 text-blue-200'
-                : hasVoted
-                  ? 'border-green-400 bg-green-900/70 text-green-200'
-                  : 'border-medieval-300 bg-medieval-700/70 text-white'
-              }
-              ${votesReceived > 0 ? 'ring-2 ring-red-400 ring-opacity-75' : ''}
-            `}>
-              {player.username?.[0]?.toUpperCase() || '?'}
-            </div>
+                {/* Action Indicator */}
+                {getClickIndicator(player)}
 
-            {/* Vote Count Indicator */}
-            {votesReceived > 0 && gameState.phase === 'VOTING' && (
-              <div className="absolute -top-2 -right-2 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold animate-pulse">
-                {votesReceived}
+                {/* Voted Indicator */}
+                {gameState.phase === GamePhase.VOTING && gameState.votes[player.id] && (
+                  <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 
+                                w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-xs">
+                    ✓
+                  </div>
+                )}
+
+                {/* Protected Indicator (if you know they're protected) */}
+                {gameState.phase === GamePhase.NIGHT && player.isProtected && (
+                  <div className="absolute -top-1 -left-1 w-4 h-4 bg-green-500 rounded-full 
+                                flex items-center justify-center text-xs">
+                    🛡️
+                  </div>
+                )}
               </div>
-            )}
 
-            {/* Voted Indicator */}
-            {hasVoted && gameState.phase === 'VOTING' && (
-              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-                <div className="bg-green-600 text-white text-xs px-1 rounded-full">
-                  ✓
+              {/* Player Name */}
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 
+                            text-white text-xs text-center font-medium min-w-max px-2">
+                <div className="bg-black/50 rounded px-2 py-1 backdrop-blur-sm">
+                  {player.username}
+                  {player.id === me?.id && (
+                    <div className="text-yellow-400 text-xs">(Você)</div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
+          );
+        })}
 
-            {/* Player Name Tooltip */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-              <div className={`
-                px-2 py-1 rounded text-xs whitespace-nowrap font-medium border
-                ${isMe
-                  ? 'text-blue-300 bg-blue-900/80 border-blue-600'
-                  : 'text-white bg-medieval-800/80 border-medieval-600'
-                }
-              `}>
-                {player.username}
+        {/* Instructions overlay */}
+        {me && gameState && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 
+                        text-center text-white/70 text-sm max-w-xs">
+            {gameState.phase === GamePhase.VOTING && (
+              <div className="bg-black/60 rounded-lg px-4 py-2 backdrop-blur-sm">
+                🗳️ Clique em um jogador para votar
               </div>
-
-              {/* Role indicator (only for me or if dead) */}
-              {isMe && player.role && (
-                <div className="text-xs text-purple-300 mt-1 text-center">
-                  {player.role}
-                </div>
-              )}
-            </div>
+            )}
+            {gameState.phase === GamePhase.NIGHT && me.role && 
+             ['SHERIFF', 'DOCTOR', 'WEREWOLF', 'VIGILANTE', 'SERIAL_KILLER'].includes(me.role) && 
+             !me.hasActed && (
+              <div className="bg-black/60 rounded-lg px-4 py-2 backdrop-blur-sm">
+                ✨ Clique em um jogador para usar sua habilidade
+              </div>
+            )}
+            {gameState.phase === GamePhase.NIGHT && me.hasActed && (
+              <div className="bg-black/60 rounded-lg px-4 py-2 backdrop-blur-sm">
+                ✅ Você já realizou sua ação nesta noite
+              </div>
+            )}
           </div>
-        );
-      })}
-
-      {/* Phase Information Overlay */}
-      <div className="absolute top-4 left-4 bg-medieval-800/80 border border-medieval-600 rounded-lg px-3 py-2">
-        <div className="text-white text-sm">
-          {gameState.phase === 'NIGHT' && (
-            <div className="flex items-center space-x-2">
-              <span>🌙</span>
-              <span>Ações secretas em andamento...</span>
-            </div>
-          )}
-          {gameState.phase === 'DAY' && (
-            <div className="flex items-center space-x-2">
-              <span>☀️</span>
-              <span>Discutam e investiguem!</span>
-            </div>
-          )}
-          {gameState.phase === 'VOTING' && (
-            <div className="flex items-center space-x-2">
-              <span>🗳️</span>
-              <span>Votem para executar!</span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Empty State - quando não há jogadores vivos */}
-      {alivePlayers.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-6xl mb-4">👻</div>
-            <h3 className="text-lg font-semibold text-white mb-2">Cidade Vazia</h3>
-            <p className="text-white/70">Todos os jogadores foram eliminados...</p>
-          </div>
-        </div>
-      )}
-
-      {/* Players Count Info - canto inferior direito */}
-      <div className="absolute bottom-4 right-4 bg-medieval-800/80 border border-medieval-600 rounded-lg px-3 py-2">
-        <div className="text-white text-sm">
-          <div className="flex items-center space-x-2">
-            <span>👥</span>
-            <span>{alivePlayers.length} vivos</span>
-          </div>
-        </div>
-      </div>
-    </div>
+      {/* Player Action Modal */}
+      <PlayerActionModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        targetPlayer={selectedPlayer}
+      />
+    </>
   );
 }
