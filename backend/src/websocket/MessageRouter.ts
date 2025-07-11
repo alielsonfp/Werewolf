@@ -1117,6 +1117,8 @@ export class MessageRouter {
       const gameId = `game-${roomId}`;
       const gameState = await this.gameEngine.getGameState(gameId);
 
+
+
       if (!gameState) {
         // ✅ SALA DE ESPERA: Usa broadcast normal (JÁ FUNCIONA)
         if (this.broadcastToRoom) {
