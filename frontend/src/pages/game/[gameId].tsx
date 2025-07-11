@@ -16,6 +16,14 @@ export default function GamePage() {
   const { user, isAuthenticated, getToken } = useAuth();
   const { isConnected, connect, disconnect, sendMessage } = useSocket();
 
+
+  useEffect(() => {
+    if (roomId && !isConnected) {
+      console.log('🔄 Página do jogo detectou desconexão, reconectando...');
+      connect(`ws://localhost:3001/ws/game-${roomId}`);
+    }
+  }, [roomId, isConnected, connect]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasRequestedGameState, setHasRequestedGameState] = useState(false);

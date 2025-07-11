@@ -152,7 +152,8 @@ function LobbyPage() {
   const phaseColors = getPhaseColors();
 
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true); // ✅ Só para primeira vez
+  const [isRefreshing, setIsRefreshing] = useState(false); // ✅ Só para refresh manual
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -189,28 +190,30 @@ function LobbyPage() {
     };
   }, [musicStarted, stopMusic]);
 
-  const fetchRooms = useCallback(async () => {
+  // ✅ CORRIGIDO: Função fetchRooms com parâmetro para controlar loading
+  const fetchRooms = useCallback(async (showLoading: boolean = false) => {
     try {
-      setLoading(true);
+      if (showLoading) setIsRefreshing(true);
       const roomsList = await roomService.listPublicRooms();
       setRooms(roomsList);
     } catch (error) {
       console.error('Failed to fetch rooms:', error);
     } finally {
-      setLoading(false);
+      setInitialLoading(false); // ✅ Sempre desliga o loading inicial
+      if (showLoading) setIsRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
-    fetchRooms();
+    fetchRooms(); // ✅ Primeira chamada sem loading visual (só initialLoading)
   }, [isAuthLoading, isAuthenticated, fetchRooms]);
 
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
 
     const interval = setInterval(() => {
-      fetchRooms();
+      fetchRooms(); // ✅ Atualizações automáticas SEM loading visual
     }, 5000);
 
     return () => clearInterval(interval);
@@ -250,7 +253,7 @@ function LobbyPage() {
   const handleRefresh = useCallback(() => {
     console.log('🔄 Refreshing room list');
     playSound('button_click');
-    fetchRooms();
+    fetchRooms(true); // ✅ Refresh manual COM loading visual
   }, [playSound, fetchRooms]);
 
   const handleLogout = useCallback(() => {
@@ -406,7 +409,7 @@ function LobbyPage() {
                 variant="ghost"
                 size="lg"
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={isRefreshing} // ✅ CORRIGIDO: usar isRefreshing
               >
                 <RefreshIcon />
               </Button>
@@ -453,7 +456,7 @@ function LobbyPage() {
               transition={{ delay: 0.3 }}
               className="max-w-6xl mx-auto"
             >
-              {loading ? (
+              {initialLoading ? ( // ✅ CORRIGIDO: usar initialLoading apenas
                 <div className="flex justify-center py-12">
                   <LoadingSpinner variant="medieval" size="lg" text="Carregando salas..." />
                 </div>
