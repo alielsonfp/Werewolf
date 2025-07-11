@@ -36,7 +36,7 @@ export enum GamePhase {
 // GAME LIMITS
 //====================================================================
 export const GAME_LIMITS = {
-  MIN_PLAYERS: 3, // ✅ ALTERADO DE 6 PARA 3 - MODO DEBUG
+  MIN_PLAYERS: 6, // ✅ ALTERADO DE 6 PARA 3 - MODO DEBUG
   MAX_PLAYERS: 15,
   MAX_SPECTATORS: 5,
 
@@ -45,9 +45,9 @@ export const GAME_LIMITS = {
   ROOM_CODE_LENGTH: 6,
 
   // Time limits (milliseconds)
-  NIGHT_DURATION: 20000, // 20 seconds
-  DAY_DURATION: 20000, // 20 seconds
-  VOTING_DURATION: 20000, // 20 seconds
+  NIGHT_DURATION: 40000, // 20 seconds
+  DAY_DURATION: 40000, // 20 seconds
+  VOTING_DURATION: 30000, // 20 seconds
 
   // Chat limits
   MAX_MESSAGE_LENGTH: 500,
