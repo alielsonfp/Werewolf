@@ -29,6 +29,8 @@ export class Player {
   public actionsUsed: number = 0;
   public maxActions?: number;
 
+  public isGuilty: boolean = false;
+
   // Tracking
   public lastAction?: string;
   public protectedByDoctor: boolean = false;

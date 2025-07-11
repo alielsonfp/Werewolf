@@ -791,6 +791,14 @@ export class MessageRouter {
     const { type, targetId } = data;
     const gameId = `game-${connection.context.roomId}`;
 
+    console.log('--- CHECKPOINT 2: ROUTER --- Ação Recebida:', {
+      type,
+      targetId,
+      userId: connection.context.userId,
+      gameId,
+      timestamp: new Date().toISOString()
+    });
+
     // ✅ LOGS DETALHADOS para debug das ações
     wsLogger.info('Handling game action - DETAILED', {
       connectionId,

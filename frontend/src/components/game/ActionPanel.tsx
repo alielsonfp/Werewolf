@@ -77,6 +77,12 @@ export default function ActionPanel() {
     if (actionType) {
       setIsSubmitting(true);
 
+      console.log('--- CHECKPOINT 1: FRONTEND --- Enviando Ação:', {
+        actionType,
+        targetId: selectedTarget,
+        timestamp: new Date().toISOString()
+      });
+
       // ✅ LOG DETALHADO: Tentativa de ação noturna
       console.log('🌙 ActionPanel: Attempting night action:', {
         actionType,

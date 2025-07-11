@@ -756,6 +756,56 @@ export class GameEngine implements IGameEngine {
       }
     });
 
+    gameState.nightActions.forEach(action => {
+      if (action.type === 'VIGILANTE_KILL' && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        if (target && target.isAlive && !target.isProtected) {
+          target.kill('VIGILANTE');
+          deaths.push(action.targetId);
+
+          logger.info('Vigilante kill applied', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username
+          });
+        } else if (target && target.isProtected) {
+          logger.info('Vigilante attack blocked by protection', {
+            gameId: gameState.gameId,
+            targetId: action.targetId,
+            targetName: target.username
+          });
+        }
+      }
+    });
+
+    // Processar ataques do Serial Killer
+    gameState.nightActions.forEach(action => {
+      if (action.type === 'SERIAL_KILL' && action.targetId) {
+        const target = gameState.getPlayer(action.targetId);
+        if (target && target.isAlive) {
+          // Serial Killer ignora proteção na primeira noite
+          const isFirstNight = gameState.day === 1;
+          if (!target.isProtected || isFirstNight) {
+            target.kill('SERIAL_KILLER');
+            deaths.push(action.targetId);
+
+            logger.info('Serial killer kill applied', {
+              gameId: gameState.gameId,
+              targetId: action.targetId,
+              targetName: target.username,
+              bypassedProtection: isFirstNight && target.isProtected
+            });
+          } else {
+            logger.info('Serial killer attack blocked by protection', {
+              gameId: gameState.gameId,
+              targetId: action.targetId,
+              targetName: target.username
+            });
+          }
+        }
+      }
+    });
+
     // Enviar mensagens de sistema sobre os resultados
     if (deaths.length > 0) {
       deaths.forEach(playerId => {
