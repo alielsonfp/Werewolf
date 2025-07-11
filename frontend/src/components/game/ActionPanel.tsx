@@ -23,7 +23,7 @@ interface ChatMessage {
 // SYSTEM CHAT COMPONENT - APENAS MENSAGENS DO SISTEMA (SEM CHAT PÚBLICO)
 // =============================================================================
 export default function ActionPanel() {
-  const { gameState, chatMessages } = useGame();
+  const { gameState, chatMessages, me, canVote, canAct } = useGame();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // =============================================================================
@@ -99,12 +99,12 @@ export default function ActionPanel() {
   };
 
   // =============================================================================
-  // GAME STATUS INFO
+  // GAME STATUS INFO - MANTENDO SUA VERSÃO SIMPLES
   // =============================================================================
   const getGameStatusInfo = () => {
     const alivePlayers = gameState.players.filter(p => p.isAlive && !p.isSpectator);
     const deadPlayers = gameState.players.filter(p => !p.isAlive && !p.isSpectator);
-
+    
     return {
       phase: gameState.phase,
       day: gameState.day,
@@ -114,10 +114,53 @@ export default function ActionPanel() {
     };
   };
 
+  // =============================================================================
+  // ACTION INFO - PRESERVANDO A LÓGICA DELE COMO FALLBACK (COMENTADA)
+  // =============================================================================
+  /*
+  const getActionInfo = () => {
+    if (gameState.phase === 'VOTING') {
+      return {
+        title: '🗳️ Votem para executar!',
+        description: 'Escolha quem deve ser executado pela vila',
+        canAct: canVote,
+        actionText: 'Votar em',
+        isVoting: true
+      };
+    }
+
+    if (gameState.phase === 'NIGHT' && me?.role) {
+      const roleActions = {
+        WEREWOLF_KING: { title: '👑 Ataque da Alcateia', description: 'Escolha a presa para a alcateia eliminar', actionText: 'Atacar', canAct: canAct },
+        WEREWOLF: { title: '🐺 Alcateia', description: 'Você segue as ordens do seu Rei. Aguarde a decisão...', actionText: 'Aguardar', canAct: false },
+        SHERIFF: { title: '🔍 Investigação', description: 'Investigue um jogador', actionText: 'Investigar', canAct: canAct },
+        DOCTOR: { title: '💉 Proteção', description: 'Proteja alguém dos ataques', actionText: 'Proteger', canAct: canAct },
+        VIGILANTE: { title: '🔫 Justiça', description: 'Atire em um suspeito', actionText: 'Atirar em', canAct: canAct },
+        SERIAL_KILLER: { title: '🔪 Assassinato', description: 'Elimine um jogador', actionText: 'Eliminar', canAct: canAct },
+        JESTER: { title: '🃏 Jester', description: 'Você não age durante a noite', actionText: 'Aguardar', canAct: false },
+        VILLAGER: { title: '🏘️ Aldeão', description: 'Você não possui habilidades especiais', actionText: 'Aguardar', canAct: false }
+      };
+
+      const roleAction = roleActions[me.role as keyof typeof roleActions];
+      if (roleAction) {
+        return {
+          title: roleAction.title,
+          description: roleAction.description,
+          canAct: roleAction.canAct,
+          actionText: roleAction.actionText,
+          isVoting: false
+        };
+      }
+    }
+
+    return null;
+  };
+  */
+
   const statusInfo = getGameStatusInfo();
 
   // =============================================================================
-  // RENDER COMPONENT
+  // RENDER COMPONENT - MANTENDO SUA INTERFACE
   // =============================================================================
   return (
     <div className="h-full flex flex-col bg-medieval-800/50 border border-medieval-600 rounded-lg overflow-hidden">

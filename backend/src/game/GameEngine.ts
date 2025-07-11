@@ -18,6 +18,35 @@ export class GameEngine implements IGameEngine {
     logger.info('GameEngine initialized');
   }
 
+
+  private async handleWerewolfPromotion(gameState: GameState, deadPlayerId: string): Promise<void> {
+    const deadPlayer = gameState.getPlayer(deadPlayerId);
+
+    // Condição 1: Só executa se o jogador morto era o Rei
+    if (!deadPlayer || deadPlayer.role !== Role.WEREWOLF_KING) {
+      return;
+    }
+
+    // Condição 2: Garante que não estamos promovendo alguém se já existe um rei vivo
+    const kingAlreadyExists = gameState.getAlivePlayers().some(p => p.role === Role.WEREWOLF_KING);
+    if (kingAlreadyExists) {
+      return;
+    }
+
+    // Encontra o primeiro lobisomem comum vivo para promover
+    const werewolfToPromote = gameState.getAlivePlayers().find(p => p.role === Role.WEREWOLF);
+
+    if (werewolfToPromote) {
+      // Promove o jogador, atualizando seu papel e capacidades
+      werewolfToPromote.assignRole(Role.WEREWOLF_KING, Faction.WEREWOLF);
+
+      const message = `Com a morte do antigo líder, ${werewolfToPromote.username} ascende e se torna o novo Rei dos Lobisomens!`;
+
+      // Envia a notícia para todos no chat do sistema
+      this.broadcastSystemMessage(gameState.gameId, message, 'system');
+      logger.info('Lobo promovido a Rei', { gameId: gameState.gameId, newKingId: werewolfToPromote.id });
+    }
+  }
   //====================================================================
   // MÉTODO PARA INJETAR sendToUser (Chamado pelo WebSocketManager)
   //====================================================================
@@ -822,6 +851,12 @@ export class GameEngine implements IGameEngine {
       }
     });
 
+    deaths.forEach(deadPlayerId => {
+      this.handleWerewolfPromotion(gameState, deadPlayerId);
+    });
+
+
+
     // Enviar mensagens de sistema sobre os resultados
     if (deaths.length > 0) {
       deaths.forEach(playerId => {
@@ -883,6 +918,8 @@ export class GameEngine implements IGameEngine {
         }
 
         player.kill('EXECUTION');
+
+        await this.handleWerewolfPromotion(gameState, player.id);
 
         this.broadcastSystemMessage(gameState.gameId,
           `⚖️ ${player.username} foi executado pela vila! Ele era: ${player.role}`,
