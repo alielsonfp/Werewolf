@@ -130,6 +130,32 @@ export default function GameBoard() {
   // =============================================================================
   return (
     <div className={`h-screen transition-all duration-1000 ${getBackgroundClass()}`}>
+      {/* Death Overlay - Mostra quando o jogador morre */}
+      {me && !me.isAlive && gameState.status === 'PLAYING' && (
+        <div className="fixed inset-0 bg-black/60 z-40 pointer-events-none">
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center animate-fade-in">
+              <div className="text-8xl mb-4 animate-pulse">💀</div>
+              <h1 className="text-4xl font-bold text-red-500 mb-2 text-shadow-lg">
+                Você Morreu
+              </h1>
+              <p className="text-xl text-white/80 mb-1">
+                {me.eliminationReason === 'EXECUTION' ? 'Executado pela vila' :
+                  me.eliminationReason === 'NIGHT_KILL' ? 'Morto durante a noite' :
+                    me.eliminationReason === 'VIGILANTE' ? 'Eliminado pelo vigilante' :
+                      me.eliminationReason === 'SERIAL_KILLER' ? 'Assassinado' : 'Eliminado'}
+              </p>
+              <p className="text-lg text-white/60">
+                Você agora é um espectador
+              </p>
+              <div className="mt-6 text-white/40 text-sm">
+                Continue assistindo o jogo e use o chat dos mortos
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Header Bar - SEM PHASE INDICATOR E SEM TÍTULO */}
       <header className="h-16 bg-medieval-800/50 border-b border-medieval-600 flex items-center justify-between px-4">
         {/* Left: Espaço vazio onde estava o PhaseIndicator */}
