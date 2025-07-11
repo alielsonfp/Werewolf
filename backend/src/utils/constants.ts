@@ -45,9 +45,9 @@ export const GAME_LIMITS = {
   ROOM_CODE_LENGTH: 6,
 
   // Time limits (milliseconds)
-  NIGHT_DURATION: 20000, // 20 seconds
-  DAY_DURATION: 20000, // 20 seconds
-  VOTING_DURATION: 20000, // 20 seconds
+  NIGHT_DURATION: 45000, // 20 seconds
+  DAY_DURATION: 60000, // 20 seconds
+  VOTING_DURATION: 45000, // 20 seconds
 
   // Chat limits
   MAX_MESSAGE_LENGTH: 500,
