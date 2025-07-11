@@ -77,6 +77,9 @@ export class Player {
   }
 
   canAct(): boolean {
+
+    if (this.isGuilty) return false;
+
     if (!this.isAlive || !this.role) return false;
     if (this.hasActed) return false;
     if (this.maxActions !== undefined && this.actionsUsed >= this.maxActions) return false;

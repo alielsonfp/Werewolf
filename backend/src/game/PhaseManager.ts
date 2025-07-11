@@ -319,8 +319,13 @@ export class PhaseManager {
         targetName: target.username,
       });
 
-      // If vigilante killed a town member, they feel guilty
-      if (target.faction === Faction.TOWN) {
+
+      if (target.faction === Faction.TOWN || target.role === Role.JESTER) {
+        if (vigilante) {
+          vigilante.isGuilty = true; // MARCA O JOGADOR PARA MORRER DEPOIS
+        }
+
+        // O evento agora serve apenas como um registro do que aconteceu
         this.gameState.addEvent('VIGILANTE_GUILT', {
           vigilanteId: action.playerId,
           killedTownMember: action.targetId,
@@ -434,38 +439,80 @@ export class PhaseManager {
     return RoleDistributor.getRolesThatActDuring(phase);
   }
 
+  // ✅ MÉTODO CORRIGIDO COM FUNCIONALIDADE DE SUICÍDIO DO VIGILANTE
   private async generateNightSummary(summary: any): Promise<void> {
-    const messages = [];
+    const messages: string[] = [];
+    const actualDeaths: any[] = []; // Lista para as mortes reais
 
-    // Deaths
+    // ✅ NOVO: Verificar e aplicar o suicídio do Vigilante ANTES de processar outras mortes
+    this.gameState.getAlivePlayers().forEach(player => {
+      if (player.isGuilty) {
+        // Mata o vigilante por suicídio
+        player.kill('VIGILANTE_SUICIDE' as any, 'guilt');
+        player.isGuilty = false; // Reseta o estado
+
+        // Adiciona a morte por suicídio à lista de resultados da noite
+        summary.deaths.push({
+          playerId: player.id,
+          playerName: player.username,
+          cause: 'VIGILANTE_SUICIDE'
+        });
+
+        logger.info('Vigilante committed suicide due to guilt', {
+          gameId: this.gameState.gameId,
+          vigilanteId: player.id,
+          vigilanteName: player.username,
+        });
+      }
+    });
+
+    // Agora, processamos todas as mortes (incluindo o possível suicídio)
     if (summary.deaths.length > 0) {
       summary.deaths.forEach((death: any) => {
-        let causeMessage = '';
-        switch (death.cause) {
-          case 'NIGHT_KILL':
-            causeMessage = 'foi encontrado morto pela manhã';
-            break;
-          case 'VIGILANTE':
-            causeMessage = 'foi executado pelo vigilante';
-            break;
-          case 'SERIAL_KILLER':
-            causeMessage = 'foi brutalmente assassinado';
-            break;
+        const player = this.gameState.getPlayer(death.playerId);
+        if (player) { // Garante que o jogador ainda existe
+          let causeMessage = '';
+
+          // ✅ LÓGICA DAS MENSAGENS DO CHAT
+          switch (death.cause) {
+            case 'NIGHT_KILL':
+              causeMessage = 'foi encontrado morto pela manhã';
+              break;
+            case 'VIGILANTE':
+              causeMessage = 'foi executado pelo vigilante';
+              break;
+            case 'SERIAL_KILLER':
+              causeMessage = 'foi brutalmente assassinado';
+              break;
+            case 'VIGILANTE_SUICIDE': // <-- A NOVA MENSAGEM
+              causeMessage = 'não aguentou o peso na consciência e cometeu suicídio';
+              break;
+            default:
+              causeMessage = 'foi encontrado morto em circunstâncias misteriosas';
+          }
+          messages.push(`${player.username} ${causeMessage}.`);
+          actualDeaths.push(death);
         }
-        messages.push(`${death.playerName} ${causeMessage}.`);
       });
     } else {
       messages.push('Ninguém morreu durante a noite.');
     }
 
+    // Evento final com os dados corretos
     this.gameState.addEvent('NIGHT_SUMMARY', {
       day: this.gameState.day,
-      deaths: summary.deaths,
+      deaths: actualDeaths, // Usa a lista de mortes reais
       messages,
       protectionsCount: summary.protections.length,
       investigationsCount: summary.investigations.length,
       attacksCount: summary.attacks.length,
     });
+
+    // ✅ VERIFICAR CONDIÇÃO DE VITÓRIA após todas as mortes
+    const winCondition = this.gameState.checkWinCondition();
+    if (winCondition.hasWinner && this.gameState.status === 'PLAYING') {
+      this.gameState.endGame(winCondition.winningFaction!, winCondition.winningPlayers!);
+    }
   }
 
   //====================================================================
