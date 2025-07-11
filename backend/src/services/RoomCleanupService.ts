@@ -1,8 +1,9 @@
-// 🧹 SERVIÇO DE LIMPEZA DE SALAS ÓRFÃS
-import { pool } from '@/config/database';
+
+// 🧹 SERVIÇO DE LIMPEZA DE SALAS ÓRFÃSimport { pool } from '@/config/database';
 import { logger } from '@/utils/logger';
 import type { ChannelManager } from '@/websocket/ChannelManager';
 import type { ConnectionManager } from '@/websocket/ConnectionManager';
+import { pool } from '@/config/database';
 
 // ⏱️ Tempo em segundos que uma sala pode ficar sem host antes de ser deletada
 const HOSTLESS_ROOM_TTL_SECONDS = 30;
@@ -19,7 +20,8 @@ export class RoomCleanupService {
 
   constructor(
     private channelManager: ChannelManager,
-    private connectionManager: ConnectionManager
+    private connectionManager: ConnectionManager,
+    private gameEngine: any // certifique-se de definir o tipo correto se disponível
   ) { }
 
   /**
@@ -32,14 +34,12 @@ export class RoomCleanupService {
     }
 
     this.isRunning = true;
-    logger.info(`🧹 Starting room cleanup service (interval: ${intervalMs}ms)`);
+    logger.info(`🧹 Starting room cleanup service(interval: ${intervalMs}ms)`);
 
-    // Executar uma vez imediatamente
     this.cleanup().catch(error => {
       logger.error('Error in initial room cleanup', error);
     });
 
-    // Agendar execuções periódicas
     this.intervalId = setInterval(() => {
       this.cleanup().catch(error => {
         logger.error('Error in scheduled room cleanup', error);
@@ -63,11 +63,11 @@ export class RoomCleanupService {
   }
 
   /**
-   * 🧹 Executa a limpeza das salas órfãs
+   * 🧹 Executa a limpeza das salas órfãs e jogos abandonados
    */
   private async cleanup(): Promise<CleanupResult> {
     const startTime = Date.now();
-    logger.debug('🔍 Starting orphaned rooms cleanup...');
+    logger.debug('🔍 Starting room cleanup...');
 
     const result: CleanupResult = {
       cleanedRooms: 0,
@@ -76,7 +76,7 @@ export class RoomCleanupService {
     };
 
     try {
-      // 1️⃣ Buscar todas as salas em estado de espera no banco
+      // ✅ PARTE 1: Limpar salas WAITING sem host
       const waitingRoomsResult = await pool.query(`
         SELECT id, "hostId", "createdAt" 
         FROM rooms 
@@ -87,38 +87,26 @@ export class RoomCleanupService {
       const waitingRooms = waitingRoomsResult.rows;
       result.checkedRooms = waitingRooms.length;
 
-      if (waitingRooms.length === 0) {
-        logger.debug('✅ No waiting rooms to check');
-        return result;
-      }
-
-      logger.debug(`🔍 Checking ${waitingRooms.length} waiting rooms for orphaned status`);
-
-      // 2️⃣ Identificar hosts conectados
       const connectedHosts = this.getConnectedHosts(waitingRooms.map(r => r.hostId));
 
-      // 3️⃣ Encontrar salas órfãs
       const orphanedRooms = waitingRooms.filter(room => {
         const isHostConnected = connectedHosts.has(room.hostId);
         const roomAge = Date.now() - new Date(room.createdAt).getTime();
         const isOldEnough = roomAge > (HOSTLESS_ROOM_TTL_SECONDS * 1000);
-
         return !isHostConnected && isOldEnough;
       });
 
-      if (orphanedRooms.length === 0) {
-        logger.debug('✅ No orphaned rooms found');
-        return result;
+      if (orphanedRooms.length > 0) {
+        const roomIds = orphanedRooms.map(r => r.id);
+        await this.deleteOrphanedRooms(roomIds);
+        result.cleanedRooms += roomIds.length;
       }
 
-      // 4️⃣ Limpar salas órfãs
-      const roomIds = orphanedRooms.map(r => r.id);
-      await this.deleteOrphanedRooms(roomIds);
-
-      result.cleanedRooms = roomIds.length;
+      // ✅ PARTE 2: Limpar jogos sem jogadores
+      await this.cleanupOrphanedGames(result);
 
       const duration = Date.now() - startTime;
-      logger.info(`✅ Cleaned up ${result.cleanedRooms} orphaned rooms in ${duration}ms`, {
+      logger.info(`✅ Cleanup completed in ${duration} ms`, {
         cleanedRooms: result.cleanedRooms,
         checkedRooms: result.checkedRooms,
         duration
@@ -127,10 +115,70 @@ export class RoomCleanupService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       result.errors.push(errorMessage);
-      logger.error('❌ Error during room cleanup', error);
+      logger.error('❌ Error during cleanup', error);
     }
 
     return result;
+  }
+
+  /**
+   * 🎮 Limpa jogos em andamento sem jogadores conectados
+   */
+  private async cleanupOrphanedGames(result: CleanupResult): Promise<void> {
+    logger.debug('🎮 Checking for orphaned games...');
+
+    try {
+      const playingRoomsResult = await pool.query(`
+        SELECT id, "hostId", name 
+        FROM rooms 
+        WHERE status = 'PLAYING'
+  `);
+
+      const playingRooms = playingRoomsResult.rows;
+      result.checkedRooms += playingRooms.length;
+
+      const gamesToEnd: string[] = [];
+
+      for (const room of playingRooms) {
+        const gameId = `game - ${room.id} `;
+        const connectedPlayers = this.channelManager.getRoomPlayerConnections(room.id);
+        logger.debug(`🎮 Game ${gameId}: ${connectedPlayers.size} connected players`);
+
+        if (connectedPlayers.size === 0) {
+          gamesToEnd.push(room.id);
+          logger.info(`🧹 Marking game ${gameId} for cleanup - no connected players`);
+        }
+      }
+
+      if (gamesToEnd.length > 0) {
+        for (const roomId of gamesToEnd) {
+          const gameId = `game - ${roomId} `;
+
+          try {
+            const game = await this.gameEngine.getGameState(gameId);
+            if (game) {
+              await this.gameEngine.endGame(gameId, 'All players disconnected');
+            }
+
+            await pool.query(
+              `UPDATE rooms SET status = 'FINISHED', "updatedAt" = NOW() WHERE id = $1`,
+              [roomId]
+            );
+
+            result.cleanedRooms++;
+            logger.info(`✅ Cleaned up orphaned game ${gameId} `);
+
+          } catch (gameError) {
+            logger.error(`Error cleaning game ${gameId} `, gameError);
+            result.errors.push(`Failed to clean game ${gameId} `);
+          }
+        }
+      }
+
+    } catch (error) {
+      logger.error('Error in cleanupOrphanedGames', error);
+      result.errors.push('Failed to check orphaned games');
+    }
   }
 
   /**
@@ -138,12 +186,9 @@ export class RoomCleanupService {
    */
   private getConnectedHosts(hostIds: string[]): Set<string> {
     const connectedHosts = new Set<string>();
-
-    // Obter todas as conexões ativas
     const allConnections = this.connectionManager.getAllConnections();
 
     for (const connection of allConnections) {
-      // Verificar se a conexão está ativa e é um dos hosts que procuramos
       if (
         connection.ws.readyState === connection.ws.OPEN &&
         connection.context?.userId &&
@@ -168,19 +213,16 @@ export class RoomCleanupService {
     });
 
     try {
-      // 1️⃣ Deletar do banco de dados
       const deleteResult = await pool.query(`
         DELETE FROM rooms 
-        WHERE id = ANY($1::uuid[])
+        WHERE id = ANY($1:: uuid[])
         RETURNING id
       `, [roomIds]);
 
       const deletedCount = deleteResult.rowCount || 0;
       logger.info(`🗑️ Deleted ${deletedCount} rooms from database`);
 
-      // 2️⃣ Limpar do channel manager e notificar jogadores restantes
       for (const roomId of roomIds) {
-        // Notificar jogadores restantes antes de remover
         try {
           const sentCount = this.channelManager.broadcastToRoom(roomId, 'room-deleted', {
             reason: 'O host se desconectou e a sala foi encerrada automaticamente.',
@@ -196,7 +238,6 @@ export class RoomCleanupService {
           logger.warn('Error broadcasting room deletion', broadcastError);
         }
 
-        // Remover conexões da sala (forçar leave)
         const roomConnections = this.channelManager.getRoomConnections(roomId);
         for (const connectionId of roomConnections) {
           try {
@@ -219,7 +260,8 @@ export class RoomCleanupService {
   getStats(): { isRunning: boolean; intervalMs: number | null } {
     return {
       isRunning: this.isRunning,
-      intervalMs: this.intervalId ? 30000 : null // assumindo intervalo padrão
+      intervalMs: this.intervalId ? 30000 : null
     };
   }
 }
+

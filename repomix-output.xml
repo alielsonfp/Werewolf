@@ -15223,350 +15223,6 @@ function RoleCard({ emoji, name, faction, description, color }: RoleCardProps) {
 }
 </file>
 
-<file path="frontend/src/pages/room/[id].tsx">
-import { useRouter } from 'next/router';
-import Head from 'next/head';
-import { useEffect, useState, useMemo } from 'react';
-import { withAuth } from '@/context/AuthContext';
-import { useSocket } from '@/context/SocketContext';
-import { useAuth } from '@/context/AuthContext';
-import WaitingRoom from '@/components/room/WaitingRoom';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
-import { toast } from 'react-hot-toast';
-import { Player, Room, ChatMessage } from '@/types';
-
-function RoomPage() {
-  const router = useRouter();
-  const { id: roomId } = router.query;
-  const { connect, disconnect, isConnected, sendMessage } = useSocket();
-  const { user, getToken, isAuthenticated } = useAuth();
-
-  // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
-  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [spectators, setSpectators] = useState<Player[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
-
-  // ✅ DADOS DERIVADOS
-  const currentUserId = user?.id || '';
-  const isHost = useMemo(() => room?.hostId === currentUserId, [room, currentUserId]);
-  const currentPlayer = useMemo(() => players.find(p => p.userId === currentUserId), [players, currentUserId]);
-  const isReady = currentPlayer?.isReady || false;
-
-  // ✅ CORRIGIDO: Bug #1 - Filtrar host antes de verificar se todos estão prontos
-  const canStartGame = players.length >= 3 && players.filter(p => !p.isHost).every(p => p.isReady) && isConnected && isHost;
-
-  // ✅ EFEITO #1: Apenas para conectar e desconectar ao WebSocket.
-  // Ele roda UMA VEZ quando as dependências de inicialização estiverem prontas.
-  useEffect(() => {
-    if (!router.isReady || !isAuthenticated || !roomId || typeof roomId !== 'string') {
-      return; // Aguarda até ter tudo o que precisa.
-    }
-    const token = getToken();
-    if (!token) {
-      router.push('/auth/login');
-      return;
-    }
-
-    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${roomId}?token=${encodeURIComponent(token)}`;
-    connect(wsUrl);
-
-    // A função de cleanup é chamada QUANDO O USUÁRIO SAI DA PÁGINA.
-    return () => {
-      sendMessage('leave-room', { roomId });
-      disconnect();
-    };
-  }, [router.isReady, isAuthenticated, roomId, connect, disconnect, getToken, router, sendMessage]);
-
-  // ✅ EFEITO #2: Apenas para entrar na sala, uma única vez por conexão.
-  // Ele REAGE à mudança de `isConnected`.
-  useEffect(() => {
-    // Só envia a mensagem se estivermos conectados E ainda não tivermos entrado.
-    if (isConnected && !hasJoinedRoom) {
-      const asSpectator = router.query.spectate === 'true';
-      if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
-        setHasJoinedRoom(true); // Marca que já tentamos entrar para não enviar de novo.
-      }
-    }
-  }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
-
-  // ✅ EFEITO #3: Apenas para ouvir as mensagens.
-  useEffect(() => {
-    const handleMessage = (event: CustomEvent) => {
-      const { type, data } = event.detail;
-      console.log('📨 [RoomPage] Received:', type, data);
-
-      switch (type) {
-        case 'room-joined':
-          setRoom(data.room);
-          setPlayers(Array.isArray(data.players) ? data.players : []);
-          setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
-          setLoading(false);
-          toast.success(`Entrou na sala: ${data.room?.name || roomId}`);
-          break;
-
-        case 'player-joined':
-          if (data.player) {
-            setPlayers(prev => {
-              const filtered = prev.filter(p => p.userId !== data.player.userId);
-              return [...filtered, data.player];
-            });
-
-            const systemMessage: ChatMessage = {
-              id: Date.now().toString(),
-              userId: 'system',
-              username: 'Sistema',
-              message: `${data.player.username} entrou na sala`,
-              channel: 'system',
-              timestamp: new Date().toISOString()
-            };
-            setMessages(prev => [...prev, systemMessage]);
-          }
-          break;
-
-        case 'player-left':
-          if (data.userId) {
-            setPlayers(prev => prev.filter(p => p.userId !== data.userId));
-            setSpectators(prev => prev.filter(s => s.userId !== data.userId));
-
-            if (data.username) {
-              const systemMessage: ChatMessage = {
-                id: Date.now().toString(),
-                userId: 'system',
-                username: 'Sistema',
-                message: `${data.username} saiu da sala`,
-                channel: 'system',
-                timestamp: new Date().toISOString()
-              };
-              setMessages(prev => [...prev, systemMessage]);
-            }
-          }
-          break;
-
-        case 'player-ready':
-          if (data.userId) {
-            setPlayers(prev => prev.map(p =>
-              p.userId === data.userId ? { ...p, isReady: data.ready } : p
-            ));
-          }
-          break;
-
-        case 'chat-message':
-          if (data) {
-            const message = data.message || data;
-            setMessages(prev => [...prev, message]);
-          }
-          break;
-
-        // ✅ CORRIGIDO: Bug #2 - Redirecionamento para tela do jogo
-        case 'game-starting':
-        case 'game-started':
-        case 'game-state': // ✅ ADICIONADO: Ouvir também game-state do backend
-          // ✅ CORRIGIDO: Identificar gameId correto (backend gera "game-${roomId}")
-          const gameId = data?.gameId || `game-${roomId}`;
-
-          console.log('🎮 [RoomPage] Game starting/started:', {
-            type,
-            gameId,
-            roomId,
-            dataReceived: data
-          });
-
-          toast.success('🎮 Jogo iniciando!');
-
-          // ✅ CORRIGIDO: Desconectar WebSocket da sala antes de navegar
-          disconnect();
-
-          // ✅ CORRIGIDO: Redirecionar imediatamente (sem setTimeout)
-          router.push(`/game/${gameId}`);
-          break;
-
-        case 'room-updated':
-          if (data.room) setRoom(data.room);
-          if (data.players) setPlayers(data.players);
-          if (data.spectators) setSpectators(data.spectators);
-          break;
-
-        case 'room-deleted':
-          toast.error(data.reason || 'A sala foi encerrada pelo host');
-          router.push('/lobby');
-          break;
-
-        case 'error':
-          if (data.message) {
-            toast.error(data.message);
-          }
-          break;
-      }
-    };
-
-    window.addEventListener('websocket-message', handleMessage as EventListener);
-    return () => {
-      window.removeEventListener('websocket-message', handleMessage as EventListener);
-    };
-  }, [roomId, router, disconnect]);
-
-  // ✅ HANDLERS (MOVIDOS DO WAITINGROOM)
-  const handleToggleReady = () => {
-    sendMessage('player-ready', { ready: !isReady });
-  };
-
-  const handleStartGame = () => {
-    if (!isHost || !canStartGame) return;
-    sendMessage('start-game', {});
-    toast.success('Iniciando jogo...');
-  };
-
-  const handleKickPlayer = (playerId: string) => {
-    if (!isHost) return;
-    sendMessage('kick-player', { playerId });
-  };
-
-  const handleSendChatMessage = (message: string) => {
-    sendMessage('chat-message', { message });
-  };
-
-  const handleShareRoom = async () => {
-    if (!room) return;
-    const shareUrl = `${window.location.origin}/room/${room.id}`;
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success('Link da sala copiado!');
-    } catch (error) {
-      toast.error('Erro ao copiar link');
-    }
-  };
-
-  const handleLeaveRoom = () => {
-    if (isHost) {
-      setShowLeaveModal(true);
-    } else {
-      sendMessage('leave-room', { roomId });
-      router.push('/lobby');
-    }
-  };
-
-  const handleConfirmLeaveAsHost = () => {
-    sendMessage('delete-room', { roomId });
-    setShowLeaveModal(false);
-    toast('Encerrando sala...', { icon: '🏠' });
-  };
-
-  // ✅ RENDERIZAÇÃO CONDICIONAL
-  if (!router.isReady) {
-    return (
-      <>
-        <Head>
-          <title>Carregando... - Lobisomem Online</title>
-        </Head>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-          <LoadingSpinner variant="medieval" size="xl" text="Carregando sala..." />
-        </div>
-      </>
-    );
-  }
-
-  if (!roomId || typeof roomId !== 'string') {
-    return (
-      <>
-        <Head>
-          <title>Erro - Lobisomem Online</title>
-        </Head>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-6xl mb-4">❌</div>
-            <h1 className="text-2xl font-bold text-white mb-4">Sala Inválida</h1>
-            <button
-              onClick={() => router.push('/lobby')}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Voltar ao Lobby
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  if (!isConnected) {
-    return (
-      <>
-        <Head>
-          <title>Conectando... - Lobisomem Online</title>
-        </Head>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-          <div className="text-center">
-            <LoadingSpinner variant="medieval" size="xl" text="Conectando ao servidor..." />
-            <p className="text-gray-400 mt-4">Estabelecendo conexão segura...</p>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  if (loading) {
-    return (
-      <>
-        <Head>
-          <title>Entrando na sala... - Lobisomem Online</title>
-        </Head>
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-          <div className="text-center">
-            <LoadingSpinner variant="medieval" size="xl" text="Entrando na sala..." />
-            <p className="text-gray-400 mt-4">Aguardando confirmação do servidor...</p>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // ✅ RENDERIZA O WAITINGROOM PASSANDO TUDO COMO PROPS
-  return (
-    <>
-      <Head>
-        <title>{room?.name || 'Sala'} - Lobisomem Online</title>
-        <meta name="description" content="Aguardando jogadores para começar a partida" />
-      </Head>
-
-      <WaitingRoom
-        // IDs e dados básicos
-        roomId={roomId as string}
-        room={room}
-        players={players}
-        spectators={spectators}
-        messages={messages}
-
-        // Estados do usuário
-        currentUserId={currentUserId}
-        isHost={isHost}
-        isReady={isReady}
-        canStartGame={canStartGame}
-        isConnected={isConnected}
-
-        // Modal states
-        showLeaveModal={showLeaveModal}
-        setShowLeaveModal={setShowLeaveModal}
-
-        // Handlers
-        onToggleReady={handleToggleReady}
-        onStartGame={handleStartGame}
-        onKickPlayer={handleKickPlayer}
-        onSendChatMessage={handleSendChatMessage}
-        onShareRoom={handleShareRoom}
-        onLeaveRoom={handleLeaveRoom}
-        onConfirmLeaveAsHost={handleConfirmLeaveAsHost}
-      />
-    </>
-  );
-}
-
-export default withAuth(RoomPage);
-</file>
-
 <file path="backend/src/controllers/authController.ts">
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
@@ -16168,115 +15824,6 @@ export const checkEmail = async (req: Request, res: Response): Promise<void> => 
 };
 </file>
 
-<file path="backend/src/server.ts">
-// 🐺 LOBISOMEM ONLINE - Server Entry Point (SIMPLIFICADO)
-import httpServer from './app'; // ✅ Importar o httpServer já configurado
-import { config, validateConfig } from '@/config/environment';
-import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
-import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
-import { ServiceFactory } from './websocket/ServiceFactory';
-import { logger } from '@/utils/logger';
-
-// ✅ A instância de wsManager agora vive dentro de app.ts
-
-// Função de retry para conexão com o banco
-const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
-  for (let i = 1; i <= retries; i++) {
-    try {
-      await connectFn();
-      logger.info('Database connected successfully.');
-      return;
-    } catch (error) {
-      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, { error });
-      if (i === retries) {
-        throw new Error(`Could not connect to the database after ${retries} attempts.`);
-      }
-      await new Promise(res => setTimeout(res, delay));
-    }
-  }
-};
-
-async function startServer(): Promise<void> {
-  try {
-    validateConfig();
-
-    // Conectar banco (obrigatório) com retry
-    await connectWithRetry(connectDatabase);
-
-    // Conectar Redis (opcional - não falha se der erro)
-    if (config.SHOULD_USE_REDIS) {
-      try {
-        await connectRedis();
-      } catch (error) {
-        logger.warn('Redis connection failed, continuing without Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
-      }
-    }
-
-    // ✅ A criação do servidor e do WebSocketManager já aconteceu em app.ts
-    // Agora só precisamos iniciar o servidor HTTP
-    httpServer.listen(config.PORT, () => {
-      logger.info(`🚀 Server running at http://localhost:${config.PORT}`);
-      logger.info(`🐺 Werewolf Online ${config.SERVICE_TYPE} service started`);
-      logger.info(`🔗 WebSocket available at ws://localhost:${config.PORT}${config.WS_BASE_PATH}`);
-    });
-
-    setupGracefulShutdown(httpServer);
-
-  } catch (error) {
-    logger.error('Failed to start server', error instanceof Error ? error : new Error('Unknown server start error'));
-    process.exit(1);
-  }
-}
-
-function setupGracefulShutdown(server: any): void {
-  const shutdown = async (signal: string) => {
-    logger.info(`Received ${signal}. Starting graceful shutdown...`);
-
-    server.close(async () => {
-      logger.info('HTTP server closed.');
-
-      // ✅ Shutdown do WebSocketManager (se existir)
-      if (server.wsManager) {
-        try {
-          await server.wsManager.shutdown();
-          logger.info('WebSocket manager shut down.');
-        } catch (error) {
-          logger.warn('Error shutting down WebSocket manager', { error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-      }
-
-      // Shutdown do banco
-      await shutdownDatabase();
-
-      // Shutdown do Redis (se configurado)
-      if (config.SHOULD_USE_REDIS) {
-        try {
-          await shutdownRedis();
-        } catch (error) {
-          logger.warn('Error shutting down Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-      }
-
-      // Limpar instâncias do ServiceFactory
-      ServiceFactory.clearInstances();
-
-      logger.info('Graceful shutdown completed.');
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
-}
-
-// ✅ Iniciar servidor se for executado diretamente
-if (require.main === module) {
-  startServer();
-}
-
-export default httpServer;
-</file>
-
 <file path="backend/src/utils/constants.ts">
 // 🐺 LOBISOMEM ONLINE - Constants (MODO DEBUG HABILITADO)
 // ✅ MIN_PLAYERS alterado para 3 para facilitar testes
@@ -16438,406 +15985,6 @@ export const ERROR_MESSAGES = {
   VALIDATION_FAILED: 'Dados inválidos fornecidos',
   SERVER_ERROR: 'Erro interno do servidor',
 } as const;
-</file>
-
-<file path="backend/src/websocket/ChannelManager.ts">
-import { wsLogger } from '@/utils/logger';
-import type { ConnectionManager } from './ConnectionManager';
-
-interface RoomChannel {
-  players: Set<string>;
-  spectators: Set<string>;
-  readyPlayers: Set<string>;
-  createdAt: Date;
-  lastActivity: Date;
-}
-
-export class ChannelManager {
-  private rooms = new Map<string, RoomChannel>();
-  private connectionRooms = new Map<string, string>();
-
-  constructor(private connectionManager: ConnectionManager) { }
-
-  createRoom(roomId: string): boolean {
-    if (this.rooms.has(roomId)) {
-      wsLogger.warn('Attempted to create existing room channel', { roomId });
-      return false;
-    }
-
-    this.rooms.set(roomId, {
-      players: new Set(),
-      spectators: new Set(),
-      createdAt: new Date(),
-      lastActivity: new Date(),
-    });
-
-    wsLogger.info('Room channel created', { roomId });
-    return true;
-  }
-
-  joinRoom(roomId: string, connectionId: string, asSpectator = false): boolean {
-    let room = this.rooms.get(roomId);
-
-    if (!room) {
-      this.createRoom(roomId);
-      room = this.rooms.get(roomId)!;
-    }
-
-    const currentRoom = this.connectionRooms.get(connectionId);
-    if (currentRoom) {
-      this.leaveRoom(currentRoom, connectionId);
-    }
-
-    if (asSpectator) {
-      room.spectators.add(connectionId);
-    } else {
-      room.players.add(connectionId);
-    }
-
-    this.connectionRooms.set(connectionId, roomId);
-    room.lastActivity = new Date();
-
-    wsLogger.debug('Connection joined room', {
-      connectionId,
-      roomId,
-      asSpectator,
-      totalPlayers: room.players.size,
-      totalSpectators: room.spectators.size,
-    });
-
-    return true;
-  }
-
-  leaveRoom(roomId: string, connectionId: string): boolean {
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      wsLogger.warn('Attempted to leave non-existent room', { roomId, connectionId });
-      return false;
-    }
-
-    const wasPlayer = room.players.delete(connectionId);
-    const wasSpectator = room.spectators.delete(connectionId);
-
-    if (!wasPlayer && !wasSpectator) {
-      wsLogger.warn('Connection was not in room', { roomId, connectionId });
-      return false;
-    }
-
-    this.connectionRooms.delete(connectionId);
-    room.lastActivity = new Date();
-
-    if (room.players.size === 0 && room.spectators.size === 0) {
-      this.rooms.delete(roomId);
-      wsLogger.info('Room channel removed (empty)', { roomId });
-    }
-
-    wsLogger.debug('Connection left room', {
-      connectionId,
-      roomId,
-      wasPlayer,
-      wasSpectator,
-      remainingPlayers: room.players.size,
-      remainingSpectators: room.spectators.size,
-    });
-
-    return true;
-  }
-
-  removeConnectionFromAllRooms(connectionId: string): void {
-    const roomId = this.connectionRooms.get(connectionId);
-    if (roomId) {
-      this.leaveRoom(roomId, connectionId);
-    }
-  }
-
-  getRoomConnections(roomId: string): Set<string> {
-    const room = this.rooms.get(roomId);
-    if (!room) return new Set();
-    return new Set([...room.players, ...room.spectators]);
-  }
-
-  getRoomPlayerConnections(roomId: string): Set<string> {
-    const room = this.rooms.get(roomId);
-    return room ? new Set(room.players) : new Set();
-  }
-
-  getRoomSpectatorConnections(roomId: string): Set<string> {
-    const room = this.rooms.get(roomId);
-    return room ? new Set(room.spectators) : new Set();
-  }
-
-  getConnectionRoom(connectionId: string): string | undefined {
-    return this.connectionRooms.get(connectionId);
-  }
-
-  getRoomCount(roomId: string): { players: number; spectators: number } {
-    const room = this.rooms.get(roomId);
-    if (!room) return { players: 0, spectators: 0 };
-
-    return {
-      players: room.players.size,
-      spectators: room.spectators.size,
-    };
-  }
-
-  // 🔧 NOVA VERSÃO: limpa conexões mortas automaticamente
-  getRoomStats(roomId: string): { playersCount: number; spectatorsCount: number } | null {
-    const room = this.rooms.get(roomId);
-    if (!room) return null;
-
-    console.log(`\n🔍 DEBUG LOBBY - Sala: ${roomId.slice(-6)}`);
-    console.log(`📊 Players no Set: ${room.players.size}`);
-
-    const deadPlayers = new Set<string>();
-    const deadSpectators = new Set<string>();
-
-    // Verificar players
-    for (const connectionId of room.players) {
-      const connection = this.connectionManager.getConnection(connectionId);
-      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
-
-      console.log(`   👤 ${connectionId.slice(-6)}: ${isValid ? '✅ VIVO' : '💀 MORTO'}`);
-
-      if (!isValid) {
-        deadPlayers.add(connectionId);
-        this.connectionRooms.delete(connectionId);
-      }
-    }
-
-    // Verificar spectators
-    for (const connectionId of room.spectators) {
-      const connection = this.connectionManager.getConnection(connectionId);
-      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
-
-      if (!isValid) {
-        deadSpectators.add(connectionId);
-        this.connectionRooms.delete(connectionId);
-      }
-    }
-
-    // Limpeza efetiva
-    if (deadPlayers.size > 0) {
-      console.log(`🧹 Limpando ${deadPlayers.size} players mortos`);
-      for (const deadId of deadPlayers) {
-        room.players.delete(deadId);
-      }
-    }
-
-    if (deadSpectators.size > 0) {
-      console.log(`🧹 Limpando ${deadSpectators.size} spectators mortos`);
-      for (const deadId of deadSpectators) {
-        room.spectators.delete(deadId);
-      }
-    }
-
-    const finalCount = {
-      playersCount: room.players.size,
-      spectatorsCount: room.spectators.size,
-    };
-
-    console.log(
-      `📊 APÓS LIMPEZA: ${finalCount.playersCount} players, ${finalCount.spectatorsCount} spectators`,
-    );
-
-    room.lastActivity = new Date();
-
-    if (finalCount.playersCount === 0 && finalCount.spectatorsCount === 0) {
-      console.log(`🗑️ Sala ${roomId.slice(-6)} ficou vazia, removendo`);
-      this.rooms.delete(roomId);
-    }
-
-    return finalCount;
-  }
-
-  broadcastToRoom(
-    roomId: string,
-    type: string,
-    data?: any,
-    excludeConnectionId?: string,
-  ): number {
-    const connections = this.getRoomConnections(roomId);
-    let sent = 0;
-
-    for (const connectionId of connections) {
-      if (connectionId === excludeConnectionId) continue;
-
-      const connection = this.connectionManager.getConnection(connectionId);
-      if (!connection || connection.ws.readyState !== connection.ws.OPEN) continue;
-
-      try {
-        connection.ws.send(
-          JSON.stringify({
-            type,
-            data,
-            timestamp: new Date().toISOString(),
-          }),
-        );
-        sent++;
-      } catch (error) {
-        wsLogger.error(
-          'Failed to broadcast to connection',
-          error instanceof Error ? error : new Error('Unknown broadcast error'),
-          {
-            connectionId,
-            roomId,
-            type,
-          },
-        );
-      }
-    }
-
-    wsLogger.debug('Broadcast to room completed', {
-      roomId,
-      type,
-      totalConnections: connections.size,
-      sentCount: sent,
-      excluded: !!excludeConnectionId,
-    });
-
-    return sent;
-  }
-
-  isPlayerInRoom(roomId: string, connectionId: string): boolean {
-    const room = this.rooms.get(roomId);
-    return room ? room.players.has(connectionId) : false;
-  }
-
-  isSpectatorInRoom(roomId: string, connectionId: string): boolean {
-    const room = this.rooms.get(roomId);
-    return room ? room.spectators.has(connectionId) : false;
-  }
-
-  // ✅ Define ou remove o status de "pronto" de um jogador
-  setPlayerReadyStatus(roomId: string, connectionId: string, isReady: boolean): void {
-    const room = this.rooms.get(roomId);
-    if (!room) return;
-
-    if (!room.readyPlayers) room.readyPlayers = new Set();
-
-    if (isReady) {
-      room.readyPlayers.add(connectionId);
-    } else {
-      room.readyPlayers.delete(connectionId);
-    }
-
-    wsLogger.debug('Player ready status updated', {
-      roomId,
-      connectionId,
-      isReady,
-      totalReady: room.readyPlayers.size,
-    });
-
-    room.lastActivity = new Date();
-  }
-
-
-  // ✅ Verifica se um jogador está marcado como "pronto"
-  isPlayerReady(roomId: string, connectionId: string): boolean {
-    const room = this.rooms.get(roomId);
-    return room ? room.readyPlayers?.has(connectionId) ?? false : false;
-  }
-
-  getActiveRoomsCount(): number {
-    return this.rooms.size;
-  }
-
-  getActiveRooms(): string[] {
-    return Array.from(this.rooms.keys());
-  }
-
-  getRoomInfo(roomId: string): {
-    exists: boolean;
-    playersCount: number;
-    spectatorsCount: number;
-    createdAt?: Date;
-    lastActivity?: Date;
-  } {
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      return { exists: false, playersCount: 0, spectatorsCount: 0 };
-    }
-
-    return {
-      exists: true,
-      playersCount: room.players.size,
-      spectatorsCount: room.spectators.size,
-      createdAt: room.createdAt,
-      lastActivity: room.lastActivity,
-    };
-  }
-
-  cleanup(maxIdleTime = 3_600_000): number {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [roomId, room] of this.rooms.entries()) {
-      const idleTime = now - room.lastActivity.getTime();
-
-      if (room.players.size === 0 && room.spectators.size === 0 && idleTime > maxIdleTime) {
-        this.rooms.delete(roomId);
-        cleaned++;
-
-        wsLogger.info('Cleaned up idle room channel', {
-          roomId,
-          idleTime: Math.floor(idleTime / 1000),
-          maxIdleTime: Math.floor(maxIdleTime / 1000),
-        });
-      }
-    }
-
-    return cleaned;
-  }
-
-  clear(): void {
-    this.rooms.clear();
-    this.connectionRooms.clear();
-    wsLogger.info('All room channels cleared');
-  }
-
-  getStats(): {
-    totalRooms: number;
-    totalConnections: number;
-    totalPlayers: number;
-    totalSpectators: number;
-    roomsInfo: Array<{
-      roomId: string;
-      players: number;
-      spectators: number;
-      idleTime: number;
-    }>;
-  } {
-    let totalPlayers = 0;
-    let totalSpectators = 0;
-    const roomsInfo: Array<{
-      roomId: string;
-      players: number;
-      spectators: number;
-      idleTime: number;
-    }> = [];
-
-    const now = Date.now();
-
-    for (const [roomId, room] of this.rooms.entries()) {
-      totalPlayers += room.players.size;
-      totalSpectators += room.spectators.size;
-
-      roomsInfo.push({
-        roomId,
-        players: room.players.size,
-        spectators: room.spectators.size,
-        idleTime: Math.floor((now - room.lastActivity.getTime()) / 1000),
-      });
-    }
-
-    return {
-      totalRooms: this.rooms.size,
-      totalConnections: this.connectionRooms.size,
-      totalPlayers,
-      totalSpectators,
-      roomsInfo,
-    };
-  }
-}
 </file>
 
 <file path="frontend/src/components/game/ActionPanel.tsx">
@@ -19951,6 +19098,395 @@ export default function GamePage() {
 }
 </file>
 
+<file path="frontend/src/pages/room/[id].tsx">
+import { useRouter } from 'next/router';
+import Head from 'next/head';
+import { useEffect, useState, useMemo, useRef } from 'react'; // ✅ ADICIONADO useRef
+import { withAuth } from '@/context/AuthContext';
+import { useSocket } from '@/context/SocketContext';
+import { useAuth } from '@/context/AuthContext';
+import WaitingRoom from '@/components/room/WaitingRoom';
+import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { toast } from 'react-hot-toast';
+import { Player, Room, ChatMessage } from '@/types';
+
+function RoomPage() {
+  const router = useRouter();
+  const { id: roomId } = router.query;
+  const { connect, disconnect, isConnected, sendMessage } = useSocket();
+  const { user, getToken, isAuthenticated } = useAuth();
+
+  // ✅ ADICIONADO: REF PARA PREVENIR DOUBLE SEND
+  const joinAttemptRef = useRef<string | null>(null);
+
+  // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  const [room, setRoom] = useState<Room | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [spectators, setSpectators] = useState<Player[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+
+  // ✅ DADOS DERIVADOS
+  const currentUserId = user?.id || '';
+  const isHost = useMemo(() => room?.hostId === currentUserId, [room, currentUserId]);
+  const currentPlayer = useMemo(() => players.find(p => p.userId === currentUserId), [players, currentUserId]);
+  const isReady = currentPlayer?.isReady || false;
+
+  // ✅ CORRIGIDO: Bug #1 - Filtrar host antes de verificar se todos estão prontos
+  const canStartGame = players.length >= 3 && players.filter(p => !p.isHost).every(p => p.isReady) && isConnected && isHost;
+
+  // ✅ EFEITO #1: Apenas para conectar e desconectar ao WebSocket.
+  useEffect(() => {
+    console.log('🚪 [FE-ROOM] useEffect de conexão disparado!', {
+      isReady: router.isReady,
+      isAuthenticated,
+      roomId,
+      isConnected,
+      roomIdType: typeof roomId,
+      timestamp: new Date().toISOString()
+    });
+
+    if (!router.isReady || !isAuthenticated || !roomId || typeof roomId !== 'string') {
+      console.log('🚪 [FE-ROOM] Condições de conexão não atendidas, saindo do efeito.', {
+        routerReady: router.isReady,
+        authenticated: isAuthenticated,
+        hasRoomId: !!roomId,
+        roomIdType: typeof roomId
+      });
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      console.log('🚪 [FE-ROOM] Token não encontrado, redirecionando para login');
+      router.push('/auth/login');
+      return;
+    }
+
+    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws/${roomId}?token=${encodeURIComponent(token)}`;
+
+    console.log('🔌 [FE-ROOM] TENTANDO CONECTAR...', {
+      url: wsUrl,
+      isConnected,
+      currentRoomId: roomId
+    });
+
+    connect(wsUrl);
+
+    return () => {
+      console.log('🚪 [FE-ROOM] useEffect de conexão está sendo LIMPO (cleanup). Desconectando...');
+      sendMessage('leave-room', { roomId });
+      disconnect();
+    };
+  }, [router.isReady, isAuthenticated, roomId, connect, disconnect, getToken, router, sendMessage]);
+
+  // ✅ EFEITO #2: CORRIGIDO - Previne double send
+  useEffect(() => {
+    console.log('🔄 [FE-ROOM] useEffect join-room disparado', {
+      isConnected,
+      hasJoinedRoom,
+      roomId,
+      spectate: router.query.spectate,
+      joinAttemptCurrent: joinAttemptRef.current,
+      timestamp: new Date().toISOString()
+    });
+
+    if (isConnected && !hasJoinedRoom && roomId) {
+      // ✅ PREVENIR MULTIPLE SENDS PARA A MESMA SALA
+      if (joinAttemptRef.current === roomId) {
+        console.log('🚫 [FE-ROOM] Join já tentado para esta sala, ignorando');
+        return;
+      }
+
+      const asSpectator = router.query.spectate === 'true';
+
+      console.log('📤 [FE-ROOM] Enviando join-room', {
+        roomId,
+        asSpectator,
+        timestamp: new Date().toISOString()
+      });
+
+      if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
+        joinAttemptRef.current = roomId as string; // Marcar tentativa
+        setHasJoinedRoom(true);
+        console.log('✅ [FE-ROOM] join-room enviado, marcando hasJoinedRoom=true');
+      } else {
+        console.log('❌ [FE-ROOM] Falha ao enviar join-room');
+      }
+    }
+  }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
+
+  // ✅ EFEITO #3: Apenas para ouvir as mensagens.
+  useEffect(() => {
+    const handleMessage = (event: CustomEvent) => {
+      const { type, data } = event.detail;
+      console.log('📨 [FE-ROOM] Received:', type, data);
+
+      switch (type) {
+        case 'room-joined':
+          console.log('📨 [FE-ROOM] room-joined recebido', {
+            room: data.room?.name,
+            playersCount: data.players?.length,
+            spectatorsCount: data.spectators?.length
+          });
+          setRoom(data.room);
+          setPlayers(Array.isArray(data.players) ? data.players : []);
+          setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
+          setLoading(false);
+          toast.success(`Entrou na sala: ${data.room?.name || roomId}`);
+          break;
+
+        case 'player-joined':
+          console.log('📨 [FE-ROOM] player-joined recebido', {
+            player: data.player,
+            currentPlayersCount: players.length
+          });
+          if (data.player) {
+            setPlayers(prev => {
+              const filtered = prev.filter(p => p.userId !== data.player.userId);
+              return [...filtered, data.player];
+            });
+
+            const systemMessage: ChatMessage = {
+              id: Date.now().toString(),
+              userId: 'system',
+              username: 'Sistema',
+              message: `${data.player.username} entrou na sala`,
+              channel: 'system',
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, systemMessage]);
+          }
+          break;
+
+        case 'player-left':
+          if (data.userId) {
+            setPlayers(prev => prev.filter(p => p.userId !== data.userId));
+            setSpectators(prev => prev.filter(s => s.userId !== data.userId));
+
+            if (data.username) {
+              const systemMessage: ChatMessage = {
+                id: Date.now().toString(),
+                userId: 'system',
+                username: 'Sistema',
+                message: `${data.username} saiu da sala`,
+                channel: 'system',
+                timestamp: new Date().toISOString()
+              };
+              setMessages(prev => [...prev, systemMessage]);
+            }
+          }
+          break;
+
+        case 'player-ready':
+          if (data.userId) {
+            setPlayers(prev => prev.map(p =>
+              p.userId === data.userId ? { ...p, isReady: data.ready } : p
+            ));
+          }
+          break;
+
+        case 'chat-message':
+          if (data) {
+            const message = data.message || data;
+            setMessages(prev => [...prev, message]);
+          }
+          break;
+
+        case 'game-starting':
+        case 'game-started':
+        case 'game-state':
+          const gameId = data?.gameId || `game-${roomId}`;
+
+          console.log('🎮 [FE-ROOM] Game starting/started:', {
+            type,
+            gameId,
+            roomId,
+            dataReceived: data
+          });
+
+          toast.success('🎮 Jogo iniciando!');
+          disconnect();
+          router.push(`/game/${gameId}`);
+          break;
+
+        case 'room-updated':
+          if (data.room) setRoom(data.room);
+          if (data.players) setPlayers(data.players);
+          if (data.spectators) setSpectators(data.spectators);
+          break;
+
+        case 'room-deleted':
+          toast.error(data.reason || 'A sala foi encerrada pelo host');
+          router.push('/lobby');
+          break;
+
+        case 'error':
+          if (data.message) {
+            toast.error(data.message);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('websocket-message', handleMessage as EventListener);
+    return () => {
+      window.removeEventListener('websocket-message', handleMessage as EventListener);
+    };
+  }, [roomId, router, disconnect, players.length]);
+
+  // ✅ HANDLERS
+  const handleToggleReady = () => {
+    sendMessage('player-ready', { ready: !isReady });
+  };
+
+  const handleStartGame = () => {
+    if (!isHost || !canStartGame) return;
+    sendMessage('start-game', {});
+    toast.success('Iniciando jogo...');
+  };
+
+  const handleKickPlayer = (playerId: string) => {
+    if (!isHost) return;
+    sendMessage('kick-player', { playerId });
+  };
+
+  const handleSendChatMessage = (message: string) => {
+    sendMessage('chat-message', { message });
+  };
+
+  const handleShareRoom = async () => {
+    if (!room) return;
+    const shareUrl = `${window.location.origin}/room/${room.id}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success('Link da sala copiado!');
+    } catch (error) {
+      toast.error('Erro ao copiar link');
+    }
+  };
+
+  const handleLeaveRoom = () => {
+    if (isHost) {
+      setShowLeaveModal(true);
+    } else {
+      sendMessage('leave-room', { roomId });
+      router.push('/lobby');
+    }
+  };
+
+  const handleConfirmLeaveAsHost = () => {
+    sendMessage('delete-room', { roomId });
+    setShowLeaveModal(false);
+    toast('Encerrando sala...', { icon: '🏠' });
+  };
+
+  // ✅ RENDERIZAÇÃO CONDICIONAL
+  if (!router.isReady) {
+    return (
+      <>
+        <Head>
+          <title>Carregando... - Lobisomem Online</title>
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+          <LoadingSpinner variant="medieval" size="xl" text="Carregando sala..." />
+        </div>
+      </>
+    );
+  }
+
+  if (!roomId || typeof roomId !== 'string') {
+    return (
+      <>
+        <Head>
+          <title>Erro - Lobisomem Online</title>
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-6xl mb-4">❌</div>
+            <h1 className="text-2xl font-bold text-white mb-4">Sala Inválida</h1>
+            <button
+              onClick={() => router.push('/lobby')}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Voltar ao Lobby
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!isConnected) {
+    return (
+      <>
+        <Head>
+          <title>Conectando... - Lobisomem Online</title>
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <LoadingSpinner variant="medieval" size="xl" text="Conectando ao servidor..." />
+            <p className="text-gray-400 mt-4">Estabelecendo conexão segura...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (loading) {
+    return (
+      <>
+        <Head>
+          <title>Entrando na sala... - Lobisomem Online</title>
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <LoadingSpinner variant="medieval" size="xl" text="Entrando na sala..." />
+            <p className="text-gray-400 mt-4">Aguardando confirmação do servidor...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Head>
+        <title>{room?.name || 'Sala'} - Lobisomem Online</title>
+        <meta name="description" content="Aguardando jogadores para começar a partida" />
+      </Head>
+
+      <WaitingRoom
+        roomId={roomId as string}
+        room={room}
+        players={players}
+        spectators={spectators}
+        messages={messages}
+        currentUserId={currentUserId}
+        isHost={isHost}
+        isReady={isReady}
+        canStartGame={canStartGame}
+        isConnected={isConnected}
+        showLeaveModal={showLeaveModal}
+        setShowLeaveModal={setShowLeaveModal}
+        onToggleReady={handleToggleReady}
+        onStartGame={handleStartGame}
+        onKickPlayer={handleKickPlayer}
+        onSendChatMessage={handleSendChatMessage}
+        onShareRoom={handleShareRoom}
+        onLeaveRoom={handleLeaveRoom}
+        onConfirmLeaveAsHost={handleConfirmLeaveAsHost}
+      />
+    </>
+  );
+}
+
+export default withAuth(RoomPage);
+</file>
+
 <file path="package.json">
 {
   "name": "werewolf-online",
@@ -20544,389 +20080,651 @@ export const deleteRoom = async (req: Request, res: Response): Promise<void> => 
 };
 </file>
 
-<file path="backend/src/websocket/WebSocketManager.ts">
-// 🐺 LOBISOMEM ONLINE - WebSocket Manager (VERSÃO FINAL CORRIGIDA)
-import http from 'http';
-import { WebSocketServer } from 'ws';
-import { verifyAccessToken, extractTokenFromWebSocketRequest } from '@/config/jwt';
-import { parseWebSocketURL, extractConnectionMetadata } from '@/config/websocket';
-import { wsLogger } from '@/utils/logger';
-import { ConnectionManager } from './ConnectionManager';
-import { ChannelManager } from './ChannelManager';
-import { MessageRouter } from './MessageRouter';
-import { GameEngine } from '@/game/GameEngine';
-import { HeartbeatManager } from './HeartbeatManager';
-import type { IEventBus, ConnectionContext } from '@/types';
-import type { Config } from '@/config/environment';
+<file path="backend/src/server.ts">
+// 🐺 LOBISOMEM ONLINE - Server Entry Point (COM LIMPEZA DE SALAS)
+import httpServer from './app'; // ✅ Importar o httpServer já configurado
+import { config, validateConfig } from '@/config/environment';
+import { connectDatabase, gracefulShutdown as shutdownDatabase } from '@/config/database';
+import { connectRedis, gracefulShutdown as shutdownRedis } from '@/config/redis';
+import { ServiceFactory } from './websocket/ServiceFactory';
+import { RoomCleanupService } from './services/RoomCleanupService'; // ✅ NOVO SERVIÇO
+import { logger } from '@/utils/logger';
 
-export class WebSocketManager {
-  public wss: WebSocketServer | null = null;
-  private connectionManager: ConnectionManager;
+// ✅ A instância de wsManager agora vive dentro de app.ts
+// ✅ Instância global do serviço de limpeza
+let roomCleanupService: RoomCleanupService | null = null;
 
-  // ✅ EXPOSIÇÃO PÚBLICA DO CHANNELMANAGER
-  public channelManager: ChannelManager;
-
-  private messageRouter: MessageRouter;
-  private gameEngine: GameEngine;
-  private heartbeatManager: HeartbeatManager;
-
-  constructor(
-    private eventBus: IEventBus,
-    private config: Config
-  ) {
-    this.connectionManager = new ConnectionManager();
-    this.channelManager = new ChannelManager(this.connectionManager);
-    this.heartbeatManager = new HeartbeatManager(this.connectionManager);
-    this.gameEngine = new GameEngine();
-
-    this.messageRouter = new MessageRouter(
-      this.connectionManager,
-      this.channelManager,
-      this.gameEngine,
-      this.eventBus
-    );
-
-    this.messageRouter.setBroadcastMethods(
-      this.broadcastToRoom.bind(this),
-      this.sendToUser.bind(this)
-    );
-    this.gameEngine.setSendToUserMethod(this.sendToUser.bind(this));
-
-    wsLogger.info('WebSocketManager initialized with GameEngine integration');
-  }
-
-  public setupWebSocketServer(server: http.Server): void {
-    this.wss = new WebSocketServer({ noServer: true });
-
-    server.on('upgrade', (request, socket, head) => {
-      // ✅ ACEITA QUALQUER CAMINHO QUE COMECE COM /ws
-      if (request.url?.startsWith('/ws')) {
-        this.wss!.handleUpgrade(request, socket, head, (ws) => {
-          this.wss!.emit('connection', ws, request);
-        });
-      } else {
-        wsLogger.warn('WebSocket upgrade rejected for invalid path', { path: request.url });
-        socket.destroy();
+// Função de retry para conexão com o banco
+const connectWithRetry = async (connectFn: () => Promise<void>, retries = 5, delay = 5000) => {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await connectFn();
+      logger.info('Database connected successfully.');
+      return;
+    } catch (error) {
+      logger.error(`Database connection attempt ${i} failed. Retrying in ${delay / 1000}s...`, { error });
+      if (i === retries) {
+        throw new Error(`Could not connect to the database after ${retries} attempts.`);
       }
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+};
+
+async function startServer(): Promise<void> {
+  try {
+    validateConfig();
+
+    // Conectar banco (obrigatório) com retry
+    await connectWithRetry(connectDatabase);
+
+    // Conectar Redis (opcional - não falha se der erro)
+    if (config.SHOULD_USE_REDIS) {
+      try {
+        await connectRedis();
+      } catch (error) {
+        logger.warn('Redis connection failed, continuing without Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+
+    // ✅ A criação do servidor e do WebSocketManager já aconteceu em app.ts
+    // Agora só precisamos iniciar o servidor HTTP
+    httpServer.listen(config.PORT, () => {
+      logger.info(`🚀 Server running at http://localhost:${config.PORT}`);
+      logger.info(`🐺 Werewolf Online ${config.SERVICE_TYPE} service started`);
+      logger.info(`🔗 WebSocket available at ws://localhost:${config.PORT}${config.WS_BASE_PATH}`);
     });
 
-    this.wss.on('connection', this.handleConnection.bind(this));
-    this.heartbeatManager.start();
-    wsLogger.info('WebSocket server attached to HTTP upgrade event.');
+    // 🧹 INICIALIZAR SERVIÇO DE LIMPEZA DE SALAS ÓRFÃS
+    await initializeRoomCleanupService();
+
+    setupGracefulShutdown(httpServer);
+
+  } catch (error) {
+    logger.error('Failed to start server', error instanceof Error ? error : new Error('Unknown server start error'));
+    process.exit(1);
   }
+}
 
-  private async handleConnection(ws: any, request: any): Promise<void> {
-    let connectionId: string | undefined;
+/**
+ * 🧹 Inicializa o serviço de limpeza de salas órfãs
+ */
+async function initializeRoomCleanupService(): Promise<void> {
+  try {
+    // Verificar se o WebSocketManager está disponível
+    if (!(httpServer as any).wsManager) {
+      logger.warn('❌ WebSocketManager not found, room cleanup service will not start');
+      return;
+    }
 
-    try {
-      const urlInfo = parseWebSocketURL(request.url || '');
-      const token = extractTokenFromWebSocketRequest(request);
+    const wsManager = (httpServer as any).wsManager;
 
-      if (!token) {
-        wsLogger.warn('Connection rejected: No authentication token', {
-          url: request.url,
-          userAgent: request.headers['user-agent'],
-        });
-        return ws.close(1008, 'Authentication token required');
-      }
+    // Verificar se os managers estão disponíveis
+    if (!wsManager.channelManager || !wsManager.connectionManager) {
+      logger.warn('❌ Channel or Connection manager not found, room cleanup service will not start');
+      return;
+    }
 
-      const jwtPayload = verifyAccessToken(token);
+    // Criar e iniciar o serviço de limpeza
+    roomCleanupService = new RoomCleanupService(
+      wsManager.channelManager,
+      wsManager.connectionManager
+    );
 
-      // ✅ LÓGICA DE DIFERENCIAÇÃO SALA vs JOGO
-      let roomIdFromUrl = urlInfo.roomId;
-      let isGameConnection = false;
+    // Iniciar com intervalo de 30 segundos
+    roomCleanupService.start(30000);
 
-      if (roomIdFromUrl && roomIdFromUrl.startsWith('game-')) {
-        isGameConnection = true;
-        // Extrai o roomId real de um gameId, ex: "game-abc" -> "abc"
-        roomIdFromUrl = roomIdFromUrl.substring(5);
-      }
+    logger.info('✅ Room cleanup service initialized successfully');
 
-      const context: ConnectionContext = {
-        userId: jwtPayload.userId,
-        username: jwtPayload.username,
-        serverId: this.config.SERVICE_ID,
-        isSpectator: false,
-        roomId: roomIdFromUrl, // Armazena o roomId limpo
-      };
+  } catch (error) {
+    logger.error('❌ Failed to initialize room cleanup service', error);
+    // Não falhar o servidor por causa do serviço de limpeza
+  }
+}
 
-      const metadata = extractConnectionMetadata(request);
-      connectionId = `${context.userId}-${Date.now()}`;
+function setupGracefulShutdown(server: any): void {
+  const shutdown = async (signal: string) => {
+    logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
-      this.connectionManager.addConnection(connectionId, ws, context, metadata);
+    server.close(async () => {
+      logger.info('HTTP server closed.');
 
-      // Setup event handlers
-      ws.on('message', (data: Buffer) => {
+      // 🧹 PARAR SERVIÇO DE LIMPEZA
+      if (roomCleanupService) {
         try {
-          const message = JSON.parse(data.toString());
-          this.messageRouter.handleMessage(connectionId!, message);
+          roomCleanupService.stop();
+          logger.info('Room cleanup service stopped.');
         } catch (error) {
-          wsLogger.error('Failed to parse message', error as Error, { connectionId });
+          logger.warn('Error stopping room cleanup service', { error: error instanceof Error ? error.message : 'Unknown error' });
         }
-      });
-
-      ws.on('pong', () => this.heartbeatManager.handlePong(connectionId!));
-
-      ws.on('close', (code: number, reason: Buffer) => {
-        this.handleDisconnection(connectionId!, code, reason.toString());
-      });
-
-      ws.on('error', (error: Error) => {
-        wsLogger.error('WS Connection Error', error, { connectionId });
-      });
-
-      // Send connection confirmation
-      this.sendToConnection(connectionId, 'connected', {
-        userId: context.userId,
-        username: context.username,
-        serverId: context.serverId,
-      });
-
-      // ✅ AQUI ESTÁ A MUDANÇA CRÍTICA DE FLUXO
-      if (isGameConnection) {
-        // Se é uma conexão de JOGO, apenas peça o estado do jogo.
-        // O frontend na página do jogo é quem vai enviar esta mensagem.
-        wsLogger.info('Game connection established, waiting for get-game-state', {
-          connectionId,
-          gameId: urlInfo.roomId,
-          roomId: roomIdFromUrl
-        });
-      } else if (context.roomId) {
-        // Se é uma conexão de SALA, acione o `join-room`.
-        await this.messageRouter.handleMessage(connectionId, {
-          type: 'join-room',
-          data: { roomId: context.roomId }
-        });
       }
 
-      wsLogger.info('WebSocket connection established', {
-        connectionId,
-        userId: context.userId,
-        username: context.username,
-        roomId: context.roomId,
-        isGameConnection,
-        originalUrl: urlInfo.roomId,
-        userAgent: metadata.userAgent,
-        ip: metadata.ip,
-      });
+      // ✅ Shutdown do WebSocketManager (se existir)
+      if (server.wsManager) {
+        try {
+          await server.wsManager.shutdown();
+          logger.info('WebSocket manager shut down.');
+        } catch (error) {
+          logger.warn('Error shutting down WebSocket manager', { error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      }
 
-    } catch (error) {
-      wsLogger.error('Connection failed during handshake', error as Error, {
-        url: request.url,
-        connectionId,
+      // Shutdown do banco
+      await shutdownDatabase();
+
+      // Shutdown do Redis (se configurado)
+      if (config.SHOULD_USE_REDIS) {
+        try {
+          await shutdownRedis();
+        } catch (error) {
+          logger.warn('Error shutting down Redis', { error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      }
+
+      // Limpar instâncias do ServiceFactory
+      ServiceFactory.clearInstances();
+
+      logger.info('Graceful shutdown completed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+// 🔧 FUNÇÃO DE UTILIDADE PARA OBTER STATS DO CLEANUP (OPCIONAL)
+export function getRoomCleanupStats() {
+  return roomCleanupService?.getStats() || { isRunning: false, intervalMs: null };
+}
+
+// ✅ Iniciar servidor se for executado diretamente
+if (require.main === module) {
+  startServer();
+}
+
+export default httpServer;
+</file>
+
+<file path="backend/src/websocket/ChannelManager.ts">
+import { wsLogger } from '@/utils/logger';
+import type { ConnectionManager } from './ConnectionManager';
+
+interface RoomChannel {
+  players: Set<string>;
+  spectators: Set<string>;
+  readyPlayers: Set<string>;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+export class ChannelManager {
+  private rooms = new Map<string, RoomChannel>();
+  private connectionRooms = new Map<string, string>();
+
+  constructor(private connectionManager: ConnectionManager) { }
+
+  createRoom(roomId: string): boolean {
+    if (this.rooms.has(roomId)) {
+      wsLogger.warn('Attempted to create existing room channel', { roomId });
+      return false;
+    }
+
+    this.rooms.set(roomId, {
+      players: new Set(),
+      spectators: new Set(),
+      readyPlayers: new Set(),
+      createdAt: new Date(),
+      lastActivity: new Date(),
+    });
+
+    wsLogger.info('Room channel created', { roomId });
+    return true;
+  }
+
+  joinRoom(roomId: string, connectionId: string, asSpectator = false): boolean {
+    console.log('🏠 [ChannelManager-JOIN] Iniciando processo', {
+      roomId: roomId.slice(-6),
+      connectionId: connectionId.slice(-6),
+      asSpectator,
+      timestamp: new Date().toISOString()
+    });
+
+    let room = this.rooms.get(roomId);
+
+    if (!room) {
+      console.log('🏠 [ChannelManager-JOIN] Sala não existe, criando nova', { roomId: roomId.slice(-6) });
+      this.createRoom(roomId);
+      room = this.rooms.get(roomId)!;
+    } else {
+      console.log('🏠 [ChannelManager-JOIN] Sala já existe', {
+        roomId: roomId.slice(-6),
+        currentPlayers: room.players.size,
+        currentSpectators: room.spectators.size
       });
-      ws.close(1008, 'Authentication failed');
+    }
+
+    // ✅ SUSPEITO #1: LOG DETALHADO DO LEAVE AUTOMÁTICO
+    const currentRoom = this.connectionRooms.get(connectionId);
+    if (currentRoom === roomId) {
+      console.log('🔄 [ChannelManager-JOIN] Conexão já está na mesma sala, ignorando', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6)
+      });
+      return true; // Já está na sala certa, não precisa fazer nada
+    }
+
+    if (currentRoom && currentRoom !== roomId) {
+      console.log('🔄 [ChannelManager-JOIN] Conexão mudando de sala', {
+        connectionId: connectionId.slice(-6),
+        fromRoom: currentRoom.slice(-6),
+        toRoom: roomId.slice(-6)
+      });
+      this.leaveRoom(currentRoom, connectionId);
+    }
+
+    // ✅ ADICIONAR À SALA
+    if (asSpectator) {
+      room.spectators.add(connectionId);
+      console.log('👁️ [ChannelManager-JOIN] Adicionado como spectator', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        totalSpectators: room.spectators.size
+      });
+    } else {
+      room.players.add(connectionId);
+      console.log('👤 [ChannelManager-JOIN] Adicionado como player', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        totalPlayers: room.players.size
+      });
+    }
+
+    this.connectionRooms.set(connectionId, roomId);
+    room.lastActivity = new Date();
+
+    console.log('✅ [ChannelManager-JOIN] Processo concluído', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      finalPlayers: room.players.size,
+      finalSpectators: room.spectators.size,
+      connectionMapped: this.connectionRooms.has(connectionId)
+    });
+
+    wsLogger.debug('Connection joined room', {
+      connectionId,
+      roomId,
+      asSpectator,
+      totalPlayers: room.players.size,
+      totalSpectators: room.spectators.size,
+    });
+
+    return true;
+  }
+
+  leaveRoom(roomId: string, connectionId: string): boolean {
+    console.log('🚪 [ChannelManager-LEAVE] Iniciando processo', {
+      roomId: roomId.slice(-6),
+      connectionId: connectionId.slice(-6),
+      timestamp: new Date().toISOString()
+    });
+
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      console.log('🚪 [ChannelManager-LEAVE] Sala não existe!', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
+      wsLogger.warn('Attempted to leave non-existent room', { roomId, connectionId });
+      return false;
+    }
+
+    const wasPlayer = room.players.delete(connectionId);
+    const wasSpectator = room.spectators.delete(connectionId);
+
+    console.log('🚪 [ChannelManager-LEAVE] Remoção das listas', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      wasPlayer,
+      wasSpectator,
+      remainingPlayers: room.players.size,
+      remainingSpectators: room.spectators.size
+    });
+
+    if (!wasPlayer && !wasSpectator) {
+      console.log('🚪 [ChannelManager-LEAVE] Conexão não estava na sala!', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
+      wsLogger.warn('Connection was not in room', { roomId, connectionId });
+      return false;
+    }
+
+    this.connectionRooms.delete(connectionId);
+    room.lastActivity = new Date();
+
+    // ✅ LOG CRÍTICO: QUANDO SALA FICA VAZIA
+    if (room.players.size === 0 && room.spectators.size === 0) {
+      console.log('🗑️ [ChannelManager-LEAVE] Sala ficou vazia, removendo', {
+        roomId: roomId.slice(-6),
+        connectionId: connectionId.slice(-6)
+      });
+      this.rooms.delete(roomId);
+      wsLogger.info('Room channel removed (empty)', { roomId });
+    }
+
+    console.log('✅ [ChannelManager-LEAVE] Processo concluído', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      wasPlayer,
+      wasSpectator,
+      roomStillExists: this.rooms.has(roomId)
+    });
+
+    wsLogger.debug('Connection left room', {
+      connectionId,
+      roomId,
+      wasPlayer,
+      wasSpectator,
+      remainingPlayers: room.players.size,
+      remainingSpectators: room.spectators.size,
+    });
+
+    return true;
+  }
+
+  removeConnectionFromAllRooms(connectionId: string): void {
+    const roomId = this.connectionRooms.get(connectionId);
+    if (roomId) {
+      this.leaveRoom(roomId, connectionId);
     }
   }
 
-  private handleDisconnection(connectionId: string, code: number, reason: string): void {
-    const connection = this.connectionManager.getConnection(connectionId);
-
-    if (connection) {
-      wsLogger.info('WebSocket connection closed', {
-        connectionId,
-        userId: connection.context.userId,
-        username: connection.context.username,
-        roomId: connection.context.roomId,
-        code,
-        reason,
-      });
-
-      // Leave room if connected
-      if (connection.context.roomId) {
-        this.channelManager.leaveRoom(connection.context.roomId, connectionId);
-      }
-
-      // ✅ VERIFICAÇÃO DE SEGURANÇA ANTES DE USAR O EVENTBUS
-      if (this.eventBus && typeof this.eventBus.publish === 'function') {
-        this.eventBus.publish('connection:disconnected', {
-          connectionId,
-          userId: connection.context.userId,
-          username: connection.context.username,
-          roomId: connection.context.roomId,
-          code,
-          reason,
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        wsLogger.warn('EventBus not available for disconnection event', { connectionId });
-      }
-    }
-
-    this.connectionManager.removeConnection(connectionId);
+  getRoomConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    if (!room) return new Set();
+    return new Set([...room.players, ...room.spectators]);
   }
 
-  public sendToConnection = (connectionId: string, type: string, data?: any): boolean => {
-    const connection = this.connectionManager.getConnection(connectionId);
-    if (!connection || connection.ws.readyState !== connection.ws.OPEN) {
-      return false;
-    }
+  getRoomPlayerConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    return room ? new Set(room.players) : new Set();
+  }
 
-    try {
-      const message = {
-        type,
-        data,
-        timestamp: new Date().toISOString(),
-      };
+  getRoomSpectatorConnections(roomId: string): Set<string> {
+    const room = this.rooms.get(roomId);
+    return room ? new Set(room.spectators) : new Set();
+  }
 
-      connection.ws.send(JSON.stringify(message));
-      return true;
-    } catch (error) {
-      wsLogger.error('Failed to send message to connection', error as Error, {
-        connectionId,
-        type,
-      });
-      return false;
-    }
-  };
+  getConnectionRoom(connectionId: string): string | undefined {
+    return this.connectionRooms.get(connectionId);
+  }
 
-  public sendToUser = (userId: string, type: string, data?: any): boolean => {
-    const connection = this.connectionManager.findConnectionByUserId(userId);
-    if (!connection) {
-      wsLogger.debug('No active connection found for user', { userId, type });
-      return false;
-    }
+  getRoomCount(roomId: string): { players: number; spectators: number } {
+    const room = this.rooms.get(roomId);
+    if (!room) return { players: 0, spectators: 0 };
 
-    return this.sendToConnection(connection.id, type, data);
-  };
+    return {
+      players: room.players.size,
+      spectators: room.spectators.size,
+    };
+  }
 
-  // ✅ MÉTODO COM LOGS DETALHADOS PARA DEBUG
-  public broadcastToRoom = (roomId: string, type: string, data?: any, excludeConnectionId?: string): number => {
-    console.log('🔥 BROADCAST: Tentando fazer broadcast', {
-      roomId,
-      type,
-      hasData: !!data,
-      excludeConnectionId,
-      timestamp: new Date().toISOString()
-    });
+  // 🔧 NOVA VERSÃO: limpa conexões mortas automaticamente
+  getRoomStats(roomId: string): { playersCount: number; spectatorsCount: number } | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
 
-    const roomConnections = this.channelManager.getRoomConnections(roomId);
+    console.log(`\n🔍 DEBUG LOBBY - Sala: ${roomId.slice(-6)}`);
+    console.log(`📊 Players no Set: ${room.players.size}`);
 
-    console.log('🔥 BROADCAST: Conexões na sala', {
-      roomId,
-      totalConnections: roomConnections.size,
-      connections: Array.from(roomConnections),
-      timestamp: new Date().toISOString()
-    });
+    const deadPlayers = new Set<string>();
+    const deadSpectators = new Set<string>();
 
-    let sentCount = 0;
+    // Verificar players
+    for (const connectionId of room.players) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
 
-    for (const connectionId of roomConnections) {
-      if (excludeConnectionId && connectionId === excludeConnectionId) {
-        console.log('🔥 BROADCAST: Pulando conexão excluída', { connectionId });
-        continue;
-      }
+      console.log(`   👤 ${connectionId.slice(-6)}: ${isValid ? '✅ VIVO' : '💀 MORTO'}`);
 
-      const success = this.sendToConnection(connectionId, type, data);
-
-      console.log('🔥 BROADCAST: Tentativa de envio', {
-        connectionId,
-        success,
-        type,
-        timestamp: new Date().toISOString()
-      });
-
-      if (success) {
-        sentCount++;
+      if (!isValid) {
+        deadPlayers.add(connectionId);
+        this.connectionRooms.delete(connectionId);
       }
     }
 
-    console.log('🔥 BROADCAST: Broadcast realizado', {
-      roomId,
-      type,
-      totalConnections: roomConnections.size,
-      sentCount,
-      timestamp: new Date().toISOString()
-    });
+    // Verificar spectators
+    for (const connectionId of room.spectators) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      const isValid = connection && connection.ws.readyState === connection.ws.OPEN;
+
+      if (!isValid) {
+        deadSpectators.add(connectionId);
+        this.connectionRooms.delete(connectionId);
+      }
+    }
+
+    // Limpeza efetiva
+    if (deadPlayers.size > 0) {
+      console.log(`🧹 Limpando ${deadPlayers.size} players mortos`);
+      for (const deadId of deadPlayers) {
+        room.players.delete(deadId);
+      }
+    }
+
+    if (deadSpectators.size > 0) {
+      console.log(`🧹 Limpando ${deadSpectators.size} spectators mortos`);
+      for (const deadId of deadSpectators) {
+        room.spectators.delete(deadId);
+      }
+    }
+
+    const finalCount = {
+      playersCount: room.players.size,
+      spectatorsCount: room.spectators.size,
+    };
+
+    console.log(
+      `📊 APÓS LIMPEZA: ${finalCount.playersCount} players, ${finalCount.spectatorsCount} spectators`,
+    );
+
+    room.lastActivity = new Date();
+
+    if (finalCount.playersCount === 0 && finalCount.spectatorsCount === 0) {
+      console.log(`🗑️ Sala ${roomId.slice(-6)} ficou vazia, removendo`);
+      this.rooms.delete(roomId);
+    }
+
+    return finalCount;
+  }
+
+  broadcastToRoom(
+    roomId: string,
+    type: string,
+    data?: any,
+    excludeConnectionId?: string,
+  ): number {
+    const connections = this.getRoomConnections(roomId);
+    let sent = 0;
+
+    for (const connectionId of connections) {
+      if (connectionId === excludeConnectionId) continue;
+
+      const connection = this.connectionManager.getConnection(connectionId);
+      if (!connection || connection.ws.readyState !== connection.ws.OPEN) continue;
+
+      try {
+        connection.ws.send(
+          JSON.stringify({
+            type,
+            data,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        sent++;
+      } catch (error) {
+        wsLogger.error(
+          'Failed to broadcast to connection',
+          error instanceof Error ? error : new Error('Unknown broadcast error'),
+          {
+            connectionId,
+            roomId,
+            type,
+          },
+        );
+      }
+    }
 
     wsLogger.debug('Broadcast to room completed', {
       roomId,
       type,
-      totalConnections: roomConnections.size,
-      sentCount,
-      excludedConnection: excludeConnectionId,
+      totalConnections: connections.size,
+      sentCount: sent,
+      excluded: !!excludeConnectionId,
     });
 
-    return sentCount;
-  };
+    return sent;
+  }
 
-  public broadcastToAll = (type: string, data?: any): number => {
-    const allConnections = this.connectionManager.getAllConnections();
-    let sentCount = 0;
+  isPlayerInRoom(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.players.has(connectionId) : false;
+  }
 
-    for (const [connectionId] of allConnections) {
-      if (this.sendToConnection(connectionId, type, data)) {
-        sentCount++;
-      }
+  isSpectatorInRoom(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.spectators.has(connectionId) : false;
+  }
+
+  // ✅ Define ou remove o status de "pronto" de um jogador
+  setPlayerReadyStatus(roomId: string, connectionId: string, isReady: boolean): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    if (!room.readyPlayers) room.readyPlayers = new Set();
+
+    if (isReady) {
+      room.readyPlayers.add(connectionId);
+    } else {
+      room.readyPlayers.delete(connectionId);
     }
 
-    wsLogger.debug('Broadcast to all completed', {
-      type,
-      totalConnections: allConnections.size,
-      sentCount,
+    wsLogger.debug('Player ready status updated', {
+      roomId,
+      connectionId,
+      isReady,
+      totalReady: room.readyPlayers.size,
     });
 
-    return sentCount;
-  };
+    room.lastActivity = new Date();
+  }
 
-  public getStats(): any {
-    const connectionStats = this.connectionManager.getStats();
-    const channelStats = this.channelManager.getStats();
+  // ✅ Verifica se um jogador está marcado como "pronto"
+  isPlayerReady(roomId: string, connectionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room ? room.readyPlayers?.has(connectionId) ?? false : false;
+  }
+
+  getActiveRoomsCount(): number {
+    return this.rooms.size;
+  }
+
+  getActiveRooms(): string[] {
+    return Array.from(this.rooms.keys());
+  }
+
+  getRoomInfo(roomId: string): {
+    exists: boolean;
+    playersCount: number;
+    spectatorsCount: number;
+    createdAt?: Date;
+    lastActivity?: Date;
+  } {
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      return { exists: false, playersCount: 0, spectatorsCount: 0 };
+    }
 
     return {
-      connections: connectionStats,
-      channels: channelStats,
-      games: {
-        activeGames: this.gameEngine.getActiveGamesCount(),
-        totalGames: this.gameEngine.getAllGames().length,
-      },
-      server: {
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        serverId: this.config.SERVICE_ID,
-      },
+      exists: true,
+      playersCount: room.players.size,
+      spectatorsCount: room.spectators.size,
+      createdAt: room.createdAt,
+      lastActivity: room.lastActivity,
     };
   }
 
-  public async forceDisconnectUser(userId: string): Promise<boolean> {
-    const connection = this.connectionManager.findConnectionByUserId(userId);
-    if (!connection) {
-      return false;
-    }
+  cleanup(maxIdleTime = 3_600_000): number {
+    const now = Date.now();
+    let cleaned = 0;
 
-    try {
-      connection.ws.close(1000, 'Forced disconnect by admin');
-      return true;
-    } catch (error) {
-      wsLogger.error('Failed to force disconnect user', error as Error, { userId });
-      return false;
-    }
-  }
+    for (const [roomId, room] of this.rooms.entries()) {
+      const idleTime = now - room.lastActivity.getTime();
 
-  public async cleanup(): Promise<void> {
-    wsLogger.info('Starting WebSocket cleanup...');
+      if (room.players.size === 0 && room.spectators.size === 0 && idleTime > maxIdleTime) {
+        this.rooms.delete(roomId);
+        cleaned++;
 
-    this.heartbeatManager.stop();
-
-    const allConnections = this.connectionManager.getAllConnections();
-    for (const [connectionId, connection] of allConnections) {
-      try {
-        connection.ws.close(1001, 'Server shutdown');
-      } catch (error) {
-        wsLogger.error('Error closing connection during cleanup', error as Error, { connectionId });
+        wsLogger.info('Cleaned up idle room channel', {
+          roomId,
+          idleTime: Math.floor(idleTime / 1000),
+          maxIdleTime: Math.floor(maxIdleTime / 1000),
+        });
       }
     }
 
-    this.connectionManager.cleanup();
-    this.channelManager.cleanup();
-    await this.gameEngine.cleanup();
+    return cleaned;
+  }
 
-    if (this.wss) {
-      this.wss.close();
-      this.wss = null;
+  clear(): void {
+    this.rooms.clear();
+    this.connectionRooms.clear();
+    wsLogger.info('All room channels cleared');
+  }
+
+  getStats(): {
+    totalRooms: number;
+    totalConnections: number;
+    totalPlayers: number;
+    totalSpectators: number;
+    roomsInfo: Array<{
+      roomId: string;
+      players: number;
+      spectators: number;
+      idleTime: number;
+    }>;
+  } {
+    let totalPlayers = 0;
+    let totalSpectators = 0;
+    const roomsInfo: Array<{
+      roomId: string;
+      players: number;
+      spectators: number;
+      idleTime: number;
+    }> = [];
+
+    const now = Date.now();
+
+    for (const [roomId, room] of this.rooms.entries()) {
+      totalPlayers += room.players.size;
+      totalSpectators += room.spectators.size;
+
+      roomsInfo.push({
+        roomId,
+        players: room.players.size,
+        spectators: room.spectators.size,
+        idleTime: Math.floor((now - room.lastActivity.getTime()) / 1000),
+      });
     }
 
-    wsLogger.info('WebSocket cleanup completed');
+    return {
+      totalRooms: this.rooms.size,
+      totalConnections: this.connectionRooms.size,
+      totalPlayers,
+      totalSpectators,
+      roomsInfo,
+    };
   }
 }
 </file>
@@ -21401,6 +21199,425 @@ export default function ChatGigante() {
 }
 </file>
 
+<file path="backend/src/websocket/WebSocketManager.ts">
+// 🐺 LOBISOMEM ONLINE - WebSocket Manager (VERSÃO FINAL CORRIGIDA)
+import http from 'http';
+import { WebSocketServer } from 'ws';
+import { verifyAccessToken, extractTokenFromWebSocketRequest } from '@/config/jwt';
+import { parseWebSocketURL, extractConnectionMetadata } from '@/config/websocket';
+import { wsLogger } from '@/utils/logger';
+import { ConnectionManager } from './ConnectionManager';
+import { ChannelManager } from './ChannelManager';
+import { MessageRouter } from './MessageRouter';
+import { GameEngine } from '@/game/GameEngine';
+import { HeartbeatManager } from './HeartbeatManager';
+import type { IEventBus, ConnectionContext } from '@/types';
+import type { Config } from '@/config/environment';
+
+export class WebSocketManager {
+  public wss: WebSocketServer | null = null;
+  private connectionManager: ConnectionManager;
+
+  // ✅ EXPOSIÇÃO PÚBLICA DO CHANNELMANAGER
+  public channelManager: ChannelManager;
+
+  private messageRouter: MessageRouter;
+  private gameEngine: GameEngine;
+  private heartbeatManager: HeartbeatManager;
+
+  constructor(
+    private eventBus: IEventBus,
+    private config: Config
+  ) {
+    this.connectionManager = new ConnectionManager();
+    this.channelManager = new ChannelManager(this.connectionManager);
+    this.heartbeatManager = new HeartbeatManager(this.connectionManager);
+    this.gameEngine = new GameEngine();
+
+    this.messageRouter = new MessageRouter(
+      this.connectionManager,
+      this.channelManager,
+      this.gameEngine,
+      this.eventBus
+    );
+
+    this.messageRouter.setBroadcastMethods(
+      this.broadcastToRoom.bind(this),
+      this.sendToUser.bind(this)
+    );
+    this.gameEngine.setSendToUserMethod(this.sendToUser.bind(this));
+
+    wsLogger.info('WebSocketManager initialized with GameEngine integration');
+  }
+
+  public setupWebSocketServer(server: http.Server): void {
+    this.wss = new WebSocketServer({ noServer: true });
+
+    server.on('upgrade', (request, socket, head) => {
+      // ✅ ACEITA QUALQUER CAMINHO QUE COMECE COM /ws
+      if (request.url?.startsWith('/ws')) {
+        this.wss!.handleUpgrade(request, socket, head, (ws) => {
+          this.wss!.emit('connection', ws, request);
+        });
+      } else {
+        wsLogger.warn('WebSocket upgrade rejected for invalid path', { path: request.url });
+        socket.destroy();
+      }
+    });
+
+    this.wss.on('connection', this.handleConnection.bind(this));
+    this.heartbeatManager.start();
+    wsLogger.info('WebSocket server attached to HTTP upgrade event.');
+  }
+
+  private async handleConnection(ws: any, request: any): Promise<void> {
+    let connectionId: string | undefined;
+
+    try {
+      const urlInfo = parseWebSocketURL(request.url || '');
+      const token = extractTokenFromWebSocketRequest(request);
+
+      if (!token) {
+        wsLogger.warn('Connection rejected: No authentication token', {
+          url: request.url,
+          userAgent: request.headers['user-agent'],
+        });
+        return ws.close(1008, 'Authentication token required');
+      }
+
+      const jwtPayload = verifyAccessToken(token);
+
+      // ✅ LÓGICA DE DIFERENCIAÇÃO SALA vs JOGO
+      let roomIdFromUrl = urlInfo.roomId;
+      let isGameConnection = false;
+
+      if (roomIdFromUrl && roomIdFromUrl.startsWith('game-')) {
+        isGameConnection = true;
+        // Extrai o roomId real de um gameId, ex: "game-abc" -> "abc"
+        roomIdFromUrl = roomIdFromUrl.substring(5);
+      }
+
+      const context: ConnectionContext = {
+        userId: jwtPayload.userId,
+        username: jwtPayload.username,
+        serverId: this.config.SERVICE_ID,
+        isSpectator: false,
+        roomId: roomIdFromUrl, // Armazena o roomId limpo
+      };
+
+      const metadata = extractConnectionMetadata(request);
+      connectionId = `${context.userId}-${Date.now()}`;
+
+      this.connectionManager.addConnection(connectionId, ws, context, metadata);
+
+      // Setup event handlers
+      ws.on('message', (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString());
+          this.messageRouter.handleMessage(connectionId!, message);
+        } catch (error) {
+          wsLogger.error('Failed to parse message', error as Error, { connectionId });
+        }
+      });
+
+      ws.on('pong', () => this.heartbeatManager.handlePong(connectionId!));
+
+      ws.on('close', (code: number, reason: Buffer) => {
+        this.handleDisconnection(connectionId!, code, reason.toString());
+      });
+
+      ws.on('error', (error: Error) => {
+        wsLogger.error('WS Connection Error', error, { connectionId });
+      });
+
+      // Send connection confirmation
+      this.sendToConnection(connectionId, 'connected', {
+        userId: context.userId,
+        username: context.username,
+        serverId: context.serverId,
+      });
+
+      // ✅ AQUI ESTÁ A MUDANÇA CRÍTICA DE FLUXO
+      if (isGameConnection) {
+        // Se é uma conexão de JOGO, apenas peça o estado do jogo.
+        // O frontend na página do jogo é quem vai enviar esta mensagem.
+        wsLogger.info('Game connection established, waiting for get-game-state', {
+          connectionId,
+          gameId: urlInfo.roomId,
+          roomId: roomIdFromUrl
+        });
+      } else if (context.roomId) {
+        // Se é uma conexão de SALA, acione o `join-room`.
+        await this.messageRouter.handleMessage(connectionId, {
+          type: 'join-room',
+          data: { roomId: context.roomId }
+        });
+      }
+
+      wsLogger.info('WebSocket connection established', {
+        connectionId,
+        userId: context.userId,
+        username: context.username,
+        roomId: context.roomId,
+        isGameConnection,
+        originalUrl: urlInfo.roomId,
+        userAgent: metadata.userAgent,
+        ip: metadata.ip,
+      });
+
+    } catch (error) {
+      wsLogger.error('Connection failed during handshake', error as Error, {
+        url: request.url,
+        connectionId,
+      });
+      ws.close(1008, 'Authentication failed');
+    }
+  }
+
+  private handleDisconnection(connectionId: string, code: number, reason: string): void {
+    const connection = this.connectionManager.getConnection(connectionId);
+
+    if (connection) {
+      wsLogger.info('WebSocket connection closed', {
+        connectionId,
+        userId: connection.context.userId,
+        username: connection.context.username,
+        roomId: connection.context.roomId,
+        code,
+        reason,
+      });
+
+      // Leave room if connected
+      if (connection.context.roomId) {
+        this.channelManager.leaveRoom(connection.context.roomId, connectionId);
+      }
+
+      // ✅ VERIFICAÇÃO DE SEGURANÇA ANTES DE USAR O EVENTBUS
+      if (this.eventBus && typeof this.eventBus.publish === 'function') {
+        this.eventBus.publish('connection:disconnected', {
+          connectionId,
+          userId: connection.context.userId,
+          username: connection.context.username,
+          roomId: connection.context.roomId,
+          code,
+          reason,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        wsLogger.warn('EventBus not available for disconnection event', { connectionId });
+      }
+    }
+
+    this.connectionManager.removeConnection(connectionId);
+  }
+
+  public sendToConnection = (connectionId: string, type: string, data?: any): boolean => {
+    const connection = this.connectionManager.getConnection(connectionId);
+    if (!connection || connection.ws.readyState !== connection.ws.OPEN) {
+      return false;
+    }
+
+    try {
+      const message = {
+        type,
+        data,
+        timestamp: new Date().toISOString(),
+      };
+
+      connection.ws.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      wsLogger.error('Failed to send message to connection', error as Error, {
+        connectionId,
+        type,
+      });
+      return false;
+    }
+  };
+
+  public sendToUser = (userId: string, type: string, data?: any): boolean => {
+    const connection = this.connectionManager.findConnectionByUserId(userId);
+    if (!connection) {
+      wsLogger.debug('No active connection found for user', { userId, type });
+      return false;
+    }
+
+    return this.sendToConnection(connection.id, type, data);
+  };
+
+  // 🔥 MÉTODO COM LIMPEZA PROATIVA DE CONEXÕES MORTAS
+  public broadcastToRoom = (roomId: string, type: string, data?: any, excludeConnectionId?: string): number => {
+    console.log('🔥 BROADCAST: Tentando fazer broadcast', {
+      roomId,
+      type,
+      hasData: !!data,
+      excludeConnectionId,
+      timestamp: new Date().toISOString()
+    });
+
+    const roomConnections = this.channelManager.getRoomConnections(roomId);
+
+    // 🔥 LIMPEZA PROATIVA - NOVA LÓGICA
+    const aliveConnections = new Set<string>();
+    const deadConnections = new Set<string>();
+
+    for (const connectionId of roomConnections) {
+      const connection = this.connectionManager.getConnection(connectionId);
+      if (connection && connection.ws.readyState === connection.ws.OPEN) {
+        // Teste adicional: verificar se realmente pode enviar
+        try {
+          connection.ws.ping();
+          aliveConnections.add(connectionId);
+        } catch (error) {
+          console.log('🧹 LIMPEZA: Conexão falhou no ping test', { connectionId, error: error.message });
+          deadConnections.add(connectionId);
+        }
+      } else {
+        console.log('🧹 LIMPEZA: Conexão não está OPEN', {
+          connectionId,
+          hasConnection: !!connection,
+          readyState: connection?.ws.readyState
+        });
+        deadConnections.add(connectionId);
+      }
+    }
+
+    // Remove conexões mortas do ChannelManager
+    for (const deadId of deadConnections) {
+      this.channelManager.removeConnectionFromAllRooms(deadId);
+      this.connectionManager.removeConnection(deadId);
+      console.log('🧹 LIMPEZA: Removida conexão morta', { connectionId: deadId });
+    }
+
+    console.log('🔥 BROADCAST: Conexões na sala (após limpeza)', {
+      roomId,
+      totalConnections: aliveConnections.size,
+      connections: Array.from(aliveConnections),
+      removed: deadConnections.size,
+      timestamp: new Date().toISOString()
+    });
+
+    let sentCount = 0;
+    for (const connectionId of aliveConnections) {
+      if (excludeConnectionId && connectionId === excludeConnectionId) {
+        console.log('🔥 BROADCAST: Pulando conexão excluída', { connectionId });
+        continue;
+      }
+
+      const success = this.sendToConnection(connectionId, type, data);
+
+      console.log('🔥 BROADCAST: Tentativa de envio', {
+        connectionId,
+        success,
+        type,
+        timestamp: new Date().toISOString()
+      });
+
+      if (success) {
+        sentCount++;
+      }
+    }
+
+    console.log('🔥 BROADCAST: Broadcast realizado', {
+      roomId,
+      type,
+      totalConnections: aliveConnections.size,
+      sentCount,
+      timestamp: new Date().toISOString()
+    });
+
+    wsLogger.debug('Broadcast to room completed', {
+      roomId,
+      type,
+      totalConnections: aliveConnections.size,
+      sentCount,
+      excludedConnection: excludeConnectionId,
+    });
+
+    return sentCount;
+  };
+
+  public broadcastToAll = (type: string, data?: any): number => {
+    const allConnections = this.connectionManager.getAllConnections();
+    let sentCount = 0;
+
+    for (const [connectionId] of allConnections) {
+      if (this.sendToConnection(connectionId, type, data)) {
+        sentCount++;
+      }
+    }
+
+    wsLogger.debug('Broadcast to all completed', {
+      type,
+      totalConnections: allConnections.size,
+      sentCount,
+    });
+
+    return sentCount;
+  };
+
+  public getStats(): any {
+    const connectionStats = this.connectionManager.getStats();
+    const channelStats = this.channelManager.getStats();
+
+    return {
+      connections: connectionStats,
+      channels: channelStats,
+      games: {
+        activeGames: this.gameEngine.getActiveGamesCount(),
+        totalGames: this.gameEngine.getAllGames().length,
+      },
+      server: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        serverId: this.config.SERVICE_ID,
+      },
+    };
+  }
+
+  public async forceDisconnectUser(userId: string): Promise<boolean> {
+    const connection = this.connectionManager.findConnectionByUserId(userId);
+    if (!connection) {
+      return false;
+    }
+
+    try {
+      connection.ws.close(1000, 'Forced disconnect by admin');
+      return true;
+    } catch (error) {
+      wsLogger.error('Failed to force disconnect user', error as Error, { userId });
+      return false;
+    }
+  }
+
+  public async cleanup(): Promise<void> {
+    wsLogger.info('Starting WebSocket cleanup...');
+
+    this.heartbeatManager.stop();
+
+    const allConnections = this.connectionManager.getAllConnections();
+    for (const [connectionId, connection] of allConnections) {
+      try {
+        connection.ws.close(1001, 'Server shutdown');
+      } catch (error) {
+        wsLogger.error('Error closing connection during cleanup', error as Error, { connectionId });
+      }
+    }
+
+    this.connectionManager.cleanup();
+    this.channelManager.cleanup();
+    await this.gameEngine.cleanup();
+
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+    }
+
+    wsLogger.info('WebSocket cleanup completed');
+  }
+}
+</file>
+
 <file path="frontend/src/components/room/WaitingRoom.tsx">
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -21575,176 +21792,6 @@ export default function WaitingRoom({
       />
     </>
   );
-}
-</file>
-
-<file path="frontend/src/context/SocketContext.tsx">
-'use client';
-
-import { createContext, useContext, ReactNode, useCallback, useRef, useState } from 'react';
-
-// Tipos simplificados
-export interface WebSocketContextType {
-  socket: WebSocket | null;
-  isConnected: boolean;
-  connect: (url: string) => void;
-  disconnect: () => void;
-  sendMessage: (type: string, data?: any) => boolean;
-}
-
-const SocketContext = createContext<WebSocketContextType | undefined>(undefined);
-
-export function SocketProvider({ children }: { children: ReactNode }) {
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const connect = useCallback((url: string) => {
-    // Validação básica
-    if (!url || url.includes('undefined')) {
-      console.error('❌ Invalid WebSocket URL:', url);
-      return;
-    }
-
-    // ✅ CORRIGIDO: Verificar se já está conectado na mesma URL com readyState
-    if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.OPEN) {
-      console.log('✅ Already connected to', url);
-      return;
-    }
-
-    // ✅ CORRIGIDO: Verificar se há conexão pendente para a mesma URL
-    if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.CONNECTING) {
-      console.log('⏳ Connection already in progress for', url);
-      return;
-    }
-
-    // Desconecta conexão anterior se existir
-    if (socketRef.current) {
-      console.log('🔄 Closing previous connection');
-      socketRef.current.close();
-    }
-
-    console.log('🔌 Connecting to WebSocket:', url);
-
-    try {
-      const ws = new WebSocket(url);
-      socketRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setSocket(ws);
-        setIsConnected(true);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          // Dispara evento customizado para componentes ouvirem
-          window.dispatchEvent(new CustomEvent('websocket-message', { detail: message }));
-        } catch (error) {
-          console.error('❌ Error parsing message:', error);
-        }
-      };
-
-      ws.onclose = (event) => {
-        console.log('🔌 WebSocket disconnected', {
-          code: event.code,
-          reason: event.reason || 'No reason provided',
-          wasClean: event.wasClean
-        });
-        setSocket(null);
-        setIsConnected(false);
-
-        // ✅ CORRIGIDO: Só limpar ref se for a conexão atual
-        if (socketRef.current === ws) {
-          socketRef.current = null;
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-        // ✅ ADICIONADO: Atualizar estado em caso de erro
-        setSocket(null);
-        setIsConnected(false);
-      };
-
-    } catch (error) {
-      console.error('❌ Failed to create WebSocket:', error);
-      setSocket(null);
-      setIsConnected(false);
-    }
-  }, []);
-
-  const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      console.log('🔌 Disconnecting WebSocket');
-
-      // ✅ CORRIGIDO: Verificar estado antes de fechar
-      if (socketRef.current.readyState === WebSocket.OPEN ||
-        socketRef.current.readyState === WebSocket.CONNECTING) {
-        socketRef.current.close();
-      }
-
-      socketRef.current = null;
-      setSocket(null);
-      setIsConnected(false);
-    }
-  }, []);
-
-  // ✅ CORRIGIDO: Usar readyState real do socket em vez do estado React
-  const sendMessage = useCallback((type: string, data?: any): boolean => {
-    // ✅ Verificar estado real do WebSocket
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      try {
-        const message = {
-          type,
-          data,
-          timestamp: new Date().toISOString(),
-        };
-        socketRef.current.send(JSON.stringify(message));
-        console.log('📤 Message sent:', type, data);
-        return true;
-      } catch (error) {
-        console.error('❌ Error sending message:', error);
-        return false;
-      }
-    }
-
-    // ✅ MELHOR: Log mais informativo sobre o estado atual
-    const currentState = socketRef.current?.readyState;
-    const stateNames: Record<number, string> = {
-      [WebSocket.CONNECTING]: 'CONNECTING',
-      [WebSocket.OPEN]: 'OPEN',
-      [WebSocket.CLOSING]: 'CLOSING',
-      [WebSocket.CLOSED]: 'CLOSED'
-    };
-
-    console.warn('⚠️ Cannot send message - WebSocket state:',
-      currentState !== undefined ? stateNames[currentState] : 'NULL');
-    return false;
-  }, []);
-
-  const value: WebSocketContextType = {
-    socket,
-    isConnected,
-    connect,
-    disconnect,
-    sendMessage,
-  };
-
-  return (
-    <SocketContext.Provider value={value}>
-      {children}
-    </SocketContext.Provider>
-  );
-}
-
-export function useSocket(): WebSocketContextType {
-  const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error('useSocket must be used within a SocketProvider');
-  }
-  return context;
 }
 </file>
 
@@ -22766,6 +22813,511 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
 };
 </file>
 
+<file path="frontend/src/context/SocketContext.tsx">
+'use client';
+
+import { createContext, useContext, ReactNode, useCallback, useRef, useState } from 'react';
+
+// Tipos simplificados
+export interface WebSocketContextType {
+  socket: WebSocket | null;
+  isConnected: boolean;
+  connect: (url: string) => void;
+  disconnect: () => void;
+  sendMessage: (type: string, data?: any) => boolean;
+}
+
+const SocketContext = createContext<WebSocketContextType | undefined>(undefined);
+
+export function SocketProvider({ children }: { children: ReactNode }) {
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const connect = useCallback((url: string) => {
+    // ✅ LOG DETALHADO DA FUNÇÃO CONNECT
+    console.log('🔌 [SocketContext] A função connect foi chamada.', {
+      url,
+      currentState: socketRef.current?.readyState, // 0:CONNECTING, 1:OPEN, 2:CLOSING, 3:CLOSED
+      currentUrl: socketRef.current?.url,
+      isCurrentSocket: socketRef.current?.url === url,
+      timestamp: new Date().toISOString()
+    });
+
+    // Validação básica
+    if (!url || url.includes('undefined')) {
+      console.error('❌ [SocketContext] Invalid WebSocket URL:', url);
+      return;
+    }
+
+    // ✅ CORRIGIDO: Verificar se já está conectado na mesma URL com readyState
+    if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.OPEN) {
+      console.warn('⚠️ [SocketContext] Conexão já existe e está aberta. Ignorando chamada.');
+      return;
+    }
+
+    // ✅ CORRIGIDO: Verificar se há conexão pendente para a mesma URL
+    if (socketRef.current?.url === url && socketRef.current.readyState === WebSocket.CONNECTING) {
+      console.warn('⏳ [SocketContext] Connection already in progress for', url);
+      return;
+    }
+
+    // Desconecta conexão anterior se existir
+    if (socketRef.current) {
+      console.log('🔄 [SocketContext] Desconectando conexão antiga antes de criar uma nova.');
+      socketRef.current.close();
+    }
+
+    console.log('🚀 [SocketContext] Criando nova instância de WebSocket...');
+
+    try {
+      const ws = new WebSocket(url);
+      socketRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('✅ [SocketContext] WebSocket connected');
+        setSocket(ws);
+        setIsConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('📨 [SocketContext] Message received:', message.type, message.data);
+          // Dispara evento customizado para componentes ouvirem
+          window.dispatchEvent(new CustomEvent('websocket-message', { detail: message }));
+        } catch (error) {
+          console.error('❌ [SocketContext] Error parsing message:', error);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('🔌 [SocketContext] WebSocket disconnected', {
+          code: event.code,
+          reason: event.reason || 'No reason provided',
+          wasClean: event.wasClean
+        });
+        setSocket(null);
+        setIsConnected(false);
+
+        // ✅ CORRIGIDO: Só limpar ref se for a conexão atual
+        if (socketRef.current === ws) {
+          socketRef.current = null;
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('❌ [SocketContext] WebSocket error:', error);
+        // ✅ ADICIONADO: Atualizar estado em caso de erro
+        setSocket(null);
+        setIsConnected(false);
+      };
+
+    } catch (error) {
+      console.error('❌ [SocketContext] Failed to create WebSocket:', error);
+      setSocket(null);
+      setIsConnected(false);
+    }
+  }, []);
+
+  const disconnect = useCallback(() => {
+    console.log('🔌 [SocketContext] Disconnect chamado');
+
+    if (socketRef.current) {
+      console.log('🔌 [SocketContext] Disconnecting WebSocket', {
+        currentState: socketRef.current.readyState,
+        url: socketRef.current.url
+      });
+
+      // ✅ CORRIGIDO: Verificar estado antes de fechar
+      if (socketRef.current.readyState === WebSocket.OPEN ||
+        socketRef.current.readyState === WebSocket.CONNECTING) {
+        socketRef.current.close();
+      }
+
+      socketRef.current = null;
+      setSocket(null);
+      setIsConnected(false);
+    } else {
+      console.log('🔌 [SocketContext] Nenhuma conexão para desconectar');
+    }
+  }, []);
+
+  // ✅ CORRIGIDO: Usar readyState real do socket em vez do estado React
+  const sendMessage = useCallback((type: string, data?: any): boolean => {
+    // ✅ LOG DETALHADO DE CADA MENSAGEM ENVIADA
+    console.log('📤 [SocketContext] Enviando mensagem', {
+      type,
+      data,
+      socketState: socketRef.current?.readyState,
+      socketUrl: socketRef.current?.url,
+      timestamp: new Date().toISOString()
+    });
+
+    // ✅ Verificar estado real do WebSocket
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      try {
+        const message = {
+          type,
+          data,
+          timestamp: new Date().toISOString(),
+        };
+        socketRef.current.send(JSON.stringify(message));
+        console.log('✅ [SocketContext] Mensagem enviada com sucesso', { type, data });
+        return true;
+      } catch (error) {
+        console.error('❌ [SocketContext] Erro ao enviar mensagem:', error);
+        return false;
+      }
+    }
+
+    // ✅ MELHOR: Log mais informativo sobre o estado atual
+    const currentState = socketRef.current?.readyState;
+    const stateNames: Record<number, string> = {
+      [WebSocket.CONNECTING]: 'CONNECTING',
+      [WebSocket.OPEN]: 'OPEN',
+      [WebSocket.CLOSING]: 'CLOSING',
+      [WebSocket.CLOSED]: 'CLOSED'
+    };
+
+    console.warn('⚠️ [SocketContext] Cannot send message - WebSocket state:',
+      currentState !== undefined ? stateNames[currentState] : 'NULL');
+    return false;
+  }, []);
+
+  const value: WebSocketContextType = {
+    socket,
+    isConnected,
+    connect,
+    disconnect,
+    sendMessage,
+  };
+
+  return (
+    <SocketContext.Provider value={value}>
+      {children}
+    </SocketContext.Provider>
+  );
+}
+
+export function useSocket(): WebSocketContextType {
+  const context = useContext(SocketContext);
+  if (!context) {
+    throw new Error('useSocket must be used within a SocketProvider');
+  }
+  return context;
+}
+</file>
+
+<file path="backend/src/app.ts">
+// 🐺 LOBISOMEM ONLINE - App.ts (CORREÇÃO DA INICIALIZAÇÃO)
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
+import http from 'http';
+import { config } from '@/config/environment';
+import { checkDatabaseHealth } from '@/config/database';
+import { checkRedisHealth } from '@/config/redis';
+import { ServiceFactory } from '@/websocket/ServiceFactory';
+import { WebSocketManager } from '@/websocket/WebSocketManager';
+import authRoutes from '@/routes/auth';
+import roomRoutes from '@/routes/rooms';
+
+const app = express();
+
+// ✅ CONFIGURAÇÃO DE MIDDLEWARES (mantida igual)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://localhost:3000',
+      'https://localhost:3001',
+      'https://equipe04.alphaedtech.org.br'
+    ];
+
+    if (config.IS_PRODUCTION) {
+      allowedOrigins.push('https://equipe04.alphaedtech.org.br');
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-Request-Time',
+    'X-Request-ID'
+  ],
+}));
+
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+if (config.IS_DEVELOPMENT) {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
+// ✅✅✅ CORREÇÃO CRÍTICA DA INICIALIZAÇÃO ✅✅✅
+const httpServer = http.createServer(app);
+let wsManager: WebSocketManager;
+
+if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
+  try {
+    const gameStateService = ServiceFactory.getGameStateService();
+    const eventBus = ServiceFactory.getEventBus();
+
+    // ❌ ERRO ANTERIOR:
+    // wsManager = new WebSocketManager(gameStateService, eventBus, config);
+
+    // ✅ CORREÇÃO: Ordem correta dos parâmetros
+    wsManager = new WebSocketManager(eventBus, config);
+    wsManager.setupWebSocketServer(httpServer);
+
+    // ✅ CORREÇÃO: Injeção do channelManager
+    app.locals.channelManager = wsManager.channelManager;
+    console.log('✅ ChannelManager successfully injected into app.locals');
+
+    // ✅ NOVO: Exportar wsManager para shutdown
+    (httpServer as any).wsManager = wsManager;
+
+  } catch (error) {
+    console.error('❌ Failed to initialize WebSocket:', error);
+    throw error;
+  }
+} else {
+  console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
+}
+
+// ✅ ROTAS SÃO CARREGADAS DEPOIS
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+
+// ✅ HEALTH CHECKS (mantidos iguais)
+app.get('/health', async (req, res) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const redisHealth = await checkRedisHealth();
+    const servicesHealth = await ServiceFactory.getServicesHealth();
+    const servicesStats = ServiceFactory.getServicesStats();
+
+    const health = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      service: {
+        id: config.SERVICE_ID,
+        type: config.SERVICE_TYPE,
+        mode: config.DISTRIBUTED_MODE ? 'distributed' : 'monolithic',
+      },
+      database: dbHealth,
+      redis: redisHealth,
+      services: servicesHealth,
+      stats: servicesStats,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      websocket: {
+        initialized: !!wsManager,
+        channelManagerInjected: !!app.locals.channelManager,
+      },
+    };
+
+    let hasUnhealthyService = false;
+
+    if (config.DISTRIBUTED_MODE) {
+      hasUnhealthyService = Object.values(servicesHealth).some(
+        (service: any) => service.status === 'unhealthy'
+      );
+    } else {
+      const criticalServices = ['gameState'];
+      hasUnhealthyService = criticalServices.some(serviceName => {
+        const service = servicesHealth[serviceName];
+        return service && service.status === 'unhealthy';
+      });
+    }
+
+    const isSystemHealthy =
+      dbHealth.status === 'healthy' &&
+      (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy') &&
+      !hasUnhealthyService;
+
+    if (!isSystemHealthy) {
+      res.status(503).json(health);
+      return;
+    }
+
+    res.json(health);
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.get('/health/ready', (req, res) => {
+  res.json({
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+    service: config.SERVICE_ID,
+    websocket: !!wsManager,
+  });
+});
+
+app.get('/health/live', (req, res) => {
+  res.json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+app.get('/health/websocket', async (req, res) => {
+  try {
+    const servicesHealth = await ServiceFactory.getServicesHealth();
+    const servicesStats = ServiceFactory.getServicesStats();
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: servicesHealth,
+      stats: servicesStats,
+      wsManager: !!wsManager,
+      channelManager: !!app.locals.channelManager,
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'WebSocket health check failed',
+    });
+  }
+});
+
+// ✅ ROOT ENDPOINT (mantido igual)
+app.get('/', (req, res) => {
+  res.json({
+    message: '🐺 Werewolf Online API',
+    version: '1.0.0',
+    phase: config.DISTRIBUTED_MODE ? 'Phase 2 (Distributed)' : 'Phase 1 (Monolithic)',
+    service: config.SERVICE_TYPE,
+    timestamp: new Date().toISOString(),
+    websocket: {
+      enabled: config.IS_MONOLITH || config.IS_GAME_SERVICE,
+      initialized: !!wsManager,
+      path: config.WS_BASE_PATH,
+      url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
+    },
+    endpoints: {
+      health: '/health',
+      websocketHealth: '/health/websocket',
+      ready: '/health/ready',
+      live: '/health/live',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        forgotPassword: 'POST /api/auth/forgot-password',
+        resetPassword: 'POST /api/auth/reset-password',
+        profile: 'GET /api/auth/profile',
+        logout: 'POST /api/auth/logout',
+      },
+      rooms: {
+        list: 'GET /api/rooms',
+        create: 'POST /api/rooms',
+        details: 'GET /api/rooms/:id',
+        join: 'POST /api/rooms/:id/join',
+        joinByCode: 'POST /api/rooms/join-by-code',
+        delete: 'DELETE /api/rooms/:id',
+      },
+      websocket: {
+        connect: `WS ${config.WS_BASE_PATH}`,
+        events: [
+          'join-room', 'leave-room', 'player-ready', 'start-game',
+          'chat-message', 'game-action', 'vote', 'kick-player'
+        ],
+      },
+    },
+  });
+});
+
+// ✅ ERROR HANDLERS (mantidos iguais)
+app.use((req, res, next) => {
+  res.status(404).json({
+    error: 'Not Found',
+    message: `Route ${req.method} ${req.path} not found`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('❌ Express Error:', error);
+
+  const isDev = config.IS_DEVELOPMENT;
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: isDev ? error.message : 'Something went wrong',
+    timestamp: new Date().toISOString(),
+    ...(isDev && { stack: error.stack }),
+  });
+});
+
+app.use('/api/rooms', (req, res, next) => {
+  console.log('\n🔍 DEBUG MIDDLEWARE - ROTA /api/rooms');
+  console.log('📍 Timestamp:', new Date().toISOString());
+  console.log('📍 Method:', req.method);
+  console.log('📍 URL:', req.url);
+  console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('📍 Body:', JSON.stringify(req.body, null, 2));
+  console.log('📍 ChannelManager Available:', !!req.app.locals.channelManager);
+
+  // Timeout de segurança para detectar travamentos
+  const timeout = setTimeout(() => {
+    console.log('❌ TIMEOUT: Middleware ou rota travou após 10 segundos');
+    console.log('❌ Request ainda processando:', req.method, req.url);
+  }, 10000);
+
+  // Interceptar a resposta para saber quando terminou
+  const originalSend = res.send;
+  res.send = function (data) {
+    clearTimeout(timeout);
+    console.log('✅ RESPONSE SENT - Status:', res.statusCode);
+    console.log('✅ Response Data Length:', JSON.stringify(data).length);
+    return originalSend.call(this, data);
+  };
+
+  console.log('🔄 Passando para próximo middleware...\n');
+  next();
+});
+
+export default httpServer;
+</file>
+
 <file path="backend/src/websocket/MessageRouter.ts">
 // 🐺 LOBISOMEM ONLINE - Message Router (CORRIGIDO - CHAT + AÇÕES + LOGS)
 import { wsLogger } from '@/utils/logger';
@@ -22937,15 +23489,42 @@ export class MessageRouter {
   // ROOM HANDLERS
   //====================================================================
   private async handleJoinRoom(connectionId: string, data: any): Promise<void> {
+    console.log('📨 [Router-JOIN] Recebido evento join-room.', {
+      connectionId: connectionId.slice(-6),
+      roomId: data.roomId?.slice(-6),
+      isSpectator: data.asSpectator,
+      timestamp: new Date().toISOString()
+    });
+
     const connection = this.connectionManager.getConnection(connectionId);
-    if (!connection) return;
+    if (!connection) {
+      console.log('📨 [Router-JOIN] Conexão não encontrada!', { connectionId: connectionId.slice(-6) });
+      return;
+    }
+
+    console.log('📨 [Router-JOIN] Estado da conexão', {
+      connectionId: connectionId.slice(-6),
+      userId: connection.context.userId,
+      username: connection.context.username,
+      currentRoomId: connection.context.roomId?.slice(-6),
+      isSpectator: connection.context.isSpectator
+    });
 
     const { roomId, asSpectator = false } = data;
 
     if (!roomId || typeof roomId !== 'string') {
+      console.log('📨 [Router-JOIN] RoomId inválido!', { roomId, type: typeof roomId });
       await this.sendError(connectionId, 'MISSING_ROOM_ID', 'Room ID is required and must be a string');
       return;
     }
+
+    console.log('📨 [Router-JOIN] Dados validados', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId.slice(-6),
+      asSpectator,
+      userId: connection.context.userId,
+      username: connection.context.username
+    });
 
     try {
       // Buscar dados reais da sala no banco de dados
@@ -22970,17 +23549,46 @@ export class MessageRouter {
         return;
       }
 
+      console.log('📨 [Router-JOIN] Antes de chamar channelManager.joinRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        asSpectator,
+        currentRoom: this.channelManager.getConnectionRoom(connectionId)?.slice(-6)
+      });
+
       // Join the room channel
       const success = this.channelManager.joinRoom(roomId, connectionId, asSpectator);
+
+      console.log('📨 [Router-JOIN] Resultado do channelManager.joinRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        success,
+        connectionsInRoom: this.channelManager.getRoomConnections(roomId).size
+      });
+
       if (!success) {
+        console.log('📨 [Router-JOIN] FALHA ao entrar na sala!', {
+          connectionId: connectionId.slice(-6),
+          roomId: roomId.slice(-6)
+        });
         await this.sendError(connectionId, 'JOIN_ROOM_FAILED', 'Failed to join room');
         return;
       }
+
+      console.log('📨 [Router-JOIN] Antes de updateConnectionContext', {
+        connectionId: connectionId.slice(-6),
+        newRoomId: roomId.slice(-6),
+        newIsSpectator: asSpectator
+      });
 
       // Update connection context
       this.connectionManager.updateConnectionContext(connectionId, {
         roomId,
         isSpectator: asSpectator,
+      });
+
+      console.log('📨 [Router-JOIN] Após updateConnectionContext', {
+        connectionId: connectionId.slice(-6)
       });
 
       // Get room connections for player list
@@ -23061,9 +23669,20 @@ export class MessageRouter {
         yourRole: asSpectator ? 'SPECTATOR' : (playerForSelf.isHost ? 'HOST' : 'PLAYER'),
       });
 
+      console.log('📨 [Router-JOIN] Antes do broadcast player-joined', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        hasBroadcastFunction: !!this.broadcastToRoom
+      });
+
       // Broadcast player-joined to other room members
       if (this.broadcastToRoom) {
-        this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf }, connectionId);
+        const broadcastCount = this.broadcastToRoom(roomId, 'player-joined', { player: playerForSelf }, connectionId);
+        console.log('📨 [Router-JOIN] Resultado do broadcast', {
+          connectionId: connectionId.slice(-6),
+          roomId: roomId.slice(-6),
+          broadcastCount
+        });
       }
 
       // Publish event to event bus
@@ -23073,6 +23692,13 @@ export class MessageRouter {
         username: connection.context.username,
         asSpectator,
         timestamp: new Date().toISOString(),
+      });
+
+      console.log('✅ [Router-JOIN] Processo concluído com sucesso', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        username: connection.context.username,
+        asSpectator
       });
 
       wsLogger.info('Player joined room with real data', {
@@ -23087,6 +23713,12 @@ export class MessageRouter {
       });
 
     } catch (error) {
+      console.log('❌ [Router-JOIN] Erro capturado', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId?.slice(-6),
+        error: error.message
+      });
+
       wsLogger.error('Error joining room', error instanceof Error ? error : new Error('Unknown join room error'), {
         connectionId,
         roomId,
@@ -23102,14 +23734,39 @@ export class MessageRouter {
     if (!connection) return;
 
     const roomId: string | undefined = data?.roomId || connection.context.roomId;
+
+    // ✅ LOG DE ENTRADA
+    console.log('🚪 [Router-LEAVE] Recebido evento leave-room.', {
+      connectionId: connectionId.slice(-6),
+      roomId: roomId?.slice(-6),
+      fromData: !!data?.roomId,
+      fromContext: !!connection.context.roomId,
+      timestamp: new Date().toISOString()
+    });
+
     if (!roomId) {
+      console.log('🚪 [Router-LEAVE] Não está em sala!', {
+        connectionId: connectionId.slice(-6)
+      });
       await this.sendError(connectionId, 'NOT_IN_ROOM', 'Not currently in a room');
       return;
     }
 
     try {
+      console.log('🚪 [Router-LEAVE] Antes de channelManager.leaveRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6)
+      });
+
       // Leave the room channel
       const success = this.channelManager.leaveRoom(roomId, connectionId);
+
+      console.log('🚪 [Router-LEAVE] Resultado do channelManager.leaveRoom', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        success
+      });
+
       if (!success) {
         await this.sendError(connectionId, 'LEAVE_ROOM_FAILED', 'Failed to leave room');
         return;
@@ -23140,6 +23797,12 @@ export class MessageRouter {
         timestamp: new Date().toISOString(),
       });
 
+      console.log('✅ [Router-LEAVE] Processo concluído com sucesso', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId.slice(-6),
+        username: connection.context.username
+      });
+
       wsLogger.info('Player left room', {
         connectionId,
         userId: connection.context.userId,
@@ -23148,6 +23811,12 @@ export class MessageRouter {
       });
 
     } catch (error) {
+      console.log('❌ [Router-LEAVE] Erro capturado', {
+        connectionId: connectionId.slice(-6),
+        roomId: roomId?.slice(-6),
+        error: error.message
+      });
+
       wsLogger.error('Error leaving room', error instanceof Error ? error : new Error('Unknown leave room error'), {
         connectionId,
         roomId,
@@ -23834,315 +24503,6 @@ export class MessageRouter {
     return Array.from(this.handlers.keys());
   }
 }
-</file>
-
-<file path="backend/src/app.ts">
-// 🐺 LOBISOMEM ONLINE - App.ts (CORREÇÃO DA INICIALIZAÇÃO)
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import morgan from 'morgan';
-import http from 'http';
-import { config } from '@/config/environment';
-import { checkDatabaseHealth } from '@/config/database';
-import { checkRedisHealth } from '@/config/redis';
-import { ServiceFactory } from '@/websocket/ServiceFactory';
-import { WebSocketManager } from '@/websocket/WebSocketManager';
-import authRoutes from '@/routes/auth';
-import roomRoutes from '@/routes/rooms';
-
-const app = express();
-
-// ✅ CONFIGURAÇÃO DE MIDDLEWARES (mantida igual)
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-    },
-  },
-  crossOriginEmbedderPolicy: false,
-}));
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://localhost:3000',
-      'https://localhost:3001',
-      'https://equipe04.alphaedtech.org.br'
-    ];
-
-    if (config.IS_PRODUCTION) {
-      allowedOrigins.push('https://equipe04.alphaedtech.org.br');
-    }
-
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'X-Requested-With',
-    'X-Request-Time',
-    'X-Request-ID'
-  ],
-}));
-
-app.use(compression());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-if (config.IS_DEVELOPMENT) {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
-
-// ✅✅✅ CORREÇÃO CRÍTICA DA INICIALIZAÇÃO ✅✅✅
-const httpServer = http.createServer(app);
-let wsManager: WebSocketManager;
-
-if (config.IS_MONOLITH || config.IS_GAME_SERVICE) {
-  try {
-    const gameStateService = ServiceFactory.getGameStateService();
-    const eventBus = ServiceFactory.getEventBus();
-
-    // ❌ ERRO ANTERIOR:
-    // wsManager = new WebSocketManager(gameStateService, eventBus, config);
-
-    // ✅ CORREÇÃO: Ordem correta dos parâmetros
-    wsManager = new WebSocketManager(eventBus, config);
-    wsManager.setupWebSocketServer(httpServer);
-
-    // ✅ CORREÇÃO: Injeção do channelManager
-    app.locals.channelManager = wsManager.channelManager;
-    console.log('✅ ChannelManager successfully injected into app.locals');
-
-    // ✅ NOVO: Exportar wsManager para shutdown
-    (httpServer as any).wsManager = wsManager;
-
-  } catch (error) {
-    console.error('❌ Failed to initialize WebSocket:', error);
-    throw error;
-  }
-} else {
-  console.log('ℹ️ WebSocket not initialized (not MONOLITH or GAME_SERVICE)');
-}
-
-// ✅ ROTAS SÃO CARREGADAS DEPOIS
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-
-// ✅ HEALTH CHECKS (mantidos iguais)
-app.get('/health', async (req, res) => {
-  try {
-    const dbHealth = await checkDatabaseHealth();
-    const redisHealth = await checkRedisHealth();
-    const servicesHealth = await ServiceFactory.getServicesHealth();
-    const servicesStats = ServiceFactory.getServicesStats();
-
-    const health = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      service: {
-        id: config.SERVICE_ID,
-        type: config.SERVICE_TYPE,
-        mode: config.DISTRIBUTED_MODE ? 'distributed' : 'monolithic',
-      },
-      database: dbHealth,
-      redis: redisHealth,
-      services: servicesHealth,
-      stats: servicesStats,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      websocket: {
-        initialized: !!wsManager,
-        channelManagerInjected: !!app.locals.channelManager,
-      },
-    };
-
-    let hasUnhealthyService = false;
-
-    if (config.DISTRIBUTED_MODE) {
-      hasUnhealthyService = Object.values(servicesHealth).some(
-        (service: any) => service.status === 'unhealthy'
-      );
-    } else {
-      const criticalServices = ['gameState'];
-      hasUnhealthyService = criticalServices.some(serviceName => {
-        const service = servicesHealth[serviceName];
-        return service && service.status === 'unhealthy';
-      });
-    }
-
-    const isSystemHealthy =
-      dbHealth.status === 'healthy' &&
-      (!config.SHOULD_USE_REDIS || redisHealth.status === 'healthy') &&
-      !hasUnhealthyService;
-
-    if (!isSystemHealthy) {
-      res.status(503).json(health);
-      return;
-    }
-
-    res.json(health);
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
-
-app.get('/health/ready', (req, res) => {
-  res.json({
-    status: 'ready',
-    timestamp: new Date().toISOString(),
-    service: config.SERVICE_ID,
-    websocket: !!wsManager,
-  });
-});
-
-app.get('/health/live', (req, res) => {
-  res.json({
-    status: 'alive',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
-});
-
-app.get('/health/websocket', async (req, res) => {
-  try {
-    const servicesHealth = await ServiceFactory.getServicesHealth();
-    const servicesStats = ServiceFactory.getServicesStats();
-
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      services: servicesHealth,
-      stats: servicesStats,
-      wsManager: !!wsManager,
-      channelManager: !!app.locals.channelManager,
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'WebSocket health check failed',
-    });
-  }
-});
-
-// ✅ ROOT ENDPOINT (mantido igual)
-app.get('/', (req, res) => {
-  res.json({
-    message: '🐺 Werewolf Online API',
-    version: '1.0.0',
-    phase: config.DISTRIBUTED_MODE ? 'Phase 2 (Distributed)' : 'Phase 1 (Monolithic)',
-    service: config.SERVICE_TYPE,
-    timestamp: new Date().toISOString(),
-    websocket: {
-      enabled: config.IS_MONOLITH || config.IS_GAME_SERVICE,
-      initialized: !!wsManager,
-      path: config.WS_BASE_PATH,
-      url: `ws://localhost:${config.PORT}${config.WS_BASE_PATH}`,
-    },
-    endpoints: {
-      health: '/health',
-      websocketHealth: '/health/websocket',
-      ready: '/health/ready',
-      live: '/health/live',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        forgotPassword: 'POST /api/auth/forgot-password',
-        resetPassword: 'POST /api/auth/reset-password',
-        profile: 'GET /api/auth/profile',
-        logout: 'POST /api/auth/logout',
-      },
-      rooms: {
-        list: 'GET /api/rooms',
-        create: 'POST /api/rooms',
-        details: 'GET /api/rooms/:id',
-        join: 'POST /api/rooms/:id/join',
-        joinByCode: 'POST /api/rooms/join-by-code',
-        delete: 'DELETE /api/rooms/:id',
-      },
-      websocket: {
-        connect: `WS ${config.WS_BASE_PATH}`,
-        events: [
-          'join-room', 'leave-room', 'player-ready', 'start-game',
-          'chat-message', 'game-action', 'vote', 'kick-player'
-        ],
-      },
-    },
-  });
-});
-
-// ✅ ERROR HANDLERS (mantidos iguais)
-app.use((req, res, next) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.method} ${req.path} not found`,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('❌ Express Error:', error);
-
-  const isDev = config.IS_DEVELOPMENT;
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: isDev ? error.message : 'Something went wrong',
-    timestamp: new Date().toISOString(),
-    ...(isDev && { stack: error.stack }),
-  });
-});
-
-app.use('/api/rooms', (req, res, next) => {
-  console.log('\n🔍 DEBUG MIDDLEWARE - ROTA /api/rooms');
-  console.log('📍 Timestamp:', new Date().toISOString());
-  console.log('📍 Method:', req.method);
-  console.log('📍 URL:', req.url);
-  console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('📍 Body:', JSON.stringify(req.body, null, 2));
-  console.log('📍 ChannelManager Available:', !!req.app.locals.channelManager);
-
-  // Timeout de segurança para detectar travamentos
-  const timeout = setTimeout(() => {
-    console.log('❌ TIMEOUT: Middleware ou rota travou após 10 segundos');
-    console.log('❌ Request ainda processando:', req.method, req.url);
-  }, 10000);
-
-  // Interceptar a resposta para saber quando terminou
-  const originalSend = res.send;
-  res.send = function (data) {
-    clearTimeout(timeout);
-    console.log('✅ RESPONSE SENT - Status:', res.statusCode);
-    console.log('✅ Response Data Length:', JSON.stringify(data).length);
-    return originalSend.call(this, data);
-  };
-
-  console.log('🔄 Passando para próximo middleware...\n');
-  next();
-});
-
-export default httpServer;
 </file>
 
 <file path="frontend/src/pages/lobby.tsx">

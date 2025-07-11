@@ -3,11 +3,16 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
 
+import { useAutoReconnect } from '@/hooks/useAutoReconnect';
+
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 import { useTheme } from '@/context/ThemeContext';
 import Button from '@/components/common/Button';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+
+import ReconnectBanner from '@/components/lobby/ReconnectBanner';
+
 
 import CreateRoomModal from '@/components/lobby/CreateRoomModal';
 import JoinRoomModal from '@/components/lobby/JoinRoomModal';
@@ -134,6 +139,10 @@ const VolumeOffIcon = () => (
 );
 
 function LobbyPage() {
+
+
+  useAutoReconnect();
+
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
   const { isConnected } = useSocket();
@@ -345,6 +354,9 @@ function LobbyPage() {
             </div>
           </div>
         </header>
+
+        {/* Banner de Reconexão */}
+        <ReconnectBanner isConnected={isConnected} />
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

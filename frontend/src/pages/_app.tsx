@@ -85,6 +85,8 @@ export default function App({ Component, pageProps, router }: AppProps) {
     }
   }, []);
 
+
+
   return (
     <>
       {/* HEAD com viewport no lugar correto */}

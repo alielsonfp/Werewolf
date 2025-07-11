@@ -23,6 +23,10 @@ export class WebSocketManager {
   private gameEngine: GameEngine;
   private heartbeatManager: HeartbeatManager;
 
+  public get gameEngine() {
+    return this.gameEngine;  // ← Retorna a propriedade privada que já existe
+  }
+
   constructor(
     private eventBus: IEventBus,
     private config: Config
