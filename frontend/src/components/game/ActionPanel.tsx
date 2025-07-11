@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '@/context/GameContext';
 import { useSocket } from '@/context/SocketContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -123,69 +123,21 @@ export default function ActionPanel() {
   const handleVote = async () => {
     if (!selectedTarget || isSubmitting) return;
 
-    setIsSubmitting(true);
+    setIsSubmitting(true); // Inicia o estado de loading
 
-    // ✅ LOG DETALHADO: Tentativa de voto
     console.log('🗳️ ActionPanel: Attempting vote:', {
       targetId: selectedTarget,
-      userId: me.userId,
-      gamePhase: gameState.phase,
-      gameId: gameState.gameId,
-      timestamp: new Date().toISOString()
+      userId: me?.userId,
     });
 
     try {
-      const success = sendMessage('vote', { targetId: selectedTarget });
-
-      console.log('🗳️ ActionPanel: Vote send result:', {
-        success,
-        targetId: selectedTarget
-      });
-
-      if (success) {
-        console.log('✅ ActionPanel: Vote sent successfully');
-      } else {
-        console.error('❌ ActionPanel: Failed to send vote');
-      }
+      // Apenas envia a mensagem. A UI agora vai esperar o gameState ser atualizado pelo WebSocket.
+      sendMessage('vote', { targetId: selectedTarget });
     } catch (error) {
       console.error('❌ ActionPanel: Error sending vote:', error);
+      setIsSubmitting(false); // Libera o botão em caso de erro no envio
     }
-
-    setTimeout(() => {
-      setSelectedTarget(null);
-      setIsSubmitting(false);
-    }, 500);
-  };
-
-  const handleUnvote = async () => {
-    if (isSubmitting) return;
-
-    setIsSubmitting(true);
-
-    // ✅ LOG DETALHADO: Tentativa de remover voto
-    console.log('🗳️ ActionPanel: Attempting unvote:', {
-      userId: me.userId,
-      gamePhase: gameState.phase,
-      timestamp: new Date().toISOString()
-    });
-
-    try {
-      const success = sendMessage('unvote', {});
-
-      console.log('🗳️ ActionPanel: Unvote send result:', { success });
-
-      if (success) {
-        console.log('✅ ActionPanel: Unvote sent successfully');
-      } else {
-        console.error('❌ ActionPanel: Failed to send unvote');
-      }
-    } catch (error) {
-      console.error('❌ ActionPanel: Error sending unvote:', error);
-    }
-
-    setTimeout(() => {
-      setIsSubmitting(false);
-    }, 500);
+    // NÃO HÁ MAIS setTimeout aqui. O estado de "submitting" continua até que a UI seja re-renderizada com a confirmação do voto.
   };
 
   // =============================================================================
@@ -241,39 +193,22 @@ export default function ActionPanel() {
   // =============================================================================
   // ✅ HAS VOTED - UNVOTE INTERFACE (ORIGINAL MANTIDA)
   // =============================================================================
-  if (myVote && gameState.phase === 'VOTING') {
+  if (myVote && gameState?.phase === 'VOTING') {
+    const votedPlayer = validTargets.find(p => p.id === myVote) || alivePlayers.find(p => p.id === myVote);
+
     return (
-      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col">
-
-        {/* Header - Mais compacto SEM DEBUG */}
-        <div className="flex-shrink-0 border-b border-medieval-600 p-3">
-          <h3 className="text-base font-bold text-white mb-1">✅ Voto Registrado</h3>
-          <p className="text-white/70 text-xs">Você já votou nesta rodada</p>
-        </div>
-
-        <div className="flex-1 flex flex-col justify-center p-3">
-          <div className="text-center mb-6">
-            <div className="text-3xl mb-4">🗳️</div>
-            <div className="text-green-400 font-bold text-sm mb-2">Seu voto foi registrado!</div>
-            <div className="text-white text-base">
-              Você votou em: <span className="font-bold">{validTargets.find(p => p.id === myVote)?.username}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleUnvote}
-            disabled={isSubmitting}
-            className={`
-              w-full py-2 px-4 rounded-lg font-semibold text-sm transition-all duration-200
-              ${isSubmitting
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-red-600 hover:bg-red-700 text-white'
-              }
-            `}
-          >
-            {isSubmitting ? 'Removendo...' : 'Remover Voto'}
-          </button>
-        </div>
+      <div className="h-full bg-medieval-800/30 border border-medieval-600 rounded-lg flex flex-col items-center justify-center p-4 text-center">
+        <div className="text-4xl mb-4">🗳️</div>
+        <h3 className="text-lg font-bold text-white mb-2">Voto Confirmado!</h3>
+        <p className="text-white/80">
+          Você votou para executar{' '}
+          <span className="font-bold text-amber-300">
+            {votedPlayer?.username || 'um jogador'}
+          </span>.
+        </p>
+        <p className="text-sm text-white/60 mt-4">
+          Seu voto é final. Aguarde o resultado da votação.
+        </p>
       </div>
     );
   }

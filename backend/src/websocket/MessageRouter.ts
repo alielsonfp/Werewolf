@@ -58,7 +58,7 @@ export class MessageRouter {
     this.handlers.set('get-game-state', this.handleGetGameState.bind(this));
     this.handlers.set('game-action', this.handleGameAction.bind(this));
     this.handlers.set('vote', this.handleVote.bind(this));
-    this.handlers.set('unvote', this.handleUnvote.bind(this));
+    //this.handlers.set('unvote', this.handleUnvote.bind(this));
 
     // reconnect
     this.handlers.set('check-active-game', this.handleCheckActiveGame.bind(this));
