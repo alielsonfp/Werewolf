@@ -53,19 +53,19 @@ const ROLE_INFO: Record<Role, {
     name: 'Vigilante',
     icon: '🔫',
     description: 'Justiceiro da vila',
-    abilities: ['Matar um jogador por noite (3 usos)', 'Perde turno se matar inocente'],
+    abilities: ['Matar um jogador por noite (3 usos)', 'Perde a propria vida se matar inocente'],
     goal: 'Eliminar Lobisomens com sua arma',
     tips: [
       'Use suas balas com muito cuidado',
       'Só atire se tiver certeza',
-      'Matar um inocente te faz perder uma noite'
+      'Matar um inocente te faz a vida'
     ],
   },
   WEREWOLF: {
     name: 'Lobisomem',
     icon: '🐺',
     description: 'Predador da noite',
-    abilities: ['Matar um jogador por noite (votação em grupo)', 'Chat privado com outros lobisomens'],
+    abilities: ['Ajudar o lobo rei a manipular os villagers', 'Chat privado com outros lobisomens'],
     goal: 'Igualar ou superar o número da Vila',
     tips: [
       'Coordene com outros lobisomens',
