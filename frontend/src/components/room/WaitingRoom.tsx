@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Crown, Share } from 'lucide-react';
+import { ArrowLeft, Crown } from 'lucide-react';
 import { Player, Room, ChatMessage } from '@/types';
 
 import PlayerList from './PlayerList';
@@ -13,7 +13,7 @@ interface WaitingRoomProps {
   roomId: string;
   room: Room | null;
   players: Player[];
-  spectators: Player[];
+  spectators: Player[]; // Mantido para compatibilidade, mas não usado
   messages: ChatMessage[];
 
   // Estados
@@ -30,7 +30,7 @@ interface WaitingRoomProps {
   onStartGame: () => void;
   onKickPlayer: (playerId: string) => void;
   onSendChatMessage: (message: string) => void;
-  onShareRoom: () => void;
+  onShareRoom: () => void; // Mantido para compatibilidade, mas não usado
   onLeaveRoom: () => void;
   onConfirmLeaveAsHost: () => void;
 }
@@ -39,7 +39,7 @@ export default function WaitingRoom({
   roomId,
   room,
   players,
-  spectators,
+  spectators, // Não usado
   messages,
   currentUserId,
   isHost,
@@ -52,7 +52,7 @@ export default function WaitingRoom({
   onStartGame,
   onKickPlayer,
   onSendChatMessage,
-  onShareRoom,
+  onShareRoom, // Não usado
   onLeaveRoom,
   onConfirmLeaveAsHost
 }: WaitingRoomProps) {
@@ -88,27 +88,11 @@ export default function WaitingRoom({
                       <Crown className="w-4 h-4" />
                       Host: {room.hostUsername}
                     </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      {isConnected ? (
-                        <span className="text-green-400">🟢 Conectado</span>
-                      ) : (
-                        <span className="text-red-400">🔴 Desconectado</span>
-                      )}
-                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-4">
-                <button
-                  onClick={onShareRoom}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Share className="w-4 h-4" />
-                  Compartilhar
-                </button>
-
                 <div className="text-right">
                   <div className="text-sm text-slate-400">Jogadores Prontos</div>
                   <div className="text-lg font-bold">
@@ -127,12 +111,12 @@ export default function WaitingRoom({
             <div className="lg:col-span-2">
               <PlayerList
                 players={players}
-                spectators={spectators}
+                spectators={[]} // ✅ Array vazio - não mostra espectadores
                 currentUserId={currentUserId}
                 isHost={isHost}
                 onKickPlayer={onKickPlayer}
                 maxPlayers={room.maxPlayers}
-                maxSpectators={room.maxSpectators}
+                maxSpectators={0} // ✅ Zero espectadores
               />
             </div>
 

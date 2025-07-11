@@ -148,7 +148,6 @@ function LobbyPage() {
   const [initialLoading, setInitialLoading] = useState(true); // ✅ Só para primeira vez
   const [isRefreshing, setIsRefreshing] = useState(false); // ✅ Só para refresh manual
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'WAITING' | 'PLAYING'>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinCodeModal, setShowJoinCodeModal] = useState(false);
   const [musicStarted, setMusicStarted] = useState(false);
@@ -215,8 +214,7 @@ function LobbyPage() {
   const filteredRooms = rooms.filter(room => {
     const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.hostUsername.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'ALL' || room.status === filterStatus;
-    return matchesSearch && matchesFilter && !room.isPrivate;
+    return matchesSearch && !room.isPrivate;
   });
 
   const handleJoinRoom = useCallback((roomId: string) => {
@@ -408,14 +406,14 @@ function LobbyPage() {
               </Button>
             </motion.div>
 
-            {/* Search and Filters */}
+            {/* Search */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="flex flex-col sm:flex-row gap-4 max-w-4xl mx-auto"
+              className="max-w-4xl mx-auto"
             >
-              <div className="flex-1 relative">
+              <div className="relative">
                 <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50">
                   <SearchIcon />
                 </div>
@@ -426,19 +424,6 @@ function LobbyPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-medieval-800/50 border border-medieval-600 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-salem-400 focus:border-transparent"
                 />
-              </div>
-
-              <div className="flex gap-2">
-                {(['ALL', 'WAITING', 'PLAYING'] as const).map((filter) => (
-                  <Button
-                    key={filter}
-                    variant={filterStatus === filter ? 'primary' : 'ghost'}
-                    size="md"
-                    onClick={() => setFilterStatus(filter)}
-                  >
-                    {filter === 'ALL' ? 'Todas' : filter === 'WAITING' ? 'Aguardando' : 'Em Jogo'}
-                  </Button>
-                ))}
               </div>
             </motion.div>
 

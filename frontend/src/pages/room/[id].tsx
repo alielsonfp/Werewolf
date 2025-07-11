@@ -18,11 +18,10 @@ function RoomPage() {
   // ✅ ADICIONADO: REF PARA PREVENIR DOUBLE SEND
   const joinAttemptRef = useRef<string | null>(null);
 
-  // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI
+  // ✅ TODOS OS ESTADOS AGORA VIVEM AQUI (REMOVIDO spectators)
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [spectators, setSpectators] = useState<Player[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -81,13 +80,12 @@ function RoomPage() {
     };
   }, [router.isReady, isAuthenticated, roomId, connect, disconnect, getToken, router, sendMessage]);
 
-  // ✅ EFEITO #2: CORRIGIDO - Previne double send
+  // ✅ EFEITO #2: CORRIGIDO - Previne double send (REMOVIDO spectate)
   useEffect(() => {
     console.log('🔄 [FE-ROOM] useEffect join-room disparado', {
       isConnected,
       hasJoinedRoom,
       roomId,
-      spectate: router.query.spectate,
       joinAttemptCurrent: joinAttemptRef.current,
       timestamp: new Date().toISOString()
     });
@@ -99,15 +97,12 @@ function RoomPage() {
         return;
       }
 
-      const asSpectator = router.query.spectate === 'true';
-
       console.log('📤 [FE-ROOM] Enviando join-room', {
         roomId,
-        asSpectator,
         timestamp: new Date().toISOString()
       });
 
-      if (sendMessage('join-room', { roomId: roomId as string, asSpectator })) {
+      if (sendMessage('join-room', { roomId: roomId as string, asSpectator: false })) {
         joinAttemptRef.current = roomId as string; // Marcar tentativa
         setHasJoinedRoom(true);
         console.log('✅ [FE-ROOM] join-room enviado, marcando hasJoinedRoom=true');
@@ -115,9 +110,9 @@ function RoomPage() {
         console.log('❌ [FE-ROOM] Falha ao enviar join-room');
       }
     }
-  }, [isConnected, roomId, hasJoinedRoom, sendMessage, router.query.spectate]);
+  }, [isConnected, roomId, hasJoinedRoom, sendMessage]);
 
-  // ✅ EFEITO #3: Apenas para ouvir as mensagens.
+  // ✅ EFEITO #3: Apenas para ouvir as mensagens. (REMOVIDO spectators)
   useEffect(() => {
     const handleMessage = (event: CustomEvent) => {
       const { type, data } = event.detail;
@@ -127,12 +122,10 @@ function RoomPage() {
         case 'room-joined':
           console.log('📨 [FE-ROOM] room-joined recebido', {
             room: data.room?.name,
-            playersCount: data.players?.length,
-            spectatorsCount: data.spectators?.length
+            playersCount: data.players?.length
           });
           setRoom(data.room);
           setPlayers(Array.isArray(data.players) ? data.players : []);
-          setSpectators(Array.isArray(data.spectators) ? data.spectators : []);
           setLoading(false);
           toast.success(`Entrou na sala: ${data.room?.name || roomId}`);
           break;
@@ -163,7 +156,6 @@ function RoomPage() {
         case 'player-left':
           if (data.userId) {
             setPlayers(prev => prev.filter(p => p.userId !== data.userId));
-            setSpectators(prev => prev.filter(s => s.userId !== data.userId));
 
             if (data.username) {
               const systemMessage: ChatMessage = {
@@ -214,7 +206,6 @@ function RoomPage() {
         case 'room-updated':
           if (data.room) setRoom(data.room);
           if (data.players) setPlayers(data.players);
-          if (data.spectators) setSpectators(data.spectators);
           break;
 
         case 'room-deleted':
@@ -236,7 +227,7 @@ function RoomPage() {
     };
   }, [roomId, router, disconnect, players.length]);
 
-  // ✅ HANDLERS
+  // ✅ HANDLERS (REMOVIDO handleShareRoom)
   const handleToggleReady = () => {
     sendMessage('player-ready', { ready: !isReady });
   };
@@ -254,18 +245,6 @@ function RoomPage() {
 
   const handleSendChatMessage = (message: string) => {
     sendMessage('chat-message', { message });
-  };
-
-  const handleShareRoom = async () => {
-    if (!room) return;
-    const shareUrl = `${window.location.origin}/room/${room.id}`;
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success('Link da sala copiado!');
-    } catch (error) {
-      toast.error('Erro ao copiar link');
-    }
   };
 
   const handleLeaveRoom = () => {
@@ -362,7 +341,7 @@ function RoomPage() {
         roomId={roomId as string}
         room={room}
         players={players}
-        spectators={spectators}
+        spectators={[]} // ✅ Array vazio - não vai mostrar espectadores
         messages={messages}
         currentUserId={currentUserId}
         isHost={isHost}
@@ -375,7 +354,7 @@ function RoomPage() {
         onStartGame={handleStartGame}
         onKickPlayer={handleKickPlayer}
         onSendChatMessage={handleSendChatMessage}
-        onShareRoom={handleShareRoom}
+        onShareRoom={() => { }} // ✅ Função vazia - botão não vai funcionar
         onLeaveRoom={handleLeaveRoom}
         onConfirmLeaveAsHost={handleConfirmLeaveAsHost}
       />
