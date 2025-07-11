@@ -92,22 +92,23 @@ export class GameEngine implements IGameEngine {
   }
 
   //====================================================================
-  // BROADCAST GAME STATE TO ALL PLAYERS
+  // ✅✅✅ CORREÇÃO CRÍTICA: BROADCAST GAME STATE TO ALL PLAYERS ✅✅✅
   //====================================================================
   private async broadcastGameState(gameId: string): Promise<void> {
     const gameState = this.games.get(gameId);
     if (!gameState || !this.sendToUser) return;
 
-    const players = gameState.getAlivePlayers();
+    // ✅ MUDANÇA CRÍTICA: Usar TODOS os jogadores (vivos E mortos)
+    const allPlayersInGame = gameState.players; // Era: gameState.getAlivePlayers()
 
     logger.info('Broadcasting game state to all players', {
       gameId,
-      playerCount: players.length,
+      playerCount: allPlayersInGame.length,
       phase: gameState.phase,
       day: gameState.day
     });
 
-    for (const player of players) {
+    for (const player of allPlayersInGame) {
       try {
         const personalizedState = this.getPersonalizedGameState(gameState, player.userId);
         const success = this.sendToUser(player.userId, 'game-state', personalizedState);
@@ -1026,7 +1027,6 @@ export class GameEngine implements IGameEngine {
     return Array.from(this.games.values())
       .filter(game => game.status === 'PLAYING').length;
   }
-
 
   getAllGames(): GameState[] {
     return Array.from(this.games.values());

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '@/context/GameContext';
 import TimerDisplay from './TimerDisplay';
 import RoleCard from './RoleCard';
@@ -7,6 +7,49 @@ import ChatGigante from './ChatGigante';
 import PlayerList from './PlayerList';
 import ActionPanel from './ActionPanel';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+
+// ✅✅✅ MODAL FECHÁVEL: Componente com Estado Local ✅✅✅
+const DeadPlayerOverlay = () => {
+  const [isVisible, setIsVisible] = useState(true);
+
+  // Se foi fechado, não renderiza nada (jogador pode assistir livremente)
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-40">
+      <div className="bg-red-900 border-2 border-red-600 rounded-lg p-8 max-w-md mx-4 text-center relative">
+
+        {/* Botão X no canto superior direito */}
+        <button
+          onClick={() => setIsVisible(false)}
+          className="absolute top-3 right-3 text-white/70 hover:text-white text-2xl font-bold transition-colors duration-200"
+          title="Fechar e continuar assistindo"
+        >
+          ×
+        </button>
+
+        <div className="text-6xl mb-4">💀</div>
+        <h2 className="text-2xl font-bold text-white mb-4">Você Morreu!</h2>
+        <p className="text-white/80 mb-6">
+          Agora você é um espectador. Continue assistindo o jogo até o final.
+        </p>
+        <div className="text-amber-400 animate-pulse mb-6">
+          👻 Modo Espectador Ativo
+        </div>
+
+        {/* Botão principal para fechar */}
+        <button
+          onClick={() => setIsVisible(false)}
+          className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 rounded transition-colors duration-200"
+        >
+          Continuar Assistindo
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // =============================================================================
 // GAME BOARD COMPONENT - LAYOUT TOWN OF SALEM (SEM PHASE INDICATOR E WILL NOTES)
@@ -115,6 +158,10 @@ export default function GameBoard() {
     );
   }
 
+  // ✅ Detectar se jogador é espectador
+  const isSpectator = me && !me.isAlive;
+  const isGameActive = gameState && gameState.status === 'PLAYING';
+
   // =============================================================================
   // DETERMINE BACKGROUND BASED ON PHASE
   // =============================================================================
@@ -130,6 +177,10 @@ export default function GameBoard() {
   // =============================================================================
   return (
     <div className={`h-screen transition-all duration-1000 ${getBackgroundClass()}`}>
+
+      {/* ✅✅✅ OVERLAY DE MORTE FECHÁVEL ✅✅✅ */}
+      {isSpectator && isGameActive && <DeadPlayerOverlay />}
+
       {/* Top Header Bar - SEM PHASE INDICATOR E SEM TÍTULO */}
       <header className="h-16 bg-medieval-800/50 border-b border-medieval-600 flex items-center justify-between px-4">
         {/* Left: Espaço vazio onde estava o PhaseIndicator */}

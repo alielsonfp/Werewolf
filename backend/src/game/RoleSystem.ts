@@ -195,6 +195,17 @@ const balancedRoleDistributions: Record<number, RoleDistribution> = {
     [Role.SERIAL_KILLER]: 0,
   },
 
+  4: {
+    [Role.VILLAGER]: 0,
+    [Role.SHERIFF]: 0,
+    [Role.DOCTOR]: 1,
+    [Role.VIGILANTE]: 1,
+    [Role.WEREWOLF]: 1,
+    [Role.WEREWOLF_KING]: 0,
+    [Role.JESTER]: 0,
+    [Role.SERIAL_KILLER]: 1,
+  },
+
   // 6 players - Minimum composition
   6: {
     [Role.VILLAGER]: 1,
