@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Containerizado-blue?style=for-the-badge&logo=docker)](https://www.docker.com/)
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/seu-usuario/werewolf-online/main/assets/banner.png" alt="Werewolf Online Banner" width="100%"/>
+  <img src="/images/banner.png" alt="Werewolf Online Banner" width="100%"/>
 </div>
 
 ## 📜 Sobre o Projeto
@@ -31,7 +31,7 @@ Este projeto foi desenvolvido como parte do **Desafio Relâmpago 4 - Plataforma 
 *Tela de boas-vindas com opções de login e registro*
 
 <div align="center">
-  <img src="./docs/screenshots/home-page.jpg" alt="Página Inicial" width="900"/>
+  <img src="/images/paginainicial.png" alt="Página Inicial" width="900"/>
 </div>
 
 ---
@@ -40,7 +40,7 @@ Este projeto foi desenvolvido como parte do **Desafio Relâmpago 4 - Plataforma 
 *Conheça todos os papéis disponíveis e suas habilidades especiais*
 
 <div align="center">
-  <img src="./docs/screenshots/roles-page.jpg" alt="Tela de Roles" width="900"/>
+  <img src="/images/roles.png" alt="Tela de Roles" width="900"/>
 </div>
 
 ---
@@ -49,7 +49,7 @@ Este projeto foi desenvolvido como parte do **Desafio Relâmpago 4 - Plataforma 
 *Liste e crie salas públicas ou privadas*
 
 <div align="center">
-  <img src="./docs/screenshots/lobby.jpg" alt="Tela de Lobby" width="900"/>
+  <img src="/images/lobby.png" alt="Tela de Lobby" width="900"/>
 </div>
 
 ---
@@ -58,16 +58,25 @@ Este projeto foi desenvolvido como parte do **Desafio Relâmpago 4 - Plataforma 
 *Aguarde outros jogadores e converse antes do jogo começar*
 
 <div align="center">
-  <img src="./docs/screenshots/waiting-room.jpg" alt="Sala de Espera" width="900"/>
+  <img src="/images/saladeespera.png" alt="Sala de Espera" width="900"/>
 </div>
 
 ---
 
-### 🎮 **Tela do Jogo**
-*Interface completa com chat, ações, timer e informações dos jogadores*
+### 🌞 **Tela do Jogo - Dia**
+*Interface completa com chat, ações, timer e informações dos jogadores durante o dia*
 
 <div align="center">
-  <img src="./docs/screenshots/game-screen.jpg" alt="Tela do Jogo" width="900"/>
+  <img src="/images/game.png" alt="Tela do Jogo - Dia" width="900"/>
+</div>
+
+---
+
+### 🌙 **Tela do Jogo - Noite**
+*Interface noturna com ações especiais e chat exclusivo dos lobisomens*
+
+<div align="center">
+  <img src="/images/gamenight.png" alt="Tela do Jogo - Noite" width="900"/>
 </div>
 
 ## 🎮 Como Jogar
