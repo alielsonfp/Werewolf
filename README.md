@@ -446,7 +446,7 @@ Contribuições são bem-vindas! Por favor, siga estes passos:
   <tr>
     <td align="center">
       <a href="https://github.com/alielson">
-        <img src="https://github.com/alielson.png" width="100px;" alt="Alielson Pequeno"/>
+        <img src="https://avatars.githubusercontent.com/u/alielson?v=4" width="100px;" alt="Alielson Pequeno"/>
         <br />
         <sub><b>Alielson Pequeno</b></sub>
       </a>
@@ -455,8 +455,8 @@ Contribuições são bem-vindas! Por favor, siga estes passos:
       <a href="#" title="Game Logic">🎮</a>
     </td>
     <td align="center">
-      <a href="https://github.com/rafael-arati">
-        <img src="https://github.com/rafael-arati.png" width="100px;" alt="Rafael Arati"/>
+      <a href="https://github.com/rafa-arati">
+        <img src="https://avatars.githubusercontent.com/u/rafa-arati?v=4" width="100px;" alt="Rafael Arati"/>
         <br />
         <sub><b>Rafael Arati</b></sub>
       </a>
