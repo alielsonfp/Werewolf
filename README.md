@@ -445,8 +445,8 @@ Contribuições são bem-vindas! Por favor, siga estes passos:
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/alielson">
-        <img src="https://avatars.githubusercontent.com/u/alielson?v=4" width="100px;" alt="Alielson Pequeno"/>
+      <a href="https://github.com/alielsonfp">
+        <img src="https://github.com/alielsonfp.png" width="100px;" alt="Alielson Pequeno"/>
         <br />
         <sub><b>Alielson Pequeno</b></sub>
       </a>
@@ -456,7 +456,7 @@ Contribuições são bem-vindas! Por favor, siga estes passos:
     </td>
     <td align="center">
       <a href="https://github.com/rafa-arati">
-        <img src="https://avatars.githubusercontent.com/u/rafa-arati?v=4" width="100px;" alt="Rafael Arati"/>
+        <img src="https://github.com/rafa-arati.png" width="100px;" alt="Rafael Arati"/>
         <br />
         <sub><b>Rafael Arati</b></sub>
       </a>
