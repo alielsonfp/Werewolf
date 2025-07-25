@@ -179,7 +179,7 @@ Este projeto foi desenvolvido como parte do **Desafio Relâmpago 4 - Plataforma 
 - ✅ Autenticação JWT segura
 - ✅ Reconexão automática em caso de queda
 - ✅ Proteção contra múltiplas contas
-- ✅ Rate limiting e proteção DDoS
+- ✅ Rate limiting
 - ✅ Validação de todas as ações
 
 ### 🎨 **Interface e Experiência**
@@ -438,7 +438,6 @@ Contribuições são bem-vindas! Por favor, siga estes passos:
 - **Commits**: Use [Conventional Commits](https://www.conventionalcommits.org/)
 - **TypeScript**: Strict mode habilitado
 - **Linting**: ESLint + Prettier configurados
-- **Testes**: Mínimo 80% de cobertura
 
 ## 👥 Equipe de Desenvolvimento
 
