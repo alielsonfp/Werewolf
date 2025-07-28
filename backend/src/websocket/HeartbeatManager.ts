@@ -241,7 +241,7 @@ export class HeartbeatManager {
             wsLogger.info('Dead connection cleanup completed', {
                 cleanedCount,
                 totalDeadConnections: deadConnections.length,
-                remainingConnections: this.connectionManager.getConnectionCount(),
+                remainingConnections: this.connectionManager.getAllConnections().length,
             });
         }
     }
@@ -330,7 +330,7 @@ export class HeartbeatManager {
     getStats(): HeartbeatStats {
         return {
             ...this.stats,
-            connectionsMonitored: this.connectionManager.getConnectionCount(),
+            connectionsMonitored: this.connectionManager.getAllConnections().length,
         };
     }
 
@@ -356,7 +356,7 @@ export class HeartbeatManager {
             currentInterval: wsConfig.heartbeat.interval,
             timeout: wsConfig.heartbeat.timeout,
             lastCleanup: new Date(),
-            connectionsMonitored: this.connectionManager.getConnectionCount(),
+            connectionsMonitored: this.connectionManager.getAllConnections().length,
             deadConnectionsDetected: 0,
         };
 
